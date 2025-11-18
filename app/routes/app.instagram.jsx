@@ -1,6 +1,6 @@
 export default function SupportPage() {
     return (
-      <s-page heading="Instagram Feed">
+      <s-page heading="Instagrammm Feed">
         <s-section heading="Multiple pages">
           <s-paragraph>
             this is a fun new instagram page
