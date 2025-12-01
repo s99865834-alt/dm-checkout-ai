@@ -22,15 +22,16 @@ const shopify = shopifyApp({
     : {}),
   afterAuth: async ({ session }) => {
     // Create or update shop in database when OAuth completes
+    console.log(`[afterAuth] OAuth completed for shop: ${session.shop}`);
     try {
-      await createOrUpdateShop(session.shop, {
+      const result = await createOrUpdateShop(session.shop, {
         plan: "FREE",
         monthly_cap: 25,
         active: true,
       });
-      console.log(`Shop ${session.shop} created/updated in database`);
+      console.log(`[afterAuth] Shop ${session.shop} created/updated in database - active: ${result.active}, usage_count: ${result.usage_count}`);
     } catch (error) {
-      console.error(`Error creating/updating shop ${session.shop}:`, error);
+      console.error(`[afterAuth] Error creating/updating shop ${session.shop}:`, error);
       // Don't throw - allow OAuth to complete even if DB update fails
       // The shop can be created later when they access the app
     }

@@ -1,9 +1,13 @@
 import { authenticate } from "../shopify.server";
-import { getShopByDomain } from "./db.server";
+import { getShopByDomain, createOrUpdateShop } from "./db.server";
 import { getPlanConfig } from "./plans";
 
 /**
  * Loader helper that fetches shop data and plan config for use in UI components.
+ * 
+ * This function also ensures that if the app is installed (valid session exists),
+ * the shop is marked as active in the database. This is a fallback in case
+ * the afterAuth hook doesn't run (e.g., on reinstall when session still exists).
  * 
  * Usage in a loader:
  * ```js
@@ -28,14 +32,36 @@ export async function getShopWithPlan(request) {
   
   // If shop doesn't exist in DB, create it with defaults
   if (!shop) {
-    // This will be handled by the OAuth flow in Week 3, but for now
-    // we'll return null or create it here
-    // For Week 2, we'll just return null if shop doesn't exist
-    // In production, shops should be created during OAuth
-    return {
-      shop: null,
-      plan: getPlanConfig("FREE"), // Default to FREE plan
-    };
+    // Create shop if it doesn't exist (fallback if afterAuth didn't run)
+    try {
+      shop = await createOrUpdateShop(shopDomain, {
+        plan: "FREE",
+        monthly_cap: 25,
+        active: true,
+      });
+      console.log(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
+    } catch (error) {
+      console.error(`[getShopWithPlan] Error creating shop ${shopDomain}:`, error);
+      return {
+        shop: null,
+        plan: getPlanConfig("FREE"), // Default to FREE plan
+      };
+    }
+  } else if (!shop.active) {
+    // If shop exists but is inactive, and we have a valid session, mark it as active
+    // This handles the case where afterAuth didn't run on reinstall
+    try {
+      shop = await createOrUpdateShop(shopDomain, {
+        plan: shop.plan || "FREE",
+        monthly_cap: shop.monthly_cap || 25,
+        active: true,
+        usage_count: 0, // Reset usage count on reinstall
+      });
+      console.log(`[getShopWithPlan] Reactivated shop ${shopDomain} (fallback)`);
+    } catch (error) {
+      console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
+      // Continue with existing shop data even if update fails
+    }
   }
   
   // Get plan configuration

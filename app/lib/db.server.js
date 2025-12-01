@@ -87,20 +87,50 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     usage_count: defaults.usage_count !== undefined ? defaults.usage_count : 0,
   };
 
-  const { data, error } = await supabase
-    .from("shops")
-    .upsert(shopData, {
-      onConflict: "shopify_domain",
-    })
-    .select("*")
-    .single();
+  // Check if shop already exists
+  const existing = await getShopByDomain(shopifyDomain);
 
-  if (error) {
-    console.error("createOrUpdateShop error", error);
-    throw error;
+  if (existing) {
+    // Shop exists - do an explicit UPDATE to ensure all fields are updated
+    console.log(`Updating existing shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
+    const { data, error } = await supabase
+      .from("shops")
+      .update({
+        plan: shopData.plan,
+        monthly_cap: shopData.monthly_cap,
+        usage_month: shopData.usage_month,
+        usage_count: shopData.usage_count, // Explicitly reset to 0 on reinstall
+        priority_support: shopData.priority_support,
+        active: shopData.active, // Explicitly set to true on reinstall
+      })
+      .eq("shopify_domain", shopifyDomain)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("createOrUpdateShop update error", error);
+      throw error;
+    }
+
+    console.log(`Shop ${shopifyDomain} updated successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    return data;
+  } else {
+    // Shop doesn't exist - do an INSERT
+    console.log(`Creating new shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
+    const { data, error } = await supabase
+      .from("shops")
+      .insert(shopData)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("createOrUpdateShop insert error", error);
+      throw error;
+    }
+
+    console.log(`Shop ${shopifyDomain} created successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    return data;
   }
-
-  return data;
 }
 
 export async function updateShopPlan(shopId, plan) {
