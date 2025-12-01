@@ -66,20 +66,30 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
   ).toISOString();
 
-  const base = {
+  // Base defaults - these are the initial values for a new shop
+  const baseDefaults = {
     plan: "FREE",
     monthly_cap: 25,
     usage_month: usageMonth,
-    usage_count: 0,
+    usage_count: 0, // Always start at 0 on install/reinstall
     priority_support: false,
-    active: true,
+    active: true, // Always set to true on install/reinstall
+  };
+
+  // Merge defaults, but ensure active and usage_count are explicitly set
+  // This ensures that on reinstall, active is set to true and usage_count is reset to 0
+  const shopData = {
+    ...baseDefaults,
     ...defaults,
     shopify_domain: shopifyDomain,
+    // Explicitly override these to ensure they're set correctly on install/reinstall
+    active: defaults.active !== undefined ? defaults.active : true,
+    usage_count: defaults.usage_count !== undefined ? defaults.usage_count : 0,
   };
 
   const { data, error } = await supabase
     .from("shops")
-    .upsert(base, {
+    .upsert(shopData, {
       onConflict: "shopify_domain",
     })
     .select("*")

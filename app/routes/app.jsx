@@ -1,17 +1,27 @@
 import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { authenticate } from "../shopify.server";
+import { getShopWithPlan } from "../lib/loader-helpers.server";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { shop, plan } = await getShopWithPlan(request);
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    shop,
+    plan,
+  };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData();
+  const { apiKey, shop, plan } = useLoaderData();
+
+  const planBadgeColor = {
+    FREE: "subdued",
+    GROWTH: "info",
+    PRO: "success",
+  }[plan.name] || "subdued";
 
   return (
     <AppProvider embedded apiKey={apiKey}>
@@ -20,8 +30,9 @@ export default function App() {
         <s-link href="/app/instagram">Instagram Feed</s-link>
         <s-link href="/app/analytics">Analytics</s-link>
         <s-link href="/app/support">Support</s-link>
+        <s-link href="/app/test-shop">Test Shop</s-link>
       </s-app-nav>
-      <Outlet />
+      <Outlet context={{ shop, plan }} />
     </AppProvider>
   );
 }
