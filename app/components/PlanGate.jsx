@@ -57,7 +57,7 @@ export function PlanGate({ requiredPlan, feature, children }) {
             Upgrade to unlock {feature} and other premium features.
           </s-text>
         </s-paragraph>
-        <s-button href="/app/billing" variant="primary">
+        <s-button href="/app/billing/select" variant="primary">
           Upgrade to {planNames[requiredPlan]}
         </s-button>
       </s-stack>

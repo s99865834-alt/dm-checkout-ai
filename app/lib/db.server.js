@@ -433,6 +433,49 @@ export async function recordAttribution(params) {
 }
 
 /**
+ * Get attribution records for a shop with optional filters
+ * @param {string} shopId - The shop ID
+ * @param {Object} filters - Optional filters: { channel, orderId, startDate, endDate, limit }
+ * @returns {Promise<Array>} Array of attribution records
+ */
+export async function getAttributionRecords(shopId, filters = {}) {
+  const { channel, orderId, startDate, endDate, limit = 50 } = filters;
+
+  let query = supabase
+    .from("attribution")
+    .select("*")
+    .eq("shop_id", shopId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  // Apply filters
+  if (channel) {
+    query = query.eq("channel", channel);
+  }
+
+  if (orderId) {
+    query = query.eq("order_id", orderId);
+  }
+
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("getAttributionRecords error", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
  * Get settings for a shop.
  */
 export async function getSettings(shopId) {
