@@ -2,6 +2,46 @@ import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 
+/**
+ * Get default channel preference based on plan
+ */
+function getDefaultChannelPreference(plan) {
+  const planConfig = getPlanConfig(plan);
+  
+  if (plan === "FREE") {
+    // FREE: DM responses only
+    return "dm";
+  } else if (plan === "GROWTH") {
+    // GROWTH: Comments and DMs (both, but locked - can't choose)
+    return "both";
+  } else if (plan === "PRO") {
+    // PRO: can choose dm, comment, or both, default to "both"
+    return "both";
+  }
+  
+  return "dm"; // fallback
+}
+
+/**
+ * Validate channel preference based on plan
+ */
+function validateChannelPreference(plan, channelPreference) {
+  const planConfig = getPlanConfig(plan);
+  
+  if (plan === "FREE") {
+    // FREE: must be "dm" only (DM responses only)
+    return "dm";
+  } else if (plan === "GROWTH") {
+    // GROWTH: must be "both" (Comments and DMs, but locked - can't choose)
+    return "both";
+  } else if (plan === "PRO") {
+    // PRO: can be "dm", "comment", or "both" (full control)
+    return channelPreference || "both";
+  }
+  
+  return "dm"; // fallback
+}
+
 export async function getShopByDomain(shopifyDomain) {
   const { data, error } = await supabase
     .from("shops")
@@ -9,18 +49,21 @@ export async function getShopByDomain(shopifyDomain) {
     .eq("shopify_domain", shopifyDomain)
     .single();
 
-  if (error && error.code !== "PGRST116") {
-    console.error("getShopByDomain error", error);
+  if (error) {
+    // PGRST116 = "no rows returned" (expected when shop doesn't exist)
+    // Also check for message in case error codes change
+    if (error.code !== "PGRST116" && !error.message?.includes("No rows found")) {
+      console.error("getShopByDomain error", error);
+    }
   }
   return data || null;
 }
 
 export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
-  const nowMonth = new Date();
+  // Create usage_month in UTC (first day of current month)
+  const now = new Date();
   const usageMonth = new Date(
-    nowMonth.getFullYear(),
-    nowMonth.getMonth(),
-    1
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
   ).toISOString();
 
   const base = {
@@ -347,5 +390,122 @@ export async function recordAttribution(params) {
     console.error("recordAttribution error", error);
     throw error;
   }
+}
+
+/**
+ * Get settings for a shop.
+ */
+export async function getSettings(shopId) {
+  // First get the shop to determine plan
+  const { data: shop, error: shopError } = await supabase
+    .from("shops")
+    .select("plan")
+    .eq("id", shopId)
+    .single();
+
+  const plan = shop?.plan || "FREE";
+  const defaultChannelPreference = getDefaultChannelPreference(plan);
+
+  const { data, error } = await supabase
+    .from("settings")
+    .select("*")
+    .eq("shop_id", shopId)
+    .single();
+
+  if (error) {
+    // PGRST116 = "no rows returned" (expected when settings don't exist)
+    if (error.code === "PGRST116" || error.message?.includes("No rows found")) {
+      // Return default settings if none exist, based on plan
+      return {
+        shop_id: shopId,
+        dm_automation_enabled: true,
+        comment_automation_enabled: plan !== "FREE", // FREE can't do comments
+        enabled_post_ids: null,
+        channel_preference: defaultChannelPreference,
+      };
+    }
+    console.error("getSettings error", error);
+    throw error;
+  }
+
+  // Validate and fix channel_preference based on current plan
+  const validatedChannelPreference = validateChannelPreference(plan, data.channel_preference);
+  
+  // If channel_preference needs to be corrected, update it
+  if (data.channel_preference !== validatedChannelPreference) {
+    const { data: updated } = await supabase
+      .from("settings")
+      .update({ channel_preference: validatedChannelPreference })
+      .eq("shop_id", shopId)
+      .select("*")
+      .single();
+    
+    return updated || { ...data, channel_preference: validatedChannelPreference };
+  }
+
+  return data;
+}
+
+/**
+ * Update settings for a shop.
+ */
+export async function updateSettings(shopId, settings) {
+  // First get the shop to determine plan
+  const { data: shop, error: shopError } = await supabase
+    .from("shops")
+    .select("plan")
+    .eq("id", shopId)
+    .single();
+
+  if (shopError) {
+    console.error("updateSettings: Could not fetch shop", shopError);
+    throw shopError;
+  }
+
+  const plan = shop?.plan || "FREE";
+  const planConfig = getPlanConfig(plan);
+
+  // Validate channel_preference based on plan
+  let channelPreference = settings.channel_preference || getDefaultChannelPreference(plan);
+  channelPreference = validateChannelPreference(plan, channelPreference);
+
+  // Enforce plan restrictions
+  let commentAutomationEnabled = settings.comment_automation_enabled;
+  if (plan === "FREE") {
+    // FREE: DM responses only - can't enable comment automation
+    commentAutomationEnabled = false;
+    // FREE: channel_preference must be "dm"
+    channelPreference = "dm";
+  } else if (plan === "GROWTH") {
+    // GROWTH: Comments and DMs - both enabled, but channel_preference locked to "both"
+    commentAutomationEnabled = commentAutomationEnabled ?? true;
+    // GROWTH: channel_preference must be "both" (locked - can't choose)
+    channelPreference = "both";
+  }
+  // PRO: full control - can choose "dm", "comment", or "both"
+
+  const { data, error } = await supabase
+    .from("settings")
+    .upsert(
+      {
+        shop_id: shopId,
+        dm_automation_enabled: settings.dm_automation_enabled ?? true,
+        comment_automation_enabled: commentAutomationEnabled,
+        enabled_post_ids: settings.enabled_post_ids || null,
+        channel_preference: channelPreference,
+      },
+      {
+        onConflict: "shop_id",
+      }
+    )
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("updateSettings error", error);
+    throw error;
+  }
+
+  return data;
 }
 

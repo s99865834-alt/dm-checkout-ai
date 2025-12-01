@@ -6,6 +6,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+import { createOrUpdateShop } from "./lib/db.server";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -19,6 +20,21 @@ const shopify = shopifyApp({
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
+  afterAuth: async ({ session }) => {
+    // Create or update shop in database when OAuth completes
+    try {
+      await createOrUpdateShop(session.shop, {
+        plan: "FREE",
+        monthly_cap: 25,
+        active: true,
+      });
+      console.log(`Shop ${session.shop} created/updated in database`);
+    } catch (error) {
+      console.error(`Error creating/updating shop ${session.shop}:`, error);
+      // Don't throw - allow OAuth to complete even if DB update fails
+      // The shop can be created later when they access the app
+    }
+  },
 });
 
 export default shopify;
