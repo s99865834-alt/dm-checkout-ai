@@ -35,6 +35,10 @@ export function encryptToken(plain) {
 }
 
 export function decryptToken(token) {
+  if (!token) {
+    throw new Error("Cannot decrypt: token is null or undefined");
+  }
+  
   const raw = Buffer.from(token, "base64");
   const iv = raw.subarray(0, 12);
   const tag = raw.subarray(12, 28);

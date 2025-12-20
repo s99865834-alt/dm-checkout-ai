@@ -1,18 +1,96 @@
-import { useOutletContext, useRouteError } from "react-router";
+import { useOutletContext, useRouteError, useSearchParams, useLoaderData, useFetcher } from "react-router";
+import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
+import { getMetaAuth } from "../lib/meta.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
+
+const META_APP_ID = process.env.META_APP_ID;
+const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
   await authenticate.admin(request);
-  return { shop, plan };
+  
+  // Check if Instagram is connected
+  let metaAuth = null;
+  if (shop?.id) {
+    metaAuth = await getMetaAuth(shop.id);
+  }
+  
+  return { shop, plan, metaAuth };
+};
+
+export const action = async ({ request }) => {
+  try {
+    // Authenticate and get shop domain from session
+    const { session } = await authenticate.admin(request);
+    
+    if (!session || !session.shop) {
+      return { error: "Authentication failed. Please try again." };
+    }
+
+    const shopDomain = session.shop;
+    
+    // Use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
+    // This must match the redirect URI configured in Meta App Dashboard
+    const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL;
+    if (!APP_URL || !APP_URL.startsWith('https://')) {
+      console.error("[oauth] SHOPIFY_APP_URL or APP_URL must be set to an HTTPS URL");
+      return { error: "Server configuration error. Please contact support." };
+    }
+    
+    const redirectUri = `${APP_URL}/auth/instagram/callback?shop=${encodeURIComponent(shopDomain)}`;
+    
+    const scopes = [
+      "instagram_business_basic",
+      "pages_show_list",
+      "pages_manage_metadata",
+      "instagram_manage_comments",
+      "instagram_business_manage_messages",
+    ].join(",");
+
+    const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?` +
+      `client_id=${META_APP_ID}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `scope=${encodeURIComponent(scopes)}&` +
+      `response_type=code&` +
+      `state=${encodeURIComponent(shopDomain)}`;
+
+    console.log(`[oauth] OAuth URL generated for shop: ${shopDomain}`);
+    return { oauthUrl: authUrl };
+  } catch (error) {
+    console.error("[oauth] Error generating OAuth URL:", error);
+    return { error: error.message || "Failed to initiate Instagram connection" };
+  }
 };
 
 export default function InstagramPage() {
-  const { shop, plan } = useOutletContext() || {};
+  const loaderData = useLoaderData();
+  const { shop, plan, metaAuth } = loaderData || {};
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
+  const [searchParams] = useSearchParams();
+  const connected = searchParams.get("connected") === "true";
+  const error = searchParams.get("error");
+  const isConnected = !!metaAuth;
+  const fetcher = useFetcher();
+
+  // Handle OAuth URL redirect - break out of iframe for external OAuth
+  useEffect(() => {
+    if (fetcher.data?.oauthUrl) {
+      // Use window.top to break out of the embedded app iframe
+      // This is required for OAuth flows in embedded Shopify apps
+      try {
+        window.top.location.href = fetcher.data.oauthUrl;
+      } catch (e) {
+        // Fallback if window.top is not accessible (shouldn't happen in embedded apps)
+        window.location.href = fetcher.data.oauthUrl;
+      }
+    } else if (fetcher.data?.error) {
+      window.location.href = `/app/instagram?error=${encodeURIComponent(fetcher.data.error)}`;
+    }
+  }, [fetcher.data]);
 
   return (
     <s-page heading="Instagram Feed">
@@ -25,6 +103,79 @@ export default function InstagramPage() {
           </s-stack>
         </s-section>
       )}
+
+      {/* Connect Instagram Section */}
+      <s-section heading="Instagram Connection">
+        <s-stack direction="block" gap="base">
+          {error && (
+            <s-banner tone="critical">
+              <s-text variant="strong">Connection Error</s-text>
+              <s-text>{error}</s-text>
+            </s-banner>
+          )}
+          
+          {connected && !error && (
+            <s-banner tone="success">
+              <s-text variant="strong">Successfully Connected!</s-text>
+              <s-text>Your Instagram Business account is now connected.</s-text>
+            </s-banner>
+          )}
+
+          {isConnected ? (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                <s-text variant="strong">Status: Connected</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  Instagram Business Account ID: {metaAuth.ig_business_id}
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  Facebook Page ID: {metaAuth.page_id}
+                </s-text>
+              </s-paragraph>
+              {metaAuth.token_expires_at && (
+                <s-paragraph>
+                  <s-text variant="subdued">
+                    Token expires: {new Date(metaAuth.token_expires_at).toLocaleDateString()}
+                  </s-text>
+                </s-paragraph>
+              )}
+              <s-button 
+                variant="secondary" 
+                onClick={() => {
+                  fetcher.submit({}, { method: "post" });
+                }}
+                disabled={fetcher.state !== "idle"}
+              >
+                {fetcher.state !== "idle" ? "Connecting..." : "Reconnect Instagram"}
+              </s-button>
+            </s-stack>
+          ) : (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                Connect your Instagram Business account to enable automation features.
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  You'll need a Facebook Page with a linked Instagram Business account.
+                </s-text>
+              </s-paragraph>
+              <s-button 
+                variant="primary"
+                onClick={() => {
+                  fetcher.submit({}, { method: "post" });
+                }}
+                disabled={fetcher.state !== "idle"}
+              >
+                {fetcher.state !== "idle" ? "Connecting..." : "Connect Instagram Business Account"}
+              </s-button>
+            </s-stack>
+          )}
+        </s-stack>
+      </s-section>
 
       {/* DM Automation - Available to all plans */}
       <s-section heading="DM Automation">
