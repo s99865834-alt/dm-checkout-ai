@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { authenticate, login } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 
 /**
  * Success page after Instagram OAuth
@@ -33,4 +33,10 @@ export const loader = async ({ request }) => {
     return redirect(`${appUrl}/auth?shop=${encodeURIComponent(shop)}`);
   }
 };
+
+// Default component (required for route to be recognized)
+// This component is never rendered since loader always redirects
+export default function InstagramSuccess() {
+  return null;
+}
 

@@ -104,7 +104,7 @@ export default function AttributionDebugPage() {
               <s-box padding="base" border="base" borderRadius="base">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="channel">
-                    <s-text variant="bodyMd" variant="strong">Channel</s-text>
+                    <s-text variant="strong">Channel</s-text>
                   </label>
                   <select
                     id="channel"
@@ -127,7 +127,7 @@ export default function AttributionDebugPage() {
               <s-box padding="base" border="base" borderRadius="base">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="order_id">
-                    <s-text variant="bodyMd" variant="strong">Order ID</s-text>
+                    <s-text variant="strong">Order ID</s-text>
                   </label>
                   <input
                     type="text"
@@ -148,7 +148,7 @@ export default function AttributionDebugPage() {
               <s-box padding="base" border="base" borderRadius="base">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="start_date">
-                    <s-text variant="bodyMd" variant="strong">Start Date</s-text>
+                    <s-text variant="strong">Start Date</s-text>
                   </label>
                   <input
                     type="date"
@@ -168,7 +168,7 @@ export default function AttributionDebugPage() {
               <s-box padding="base" border="base" borderRadius="base">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="end_date">
-                    <s-text variant="bodyMd" variant="strong">End Date</s-text>
+                    <s-text variant="strong">End Date</s-text>
                   </label>
                   <input
                     type="date"
@@ -188,7 +188,7 @@ export default function AttributionDebugPage() {
               <s-box padding="base" border="base" borderRadius="base">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="limit">
-                    <s-text variant="bodyMd" variant="strong">Limit</s-text>
+                    <s-text variant="strong">Limit</s-text>
                   </label>
                   <input
                     type="number"
