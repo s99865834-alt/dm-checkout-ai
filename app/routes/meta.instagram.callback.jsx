@@ -93,10 +93,18 @@ export async function loader({ request }) {
     const tokenResponse = await fetch(tokenUrl);
     const tokenData = await tokenResponse.json();
     
-    console.log(`[oauth] Token exchange response:`, JSON.stringify({
+    console.log(`[oauth] Token exchange response (full):`, JSON.stringify({
       ...tokenData,
-      access_token: tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : null
+      access_token: tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : null,
+      // Check for any additional tokens or data
+      has_graph_domain: !!tokenData.graph_domain,
+      has_data_access_expires_at: !!tokenData.data_access_expires_at,
     }, null, 2));
+    
+    // Meta sometimes returns additional data in the token response
+    if (tokenData.data) {
+      console.log(`[oauth] Token response includes data field:`, JSON.stringify(tokenData.data, null, 2));
+    }
 
     if (tokenData.error) {
       console.error(`[oauth] Token exchange error:`, tokenData.error);
