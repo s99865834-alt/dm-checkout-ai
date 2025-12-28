@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useFetcher, useOutletContext, useSearchParams, useNavigate } from "react-router";
+import { useFetcher, useOutletContext, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
