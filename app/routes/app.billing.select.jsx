@@ -154,7 +154,7 @@ export default function BillingSelect() {
       )}
 
       <s-section>
-        <s-stack direction="block" gap="large">
+        <s-stack direction="inline" gap="base" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
           {plans.map((plan) => {
             const isCurrent = isCurrentPlan(plan.name);
             const upgrade = canUpgrade(plan.name);

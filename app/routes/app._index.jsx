@@ -231,58 +231,6 @@ export default function Index() {
           )}
         </s-stack>
       </s-section>
-
-     
-
-      {/* Example of plan-aware gating */}
-      <s-section heading="Plan Features">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>
-            <s-text variant="strong">Available Features:</s-text>
-          </s-paragraph>
-          <s-unordered-list>
-            <s-list-item>
-              DM Automation: {plan?.dm ? "✅ Enabled" : "❌ Disabled"}
-            </s-list-item>
-            <s-list-item>
-              Comments Automation: {plan?.comments ? "✅ Enabled" : "❌ Disabled"}
-            </s-list-item>
-            <s-list-item>
-              Conversations: {plan?.converse ? "✅ Enabled" : "❌ Disabled"}
-            </s-list-item>
-            <s-list-item>
-              Brand Voice: {plan?.brandVoice ? "✅ Enabled" : "❌ Disabled"}
-            </s-list-item>
-            <s-list-item>
-              Follow-ups: {plan?.followup ? "✅ Enabled" : "❌ Disabled"}
-            </s-list-item>
-          </s-unordered-list>
-
-          {/* Example: Locked feature for Growth+ */}
-          <PlanGate requiredPlan="GROWTH" feature="Comments Automation">
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-paragraph>
-                <s-text variant="strong">Comments Automation</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                This feature is available! You can automate responses to Instagram comments.
-              </s-paragraph>
-            </s-box>
-          </PlanGate>
-
-          {/* Example: Locked feature for Pro */}
-          <PlanGate requiredPlan="PRO" feature="Follow-up Messages">
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-paragraph>
-                <s-text variant="strong">Follow-up Messages</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                This feature is available! Automatically follow up with customers who haven't responded.
-              </s-paragraph>
-            </s-box>
-          </PlanGate>
-        </s-stack>
-      </s-section>
     </s-page>
   );
 }
