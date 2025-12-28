@@ -98,57 +98,76 @@ export default function MessagesPage() {
       )}
 
       <s-section heading="Filters">
-        <s-stack direction="inline" gap="base">
-          <s-select
-            label="Channel"
-            value={filters.channel || ""}
-            onChange={(e) => updateFilter("channel", e.target.value || null)}
-          >
-            <option value="">All Channels</option>
-            <option value="dm">DM</option>
-            <option value="comment">Comment</option>
-          </s-select>
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+          <s-stack direction="block" gap="base">
+            <s-stack direction="inline" gap="base" alignment="center">
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>Channel</s-text>
+                <select
+                  value={filters.channel || ""}
+                  onChange={(e) => updateFilter("channel", e.target.value || null)}
+                  style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                >
+                  <option value="">All Channels</option>
+                  <option value="dm">DM</option>
+                  <option value="comment">Comment</option>
+                </select>
+              </label>
 
-          <s-text-field
-            label="Start Date"
-            type="date"
-            value={filters.startDate || ""}
-            onChange={(e) => updateFilter("start_date", e.target.value || null)}
-          />
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>Start Date</s-text>
+                <input
+                  type="date"
+                  value={filters.startDate || ""}
+                  onChange={(e) => updateFilter("start_date", e.target.value || null)}
+                  style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                />
+              </label>
 
-          <s-text-field
-            label="End Date"
-            type="date"
-            value={filters.endDate || ""}
-            onChange={(e) => updateFilter("end_date", e.target.value || null)}
-          />
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>End Date</s-text>
+                <input
+                  type="date"
+                  value={filters.endDate || ""}
+                  onChange={(e) => updateFilter("end_date", e.target.value || null)}
+                  style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                />
+              </label>
 
-          <s-select
-            label="Sort By"
-            value={filters.orderBy}
-            onChange={(e) => updateFilter("order_by", e.target.value)}
-          >
-            <option value="created_at">Date</option>
-            <option value="channel">Channel</option>
-            <option value="text">Text</option>
-          </s-select>
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>Sort By</s-text>
+                <select
+                  value={filters.orderBy}
+                  onChange={(e) => updateFilter("order_by", e.target.value)}
+                  style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                >
+                  <option value="created_at">Date</option>
+                  <option value="channel">Channel</option>
+                  <option value="text">Text</option>
+                </select>
+              </label>
 
-          <s-select
-            label="Order"
-            value={filters.orderDirection}
-            onChange={(e) => updateFilter("order_direction", e.target.value)}
-          >
-            <option value="desc">Newest First</option>
-            <option value="asc">Oldest First</option>
-          </s-select>
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>Order</s-text>
+                <select
+                  value={filters.orderDirection}
+                  onChange={(e) => updateFilter("order_direction", e.target.value)}
+                  style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                >
+                  <option value="desc">Newest First</option>
+                  <option value="asc">Oldest First</option>
+                </select>
+              </label>
 
-          <s-button
-            variant="secondary"
-            onClick={() => navigate("/app/messages")}
-          >
-            Clear Filters
-          </s-button>
-        </s-stack>
+              <s-button
+                variant="secondary"
+                onClick={() => navigate("/app/messages")}
+              >
+                Clear Filters
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </s-box>
       </s-section>
 
       <s-section heading="Messages">
