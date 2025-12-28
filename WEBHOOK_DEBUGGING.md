@@ -38,13 +38,34 @@ First, check if the webhook is being called at all. Look for these log messages 
 
 Instagram requires your app to have **thread control** to receive DM webhooks. This is often the main issue!
 
+**Option A: Handover Protocol (if Advanced Messaging exists)**
 1. Go to your **Facebook Page** (the one linked to your Instagram account)
-2. Go to **Settings** → **Advanced Messaging**
-3. Under **Default Routing App**, select your app
-4. Enable **"Allow this app to take control of conversations"**
-5. Save changes
+2. Go to **Settings** → **Advanced Messaging** (if available)
+3. Look for **Handover Protocol** section
+4. Click **Configure** next to **Instagram receiver**
+5. Set your app as the **primary receiver**
+6. Save changes
 
-**Without thread control, Instagram will NOT send webhook events for DMs!**
+**Option B: Instagram App Settings (MOST IMPORTANT)**
+1. Open the **Instagram app** on your phone
+2. Go to your **business profile**
+3. Tap the **menu icon** (three lines) in the top-right
+4. Select **Settings and activity**
+5. Go to **Messages and story replies**
+6. Under **Message requests**, find **Connected tools**
+7. Toggle on **"Allow access to messages"** ✅
+
+**This is the most common fix!** Without this setting enabled in Instagram, webhooks won't work.
+
+**Option C: Facebook Business Integrations**
+1. Go to Facebook → **Settings & privacy** → **Settings**
+2. Click **Business integrations** (or **Apps and websites**)
+3. Find your app in the list
+4. Click **View and edit**
+5. Ensure all Instagram permissions are granted
+6. If needed, remove and re-add the integration
+
+**Without thread control or "Allow access to messages", Instagram will NOT send webhook events for DMs!**
 
 ### 4. Verify App Permissions
 
@@ -134,13 +155,21 @@ The webhook handler now includes extensive logging. Check your deployment logs f
 
 ### Next Steps
 
-1. Check your Railway deployment logs for webhook events
-2. Verify thread control is enabled (most common issue!)
-3. Test the webhook endpoint manually
-4. Send another test DM and watch the logs in real-time
+1. **FIRST**: Enable "Allow access to messages" in Instagram app settings (Option B above) - this is the most common fix!
+2. Check your Railway deployment logs for webhook events
+3. Verify webhook is properly configured in Meta App Dashboard
+4. Test the webhook endpoint manually
+5. Send another test DM and watch the logs in real-time
+
+**Priority order:**
+1. ✅ Enable "Allow access to messages" in Instagram app (Option B)
+2. ✅ Check webhook configuration in Meta Dashboard
+3. ✅ Check Railway logs for webhook events
+4. ✅ Verify database has correct `ig_business_id`
 
 If webhooks are still not working after these steps, the issue is likely:
-- Thread control not enabled
+- "Allow access to messages" not enabled in Instagram (most common!)
 - Webhook not properly subscribed in Meta Dashboard
 - App not in Live mode (if required)
+- Instagram account not properly linked to Facebook Page
 
