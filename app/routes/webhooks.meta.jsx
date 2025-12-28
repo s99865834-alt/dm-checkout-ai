@@ -134,19 +134,52 @@ function parseCommentEvent(comment) {
 
 /**
  * Parse Instagram DM/message event
+ * Instagram messaging webhooks have this structure:
+ * {
+ *   "sender": { "id": "..." },
+ *   "recipient": { "id": "..." },
+ *   "timestamp": 1234567890,
+ *   "message": {
+ *     "mid": "message_id",
+ *     "text": "message text"
+ *   }
+ * }
  */
 function parseMessageEvent(message) {
   try {
+    console.log(`[webhook] Parsing message event:`, JSON.stringify(message, null, 2));
+    
     // Instagram messaging events structure
     const sender = message.sender || message.from;
     const messageData = message.message || message;
     
-    return {
-      messageId: messageData.mid || message.id || message.message_id,
-      messageText: messageData.text || messageData.body || null,
-      igUserId: sender?.id || message.from?.id || null,
-      timestamp: messageData.timestamp || message.timestamp || new Date().toISOString(),
+    // Extract message ID - try multiple possible fields
+    const messageId = messageData?.mid || messageData?.id || message.id || message.message_id || message.mid;
+    
+    // Extract message text
+    const messageText = messageData?.text || messageData?.body || message.text || message.body || null;
+    
+    // Extract sender ID
+    const igUserId = sender?.id || message.from?.id || message.sender_id || null;
+    
+    // Extract timestamp (can be in seconds or milliseconds)
+    let timestamp = messageData?.timestamp || message.timestamp || new Date().toISOString();
+    if (typeof timestamp === 'number') {
+      // Convert to ISO string (timestamp might be in seconds, not milliseconds)
+      timestamp = timestamp < 10000000000 
+        ? new Date(timestamp * 1000).toISOString() 
+        : new Date(timestamp).toISOString();
+    }
+    
+    const parsed = {
+      messageId,
+      messageText,
+      igUserId,
+      timestamp,
     };
+    
+    console.log(`[webhook] Parsed message:`, parsed);
+    return parsed;
   } catch (error) {
     console.error(`[webhook] Error parsing message event:`, error);
     return null;
@@ -200,7 +233,9 @@ export const action = async ({ request }) => {
       
       if (body.entry) {
         for (const entry of body.entry) {
-          console.log(`[webhook] Processing entry:`, entry.id);
+          console.log(`[webhook] Processing entry:`, JSON.stringify(entry, null, 2));
+          console.log(`[webhook] Entry ID: ${entry.id}`);
+          console.log(`[webhook] Entry keys: ${Object.keys(entry).join(", ")}`);
           
           // For Instagram webhooks, entry.id is the Instagram Business Account ID
           // We need to resolve shop using this ID
@@ -208,22 +243,28 @@ export const action = async ({ request }) => {
           
           if (!shopId) {
             console.warn(`[webhook] Could not resolve shop for Instagram Business Account ${entry.id}, skipping`);
+            console.warn(`[webhook] Available entry fields:`, Object.keys(entry));
             continue;
           }
           
+          console.log(`[webhook] Resolved shop_id: ${shopId}`);
+          
           // Handle messaging events (DMs)
-          if (entry.messaging) {
+          // Instagram messaging can be in entry.messaging array
+          if (entry.messaging && Array.isArray(entry.messaging)) {
+            console.log(`[webhook] Found ${entry.messaging.length} messaging event(s)`);
             for (const message of entry.messaging) {
-              console.log(`[webhook] Instagram message event:`, message);
+              console.log(`[webhook] Instagram message event:`, JSON.stringify(message, null, 2));
               
               const parsed = parseMessageEvent(message);
               if (!parsed || !parsed.messageId) {
                 console.warn(`[webhook] Failed to parse message event, skipping`);
+                console.warn(`[webhook] Parsed result:`, parsed);
                 continue;
               }
               
               try {
-                await logMessage({
+                const result = await logMessage({
                   shopId,
                   channel: "dm",
                   externalId: parsed.messageId,
@@ -234,12 +275,17 @@ export const action = async ({ request }) => {
                   sentiment: null,
                   lastUserMessageAt: parsed.timestamp,
                 });
-                console.log(`[webhook] ✅ DM logged: ${parsed.messageId}`);
+                console.log(`[webhook] ✅ DM logged successfully: ${parsed.messageId}`);
+                console.log(`[webhook] Logged message ID: ${result?.id}`);
               } catch (error) {
                 console.error(`[webhook] Error logging DM:`, error);
+                console.error(`[webhook] Error stack:`, error.stack);
                 // Continue processing other messages
               }
             }
+          } else {
+            console.log(`[webhook] No messaging events found in entry`);
+            console.log(`[webhook] Entry structure:`, JSON.stringify(entry, null, 2));
           }
           
           // Handle comment events
