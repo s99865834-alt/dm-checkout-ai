@@ -131,10 +131,21 @@ export async function loader({ request }) {
     
     let pagesData;
     try {
-      // Try fetching pages with fields to get more info
+      // Try fetching pages - use endpoint without query params, pass fields via options
       console.log(`[oauth] Now fetching pages with /me/accounts`);
-      pagesData = await metaGraphAPI("/me/accounts?fields=id,name,access_token,instagram_business_account", userAccessToken);
+      pagesData = await metaGraphAPI("/me/accounts", userAccessToken, {
+        params: {
+          fields: "id,name,access_token,instagram_business_account"
+        }
+      });
       console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
+      
+      // If that fails, try without fields parameter
+      if (!pagesData || !pagesData.data) {
+        console.log(`[oauth] Trying /me/accounts without fields parameter`);
+        pagesData = await metaGraphAPI("/me/accounts", userAccessToken);
+        console.log(`[oauth] Pages API response (no fields):`, JSON.stringify(pagesData, null, 2));
+      }
     } catch (apiError) {
       console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
       console.error(`[oauth] Error details:`, {
