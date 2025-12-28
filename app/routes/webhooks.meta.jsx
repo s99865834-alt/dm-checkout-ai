@@ -17,7 +17,6 @@ if (typeof global.crypto === "undefined") {
 }
 
 import { logMessage } from "../lib/db.server";
-import { getMetaAuth } from "../lib/meta.server";
 import supabase from "../lib/supabase.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
