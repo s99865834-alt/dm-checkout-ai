@@ -138,7 +138,11 @@ export async function loader({ request }) {
     }
     
     // Check token permissions - use app access token for debug_token
-    console.log(`[oauth] Checking token permissions`);
+    // Extract Page ID and Instagram ID from granular_scopes (Meta provides these when using granular permissions)
+    console.log(`[oauth] Checking token permissions to extract Page and Instagram IDs`);
+    let pageId = null;
+    let igBusinessId = null;
+    
     try {
       // debug_token requires app access token (app_id|app_secret) as the access_token parameter
       const appAccessToken = `${META_APP_ID}|${META_APP_SECRET}`;
@@ -148,82 +152,112 @@ export async function loader({ request }) {
         }
       });
       console.log(`[oauth] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
+      
+      // Extract Page ID and Instagram ID from granular_scopes
+      if (tokenInfo?.data?.granular_scopes) {
+        for (const scope of tokenInfo.data.granular_scopes) {
+          if (scope.scope === 'pages_show_list' && scope.target_ids && scope.target_ids.length > 0) {
+            pageId = scope.target_ids[0]; // Use first Page ID
+            console.log(`[oauth] ✅ Found Page ID from granular_scopes: ${pageId}`);
+          }
+          if (scope.scope === 'instagram_basic' && scope.target_ids && scope.target_ids.length > 0) {
+            igBusinessId = scope.target_ids[0]; // Use first Instagram ID
+            console.log(`[oauth] ✅ Found Instagram Business ID from granular_scopes: ${igBusinessId}`);
+          }
+        }
+      }
     } catch (debugError) {
       console.warn(`[oauth] Could not debug token:`, debugError.message);
     }
     
-    // Check what permissions the token actually has
-    console.log(`[oauth] Checking granted permissions`);
-    try {
-      const permissions = await metaGraphAPI("/me/permissions", userAccessToken);
-      console.log(`[oauth] User permissions:`, JSON.stringify(permissions, null, 2));
-      
-      // Check specifically for pages permissions
-      const pagesPerms = permissions?.data?.filter(p => p.permission?.includes('pages') || p.permission?.includes('page'));
-      console.log(`[oauth] Pages-related permissions:`, JSON.stringify(pagesPerms, null, 2));
-    } catch (permError) {
-      console.warn(`[oauth] Could not fetch permissions:`, permError.message);
-    }
+    // If we have IDs from granular_scopes, use them directly
+    // Otherwise, fall back to /me/accounts
+    let pageAccessToken = null;
+    let pageName = null;
     
-    let pagesData;
-    try {
-      // Try fetching pages - use endpoint without query params, pass fields via options
-      console.log(`[oauth] Now fetching pages with /me/accounts`);
-      pagesData = await metaGraphAPI("/me/accounts", userAccessToken, {
-        params: {
-          fields: "id,name,access_token,instagram_business_account"
+    if (pageId && igBusinessId) {
+      console.log(`[oauth] Using Page ID and Instagram ID from granular_scopes`);
+      console.log(`[oauth] Page ID: ${pageId}, Instagram Business ID: ${igBusinessId}`);
+      
+      // Get Page info and access token by fetching the Page directly
+      try {
+        const pageInfo = await metaGraphAPI(`/${pageId}`, userAccessToken, {
+          params: {
+            fields: "id,name,access_token"
+          }
+        });
+        console.log(`[oauth] Page info retrieved:`, JSON.stringify({
+          id: pageInfo.id,
+          name: pageInfo.name,
+          has_access_token: !!pageInfo.access_token
+        }, null, 2));
+        
+        pageAccessToken = pageInfo.access_token;
+        pageName = pageInfo.name;
+        
+        if (!pageAccessToken) {
+          console.error(`[oauth] Page access token not found in Page info`);
+          // Try to get it from /me/accounts as fallback
         }
-      });
-      console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
-      
-      // If that fails, try without fields parameter
-      if (!pagesData || !pagesData.data) {
-        console.log(`[oauth] Trying /me/accounts without fields parameter`);
-        pagesData = await metaGraphAPI("/me/accounts", userAccessToken);
-        console.log(`[oauth] Pages API response (no fields):`, JSON.stringify(pagesData, null, 2));
+      } catch (pageError) {
+        console.error(`[oauth] Error fetching Page info:`, pageError);
+        // Fall through to /me/accounts
+        pageId = null;
+        igBusinessId = null;
       }
-    } catch (apiError) {
-      console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
-      console.error(`[oauth] Error details:`, {
-        message: apiError.message,
-        stack: apiError.stack
-      });
-      return redirect(`/app/instagram?error=${encodeURIComponent(`Failed to fetch Facebook Pages: ${apiError.message}`)}&shop=${encodeURIComponent(targetShop)}`);
     }
     
-    if (!pagesData || !pagesData.data || pagesData.data.length === 0) {
-      console.error(`[oauth] No Facebook Pages found`);
-      console.error(`[oauth] Pages data response:`, JSON.stringify(pagesData, null, 2));
-      console.error(`[oauth] This might mean:`);
-      console.error(`[oauth] 1. The user hasn't granted the app access to their Pages`);
-      console.error(`[oauth] 2. The user needs to select the Page during OAuth`);
-      console.error(`[oauth] 3. The access token doesn't have the right permissions`);
-      return redirect(`/app/instagram?error=${encodeURIComponent("No Facebook Pages found. Please make sure you grant the app access to your Facebook Page during the OAuth flow, and that your Instagram account is linked to the Page.")}&shop=${encodeURIComponent(targetShop)}`);
+    // Fallback: try /me/accounts if we didn't get data from granular_scopes
+    if (!pageId || !pageAccessToken) {
+      console.log(`[oauth] Falling back to /me/accounts`);
+      let pagesData;
+      try {
+        pagesData = await metaGraphAPI("/me/accounts", userAccessToken, {
+          params: {
+            fields: "id,name,access_token,instagram_business_account"
+          }
+        });
+        console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
+        
+        if (pagesData?.data && pagesData.data.length > 0) {
+          const page = pagesData.data[0];
+          pageId = page.id;
+          pageAccessToken = page.access_token;
+          pageName = page.name;
+          
+          // Get Instagram ID from Page if not already set
+          if (!igBusinessId && page.instagram_business_account) {
+            igBusinessId = page.instagram_business_account.id;
+          } else if (!igBusinessId) {
+            // Try fetching Instagram account from Page
+            const igAccountData = await metaGraphAPI(
+              `/${pageId}?fields=instagram_business_account`,
+              pageAccessToken
+            );
+            if (igAccountData.instagram_business_account) {
+              igBusinessId = igAccountData.instagram_business_account.id;
+            }
+          }
+        }
+      } catch (apiError) {
+        console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
+        return redirect(`/app/instagram?error=${encodeURIComponent(`Failed to fetch Facebook Pages: ${apiError.message}`)}&shop=${encodeURIComponent(targetShop)}`);
+      }
+    }
+    
+    // Validate we have all required data
+    if (!pageId || !pageAccessToken) {
+      console.error(`[oauth] Missing required data: pageId=${pageId}, hasPageToken=${!!pageAccessToken}`);
+      return redirect(`/app/instagram?error=${encodeURIComponent("Could not retrieve Facebook Page information. Please ensure you grant the app access to your Page during OAuth.")}&shop=${encodeURIComponent(targetShop)}`);
+    }
+    
+    if (!igBusinessId) {
+      console.error(`[oauth] Instagram Business ID not found`);
+      return redirect(`/app/instagram?error=${encodeURIComponent("No Instagram Business account found. Please link an Instagram Business account to your Facebook Page in Page settings.")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
-    console.log(`[oauth] Found ${pagesData.data.length} Facebook Page(s)`);
-
-    // For now, use the first page (you can add a selection UI later)
-    // TODO: Add Page selection UI for merchants with multiple Pages
-    const page = pagesData.data[0];
-    const pageAccessToken = page.access_token;
-    const pageId = page.id;
-
-    console.log(`[oauth] Using Page: ${page.name} (ID: ${pageId})`);
-
-    // Get Instagram Business Account linked to this Page
-    console.log(`[oauth] Fetching Instagram Business Account for Page`);
-    const igAccountData = await metaGraphAPI(
-      `/${pageId}?fields=instagram_business_account`,
-      pageAccessToken
-    );
-
-    if (!igAccountData.instagram_business_account) {
-      console.error(`[oauth] No Instagram Business account linked to Page`);
-      return redirect(`/app/instagram?error=${encodeURIComponent("No Instagram Business account linked to this Facebook Page. Please link an Instagram Business account in Facebook Page settings.")}`);
-    }
-
-    const igBusinessId = igAccountData.instagram_business_account.id;
+    console.log(`[oauth] ✅ Using Page: ${pageName || pageId} (ID: ${pageId})`);
+    console.log(`[oauth] ✅ Instagram Business ID: ${igBusinessId}`);
     console.log(`[oauth] Instagram Business Account ID: ${igBusinessId}`);
 
     // Get long-lived token
