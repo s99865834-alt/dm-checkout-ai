@@ -283,23 +283,9 @@ export default function SetupPage() {
                 </s-paragraph>
                 <s-paragraph>
                   {webhooksWorking ? (
-                    <s-text>✅ Webhooks active and receiving events</s-text>
+                    <s-text>✅ Ready to receive messages and comments</s-text>
                   ) : (
-                    <s-text>⚠️ Webhooks not active - enable "Allow access to messages" in Instagram app</s-text>
-                  )}
-                </s-paragraph>
-                <s-paragraph>
-                  {hasMessagesField ? (
-                    <s-text>✅ Messages webhook subscribed</s-text>
-                  ) : (
-                    <s-text>⚠️ Messages webhook not subscribed</s-text>
-                  )}
-                </s-paragraph>
-                <s-paragraph>
-                  {hasCommentsField ? (
-                    <s-text>✅ Comments webhook subscribed</s-text>
-                  ) : (
-                    <s-text>⚠️ Comments webhook not subscribed</s-text>
+                    <s-text>⚠️ Action required - enable "Allow access to messages" in Instagram app (see Step 2 above)</s-text>
                   )}
                 </s-paragraph>
               </s-stack>
