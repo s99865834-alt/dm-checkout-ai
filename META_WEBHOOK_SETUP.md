@@ -2,15 +2,20 @@
 
 ## Finding Webhooks in Meta App Dashboard
 
+**Important:** In Development Mode, webhooks for Instagram may not be fully functional. You may need to:
+1. Configure webhooks programmatically (see below)
+2. Or wait until app is published (requires Business Verification)
+
 The location of webhooks can vary. Try these locations:
 
-### Method 1: Under Instagram Product
+### Method 1: Under USE CASES → Instagram
 1. Go to [Meta App Dashboard](https://developers.facebook.com/apps/)
 2. Select your app
-3. In the left sidebar, look for **"Instagram"** or **"Instagram Graph API"**
-4. Click on it
-5. Look for **"Webhooks"** or **"Subscriptions"** in the submenu
-6. If you see **"Webhooks"**, click it
+3. In the left sidebar, click **"USE CASES"**
+4. Look for **"Instagram"** or **"Instagram Graph API"** in the use cases list
+5. Click on the Instagram use case
+6. Look for **"Webhooks"**, **"Subscriptions"**, or **"Webhook Configuration"** tab/section
+7. This is where Instagram webhooks are typically configured
 
 ### Method 2: Under Messenger Product
 1. In your app dashboard, look for **"Messenger"** in the left sidebar
