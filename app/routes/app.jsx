@@ -30,7 +30,6 @@ export default function App() {
         <s-link href="/app/analytics">Analytics</s-link>
         <s-link href="/app/billing/select">Billing</s-link>
         <s-link href="/app/support">Support</s-link>
-        <s-link href="/app/test-meta">Test Meta (Dev)</s-link>
       </s-app-nav>
       <Outlet context={{ shop, plan }} />
     </AppProvider>
