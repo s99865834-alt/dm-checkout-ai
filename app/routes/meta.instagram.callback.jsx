@@ -52,20 +52,20 @@ export async function loader({ request }) {
       const errorMessage = errorDescription || errorReason || error;
       // Try to get shop from URL params for error redirect
       const errorShop = shopParam || "unknown";
-      return redirect(`/app/instagram?error=${encodeURIComponent(errorMessage)}&shop=${encodeURIComponent(errorShop)}`);
+      return redirect(`/app?error=${encodeURIComponent(errorMessage)}&shop=${encodeURIComponent(errorShop)}`);
     }
 
     if (!code) {
       console.error(`[oauth] Missing authorization code`);
       const errorShop = shopParam || "unknown";
-      return redirect(`/app/instagram?error=${encodeURIComponent("Missing authorization code")}&shop=${encodeURIComponent(errorShop)}`);
+      return redirect(`/app?error=${encodeURIComponent("Missing authorization code")}&shop=${encodeURIComponent(errorShop)}`);
     }
 
     // Get shop from URL parameter (Meta redirects back without Shopify session)
     const targetShop = shopParam;
     if (!targetShop) {
       console.error(`[oauth] Missing shop parameter in callback URL`);
-      return redirect(`/app/instagram?error=${encodeURIComponent("Missing shop parameter. Please try connecting again.")}`);
+      return redirect(`/app?error=${encodeURIComponent("Missing shop parameter. Please try connecting again.")}`);
     }
 
     console.log(`[oauth] Processing callback for shop: ${targetShop}`);
@@ -335,7 +335,7 @@ export async function loader({ request }) {
     
     // Redirect directly to Shopify admin app URL
     // This ensures we're in the Shopify admin context where authentication works
-    const shopifyAdminAppUrl = `https://admin.shopify.com/store/${shopName}/apps/${appClientId}/app/instagram?connected=true`;
+    const shopifyAdminAppUrl = `https://admin.shopify.com/store/${shopName}/apps/${appClientId}/app?connected=true`;
     
     console.log(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
     

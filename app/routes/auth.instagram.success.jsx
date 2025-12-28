@@ -21,7 +21,7 @@ export const loader = async ({ request }) => {
     await authenticate.admin(request);
     // If authenticated, redirect to Instagram page
     console.log(`[oauth] Already authenticated, redirecting to Instagram page`);
-    return redirect(`/app/instagram?connected=true&shop=${encodeURIComponent(shop)}`);
+    return redirect(`/app?connected=true&shop=${encodeURIComponent(shop)}`);
   } catch (error) {
     // Not authenticated - redirect to our auth endpoint
     // This will trigger Shopify OAuth through our app's auth flow
