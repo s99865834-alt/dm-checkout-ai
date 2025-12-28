@@ -18,31 +18,63 @@ export async function saveMetaAuth(
   igToken,
   tokenExpiresAt
 ) {
-  const { data, error } = await supabase
+  console.log(`[meta] Saving Meta auth for shop_id: ${shopId}, page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+  
+  // First, check if a record exists
+  const { data: existing, error: checkError } = await supabase
     .from("meta_auth")
-    .upsert(
-      {
-        shop_id: shopId,
-        page_id: pageId,
-        ig_business_id: igBusinessId,
-        user_token_enc: encryptToken(userToken),
-        page_token_enc: encryptToken(pageToken),
-        ig_token_enc: igToken ? encryptToken(igToken) : null,
-        token_expires_at: tokenExpiresAt,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "shop_id,page_id",
-      }
-    )
-    .select()
-    .single();
+    .select("*")
+    .eq("shop_id", shopId)
+    .eq("page_id", pageId)
+    .maybeSingle();
+
+  if (checkError && checkError.code !== "PGRST116") {
+    console.error("[meta] Error checking existing record:", checkError);
+    throw checkError;
+  }
+
+  const recordData = {
+    shop_id: shopId,
+    page_id: pageId,
+    ig_business_id: igBusinessId,
+    user_token_enc: encryptToken(userToken),
+    page_token_enc: encryptToken(pageToken),
+    ig_token_enc: igToken ? encryptToken(igToken) : null,
+    token_expires_at: tokenExpiresAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  let data, error;
+  
+  if (existing) {
+    // Update existing record
+    console.log(`[meta] Updating existing meta_auth record: ${existing.id}`);
+    const result = await supabase
+      .from("meta_auth")
+      .update(recordData)
+      .eq("id", existing.id)
+      .select()
+      .single();
+    data = result.data;
+    error = result.error;
+  } else {
+    // Insert new record
+    console.log(`[meta] Inserting new meta_auth record`);
+    const result = await supabase
+      .from("meta_auth")
+      .insert(recordData)
+      .select()
+      .single();
+    data = result.data;
+    error = result.error;
+  }
 
   if (error) {
     console.error("[meta] Error saving Meta auth:", error);
     throw error;
   }
 
+  console.log(`[meta] Meta auth saved successfully: ${data?.id}`);
   return data;
 }
 
