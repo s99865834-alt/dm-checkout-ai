@@ -18,6 +18,7 @@ export async function loader({ request }) {
   console.log(`[oauth] Instagram OAuth callback received`);
   console.log(`[oauth] Request URL: ${request.url}`);
   console.log(`[oauth] Request method: ${request.method}`);
+  console.log(`[oauth] Route is being hit - this is good!`);
   
   try {
     const url = new URL(request.url);
@@ -35,6 +36,15 @@ export async function loader({ request }) {
       errorDescription,
       allParams: Object.fromEntries(url.searchParams.entries())
     });
+    
+    // Early return for testing - remove this after verifying route works
+    if (!code && !error) {
+      console.log(`[oauth] No code or error - this might be a test request`);
+      return new Response("Meta OAuth callback endpoint is working. Waiting for OAuth redirect...", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
 
     // Handle OAuth errors from Meta
     if (error) {
