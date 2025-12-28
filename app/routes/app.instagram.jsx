@@ -75,6 +75,7 @@ export const action = async ({ request }) => {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scopes)}&` +
       `response_type=code&` +
+      `auth_type=rerequest&` + // Force re-prompting of permissions
       `state=${encodeURIComponent(shopDomain)}`;
 
     console.log(`[oauth] OAuth URL generated for shop: ${shopDomain}`);
