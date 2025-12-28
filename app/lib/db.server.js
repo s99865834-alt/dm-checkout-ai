@@ -592,3 +592,84 @@ export async function updateSettings(shopId, settings) {
   return data;
 }
 
+/**
+ * Get messages for a shop with optional filters
+ */
+export async function getMessages(shopId, options = {}) {
+  const {
+    channel = null,
+    limit = 50,
+    offset = 0,
+    startDate = null,
+    endDate = null,
+    orderBy = "created_at",
+    orderDirection = "desc",
+  } = options;
+
+  let query = supabase
+    .from("messages")
+    .select("*")
+    .eq("shop_id", shopId);
+
+  // Apply filters
+  if (channel) {
+    query = query.eq("channel", channel);
+  }
+
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  // Apply ordering
+  query = query.order(orderBy, { ascending: orderDirection === "asc" });
+
+  // Apply pagination
+  query = query.range(offset, offset + limit - 1);
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("getMessages error", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get message count for a shop (for pagination)
+ */
+export async function getMessageCount(shopId, options = {}) {
+  const { channel = null, startDate = null, endDate = null } = options;
+
+  let query = supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId);
+
+  if (channel) {
+    query = query.eq("channel", channel);
+  }
+
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+
+  if (endDate) {
+    query = query.lte("created_at", endDate);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    console.error("getMessageCount error", error);
+    throw error;
+  }
+
+  return count || 0;
+}
+
