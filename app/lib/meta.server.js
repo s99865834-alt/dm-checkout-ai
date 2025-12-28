@@ -411,3 +411,45 @@ export async function deleteMetaAuth(shopId) {
   return true;
 }
 
+/**
+ * Fetch Instagram media (posts) for a business account
+ * @param {string} igBusinessId - Instagram Business Account ID
+ * @param {string} shopId - Shop ID for token refresh
+ * @param {Object} options - Options (limit, after cursor, etc.)
+ * @returns {Promise<Object>} - Media data with pagination
+ */
+export async function getInstagramMedia(igBusinessId, shopId, options = {}) {
+  try {
+    const auth = await getMetaAuthWithRefresh(shopId);
+    if (!auth || !auth.page_access_token) {
+      throw new Error("No page access token available");
+    }
+
+    const limit = options.limit || 25;
+    const after = options.after || null;
+
+    const params = {
+      fields: "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count",
+      limit,
+    };
+
+    if (after) {
+      params.after = after;
+    }
+
+    const mediaData = await metaGraphAPI(
+      `/${igBusinessId}/media`,
+      auth.page_access_token,
+      { params }
+    );
+
+    return {
+      data: mediaData.data || [],
+      paging: mediaData.paging || {},
+    };
+  } catch (error) {
+    console.error("[meta] Error fetching Instagram media:", error);
+    throw error;
+  }
+}
+

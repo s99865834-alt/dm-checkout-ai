@@ -673,3 +673,113 @@ export async function getMessageCount(shopId, options = {}) {
   return count || 0;
 }
 
+/**
+ * Get product mapping for an Instagram media ID
+ */
+export async function getProductMapping(shopId, igMediaId) {
+  const { data, error } = await supabase
+    .from("post_product_map")
+    .select("*")
+    .eq("shop_id", shopId)
+    .eq("ig_media_id", igMediaId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("[db] Error fetching product mapping:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Get all product mappings for a shop
+ */
+export async function getProductMappings(shopId) {
+  const { data, error } = await supabase
+    .from("post_product_map")
+    .select("*")
+    .eq("shop_id", shopId);
+
+  if (error) {
+    console.error("[db] Error fetching product mappings:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Save or update product mapping
+ */
+export async function saveProductMapping(shopId, igMediaId, productId, variantId = null) {
+  // Check if mapping exists
+  const { data: existing } = await supabase
+    .from("post_product_map")
+    .select("*")
+    .eq("shop_id", shopId)
+    .eq("ig_media_id", igMediaId)
+    .maybeSingle();
+
+  const mappingData = {
+    shop_id: shopId,
+    ig_media_id: igMediaId,
+    product_id: productId,
+    variant_id: variantId,
+    updated_at: new Date().toISOString(),
+  };
+
+  let data, error;
+
+  if (existing) {
+    // Update existing mapping
+    const { data: updated, error: updateError } = await supabase
+      .from("post_product_map")
+      .update(mappingData)
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    data = updated;
+    error = updateError;
+  } else {
+    // Insert new mapping
+    const { data: inserted, error: insertError } = await supabase
+      .from("post_product_map")
+      .insert({
+        ...mappingData,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    data = inserted;
+    error = insertError;
+  }
+
+  if (error) {
+    console.error("[db] Error saving product mapping:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Delete product mapping
+ */
+export async function deleteProductMapping(shopId, igMediaId) {
+  const { error } = await supabase
+    .from("post_product_map")
+    .delete()
+    .eq("shop_id", shopId)
+    .eq("ig_media_id", igMediaId);
+
+  if (error) {
+    console.error("[db] Error deleting product mapping:", error);
+    throw error;
+  }
+
+  return true;
+}
+
