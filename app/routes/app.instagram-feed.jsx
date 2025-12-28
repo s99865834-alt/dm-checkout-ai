@@ -125,8 +125,38 @@ export default function InstagramFeedPage() {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
 
+  // Check plan access directly from loader data
+  const planHierarchy = { FREE: 0, GROWTH: 1, PRO: 2 };
+  const currentPlanLevel = planHierarchy[plan?.name] || 0;
+  const requiredPlanLevel = planHierarchy["PRO"] || 0;
+  const hasAccess = currentPlanLevel >= requiredPlanLevel;
+
   const isConnected = !!metaAuth;
   const mappingsMap = new Map(productMappings.map((m) => [m.ig_media_id, m]));
+
+  if (!hasAccess) {
+    return (
+      <s-page heading="Instagram Feed & Product Mapping">
+        <s-callout variant="info" title="Instagram Feed requires Pro plan">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text>
+                This feature is available on the <s-text variant="strong">Pro</s-text> plan ($99/month).
+              </s-text>
+            </s-paragraph>
+            <s-paragraph>
+              <s-text variant="subdued">
+                Upgrade to unlock Instagram Feed and other premium features.
+              </s-text>
+            </s-paragraph>
+            <s-button href="/app/billing/select" variant="primary">
+              Upgrade to Pro
+            </s-button>
+          </s-stack>
+        </s-callout>
+      </s-page>
+    );
+  }
 
   const handleSaveMapping = (mediaId) => {
     if (!selectedProduct) {
@@ -164,8 +194,7 @@ export default function InstagramFeedPage() {
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
-    <PlanGate requiredPlan="PRO" feature="instagram_feed">
-      <s-page heading="Instagram Feed & Product Mapping">
+    <s-page heading="Instagram Feed & Product Mapping">
         {shop && plan && (
           <s-section>
             <s-stack direction="inline" gap="base">
@@ -352,7 +381,6 @@ export default function InstagramFeedPage() {
           </s-banner>
         )}
       </s-page>
-    </PlanGate>
   );
 }
 

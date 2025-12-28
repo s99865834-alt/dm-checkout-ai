@@ -66,8 +66,38 @@ export default function SettingsPage() {
   const commentAutomationEnabled = settings?.comment_automation_enabled ?? true;
   const enabledPostIds = settings?.enabled_post_ids || [];
 
+  // Check plan access directly from loader data
+  const planHierarchy = { FREE: 0, GROWTH: 1, PRO: 2 };
+  const currentPlanLevel = planHierarchy[plan?.name] || 0;
+  const requiredPlanLevel = planHierarchy["PRO"] || 0;
+  const hasAccess = currentPlanLevel >= requiredPlanLevel;
+
+  if (!hasAccess) {
+    return (
+      <s-page heading="Publish Mode Settings">
+        <s-callout variant="info" title="Settings requires Pro plan">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text>
+                This feature is available on the <s-text variant="strong">Pro</s-text> plan ($99/month).
+              </s-text>
+            </s-paragraph>
+            <s-paragraph>
+              <s-text variant="subdued">
+                Upgrade to unlock Settings and other premium features.
+              </s-text>
+            </s-paragraph>
+            <s-button href="/app/billing/select" variant="primary">
+              Upgrade to Pro
+            </s-button>
+          </s-stack>
+        </s-callout>
+      </s-page>
+    );
+  }
+
   return (
-    <PlanGate requiredPlan="PRO" feature="settings">
+    <s-page heading="Publish Mode Settings">
       <s-page heading="Publish Mode Settings">
         {shop && plan && (
           <s-section>
@@ -195,7 +225,6 @@ export default function SettingsPage() {
           </s-banner>
         )}
       </s-page>
-    </PlanGate>
   );
 }
 
