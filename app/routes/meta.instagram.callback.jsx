@@ -129,6 +129,19 @@ export async function loader({ request }) {
       throw meError;
     }
     
+    // Check token permissions
+    console.log(`[oauth] Checking token permissions`);
+    try {
+      const tokenInfo = await metaGraphAPI("/debug_token", process.env.META_APP_SECRET || "", {
+        params: {
+          input_token: userAccessToken
+        }
+      });
+      console.log(`[oauth] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
+    } catch (debugError) {
+      console.warn(`[oauth] Could not debug token (this is okay):`, debugError.message);
+    }
+    
     let pagesData;
     try {
       // Try fetching pages - use endpoint without query params, pass fields via options
