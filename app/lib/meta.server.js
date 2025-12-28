@@ -150,13 +150,34 @@ export async function refreshMetaToken(shopId) {
  * Make authenticated request to Meta Graph API
  */
 export async function metaGraphAPI(endpoint, accessToken, options = {}) {
-  const url = `${META_API_BASE}${endpoint}`;
+  // Remove any existing query params from endpoint to avoid double-encoding
+  const [baseEndpoint, existingParams] = endpoint.split('?');
+  const url = `${META_API_BASE}${baseEndpoint}`;
+  
+  // Build params object
   const params = new URLSearchParams({
     access_token: accessToken,
-    ...options.params,
   });
+  
+  // Add existing params from endpoint if any
+  if (existingParams) {
+    const existing = new URLSearchParams(existingParams);
+    for (const [key, value] of existing.entries()) {
+      params.append(key, value);
+    }
+  }
+  
+  // Add options params
+  if (options.params) {
+    for (const [key, value] of Object.entries(options.params)) {
+      params.append(key, value);
+    }
+  }
 
-  const response = await fetch(`${url}?${params}`, {
+  const fullUrl = `${url}?${params.toString()}`;
+  console.log(`[meta] Making API request to: ${fullUrl.replace(accessToken, '***TOKEN***')}`);
+
+  const response = await fetch(fullUrl, {
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
@@ -169,6 +190,7 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
 
   if (data.error) {
     console.error("[meta] Graph API error:", data.error);
+    console.error("[meta] Request URL was:", fullUrl.replace(accessToken, '***TOKEN***'));
     throw new Error(`Meta API error: ${data.error.message} (Code: ${data.error.code})`);
   }
 
