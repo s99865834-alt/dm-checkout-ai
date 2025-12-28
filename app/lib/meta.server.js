@@ -334,39 +334,59 @@ export async function getInstagramAccountInfo(igBusinessId, shopId) {
  * Subscribe Instagram Business account to webhooks
  * This subscribes the Page/IG to receive webhook events
  */
+/**
+ * Subscribe Page to Instagram webhooks programmatically
+ * This subscribes the Page to receive messages and comments webhooks
+ */
 export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
   try {
     // Get fresh auth with token refresh
     const auth = await getMetaAuthWithRefresh(shopId);
     if (!auth || !auth.page_access_token) {
-      throw new Error("No valid Meta auth found for shop");
-    }
-
-    const webhookUrl = process.env.META_WEBHOOK_URL || `${process.env.APP_URL || process.env.SHOPIFY_APP_URL}/webhooks/meta`;
-    const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
-
-    if (!webhookUrl || !verifyToken) {
-      console.warn("[meta] Webhook URL or verify token not configured, skipping subscription");
+      console.error("[meta] No page access token found for webhook subscription");
       return false;
     }
 
-    // Subscribe the Page to webhooks
-    // Note: Meta webhook subscriptions are typically configured in the Meta App Dashboard
-    // But we can also subscribe programmatically using the Graph API
-    console.log(`[meta] Subscribing Page ${pageId} to webhooks`);
+    console.log(`[meta] Subscribing Page ${pageId} to webhooks programmatically`);
     
-    // For Instagram, webhooks are typically configured at the app level in Meta Dashboard
-    // However, we can verify the subscription status
-    // The actual subscription is done in Meta App Dashboard > Webhooks section
+    // Subscribe the Page to webhooks using Graph API
+    // This subscribes to messages and comments for Instagram
+    const subscribeUrl = `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`;
     
-    console.log(`[meta] Webhook subscription should be configured in Meta App Dashboard`);
-    console.log(`[meta] Webhook URL: ${webhookUrl}`);
-    console.log(`[meta] Verify Token: ${verifyToken ? "***" : "not set"}`);
+    const response = await fetch(subscribeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        access_token: auth.page_access_token,
+        subscribed_fields: "messages,comments",
+      }),
+    });
+
+    const result = await response.json();
     
-    // Store webhook subscription status (we'll track this in the meta_auth table if needed)
-    return true;
+    if (result.success || result.data) {
+      console.log(`[meta] ✅ Successfully subscribed Page ${pageId} to webhooks`);
+      console.log(`[meta] Subscription result:`, result);
+      return true;
+    } else {
+      console.warn(`[meta] Webhook subscription API call returned:`, result);
+      // Don't throw - webhooks might already be configured in dashboard or require dashboard setup
+      // Error codes like 200 (already subscribed) or specific permission errors are expected
+      if (result.error) {
+        console.warn(`[meta] Error details:`, result.error);
+        // Error code 200 means already subscribed, which is fine
+        if (result.error.code === 200) {
+          console.log(`[meta] Page is already subscribed to webhooks`);
+          return true;
+        }
+      }
+      return false;
+    }
   } catch (error) {
     console.error("[meta] Error subscribing to webhooks:", error);
+    // Don't throw - webhooks might be configured in dashboard
     return false;
   }
 }
