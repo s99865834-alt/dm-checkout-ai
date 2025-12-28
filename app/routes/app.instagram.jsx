@@ -208,7 +208,7 @@ export default function InstagramPage() {
                 </s-paragraph>
               )}
               <s-button 
-                variant="tertiary" 
+                variant="secondary" 
                 onClick={() => {
                   if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
                     fetcher.submit({ action: "disconnect" }, { method: "post" });
