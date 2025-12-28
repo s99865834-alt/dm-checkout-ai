@@ -20,11 +20,11 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     
-    // If connected, fetch Instagram account info
-    if (metaAuth?.ig_business_id && metaAuth?.page_access_token) {
+    // If connected, fetch Instagram account info (with automatic token refresh)
+    if (metaAuth?.ig_business_id && shop?.id) {
       instagramInfo = await getInstagramAccountInfo(
         metaAuth.ig_business_id,
-        metaAuth.page_access_token
+        shop.id
       );
     }
   }

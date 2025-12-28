@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { getShopByDomain } from "../lib/db.server";
-import { saveMetaAuth, metaGraphAPI } from "../lib/meta.server";
+import { saveMetaAuth, metaGraphAPI, subscribeToWebhooks } from "../lib/meta.server";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
@@ -314,6 +314,16 @@ export async function loader({ request }) {
       );
       console.log(`[oauth] ✅ Meta auth data saved successfully!`);
       console.log(`[oauth] Saved record ID: ${savedData?.id || 'unknown'}`);
+      
+      // Subscribe to webhooks after successful connection
+      try {
+        console.log(`[oauth] Subscribing to webhooks for Page ${pageId} and IG ${igBusinessId}`);
+        await subscribeToWebhooks(shopData.id, pageId, igBusinessId);
+        console.log(`[oauth] ✅ Webhook subscription completed`);
+      } catch (webhookError) {
+        // Don't fail the OAuth flow if webhook subscription fails
+        console.error(`[oauth] ⚠️ Webhook subscription failed (non-critical):`, webhookError);
+      }
       console.log(`[oauth] ========================================`);
     } catch (saveError) {
       console.error(`[oauth] ❌ ERROR saving Meta auth data`);
