@@ -52,18 +52,21 @@ export const action = async ({ request }) => {
     }
     
     // Force production URL - never use local tunnel URL for OAuth redirects
-    const redirectUri = `${finalAppUrl}/auth/instagram/callback?shop=${encodeURIComponent(shopDomain)}`;
+    // Use base URI without query parameters (Meta requires exact match)
+    // Shop domain is passed via 'state' parameter (standard OAuth pattern)
+        const redirectUri = `${finalAppUrl}/meta/instagram/callback`;
     
     // Log for debugging
     console.log(`[oauth] Using finalAppUrl: ${finalAppUrl}`);
-    console.log(`[oauth] Redirect URI: ${redirectUri}`);
+    console.log(`[oauth] Redirect URI (base only): ${redirectUri}`);
+    console.log(`[oauth] Shop domain in state: ${shopDomain}`);
     
     const scopes = [
-      "instagram_business_basic",
+      "instagram_basic",
       "pages_show_list",
       "pages_manage_metadata",
       "instagram_manage_comments",
-      "instagram_business_manage_messages",
+      "instagram_manage_messages",
     ].join(",");
 
     const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?` +
@@ -176,9 +179,17 @@ export default function InstagramPage() {
               <s-paragraph>
                 Connect your Instagram Business account to enable automation features.
               </s-paragraph>
+              <s-banner tone="info">
+                <s-text variant="strong">Why Facebook Page access?</s-text>
+                <s-text>
+                  Meta requires Instagram Business accounts to be linked to a Facebook Page. 
+                  When you connect, you'll be asked to grant access to your Facebook Page - 
+                  this is just a technical requirement. We only use it to access your Instagram Business account.
+                </s-text>
+              </s-banner>
               <s-paragraph>
                 <s-text variant="subdued">
-                  You'll need a Facebook Page with a linked Instagram Business account.
+                  Requirements: You need a Facebook Page with a linked Instagram Business account.
                 </s-text>
               </s-paragraph>
               <s-button 

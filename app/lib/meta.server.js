@@ -25,9 +25,9 @@ export async function saveMetaAuth(
         shop_id: shopId,
         page_id: pageId,
         ig_business_id: igBusinessId,
-        user_access_token: encryptToken(userToken),
-        page_access_token: encryptToken(pageToken),
-        ig_access_token: igToken ? encryptToken(igToken) : null,
+        user_token_enc: encryptToken(userToken),
+        page_token_enc: encryptToken(pageToken),
+        ig_token_enc: igToken ? encryptToken(igToken) : null,
         token_expires_at: tokenExpiresAt,
         updated_at: new Date().toISOString(),
       },
@@ -64,17 +64,23 @@ export async function getMetaAuth(shopId) {
   }
 
   // Decrypt tokens (only if they exist)
-  if (!data.user_access_token || !data.page_access_token) {
-    console.error("[meta] Missing required tokens in meta_auth record");
+  // Note: Column names are user_token_enc, page_token_enc, ig_token_enc
+  if (!data.user_token_enc || !data.page_token_enc) {
+    // This is expected if OAuth hasn't completed yet - don't log as error
+    // Only log if we have a record but it's incomplete (partial save)
+    if (data.id) {
+      console.warn("[meta] Meta auth record exists but is missing required tokens. OAuth may not have completed.");
+    }
     return null;
   }
 
   return {
     ...data,
-    user_access_token: decryptToken(data.user_access_token),
-    page_access_token: decryptToken(data.page_access_token),
-    ig_access_token: data.ig_access_token
-      ? decryptToken(data.ig_access_token)
+    // Map to expected property names for backward compatibility
+    user_access_token: decryptToken(data.user_token_enc),
+    page_access_token: decryptToken(data.page_token_enc),
+    ig_access_token: data.ig_token_enc
+      ? decryptToken(data.ig_token_enc)
       : null,
   };
 }

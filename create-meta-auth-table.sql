@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS meta_auth (
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   page_id TEXT NOT NULL, -- Facebook Page ID
   ig_business_id TEXT NOT NULL, -- Instagram Business Account ID
-  user_access_token TEXT NOT NULL, -- Encrypted user access token
-  page_access_token TEXT NOT NULL, -- Encrypted page access token
-  ig_access_token TEXT, -- Encrypted Instagram access token
+  user_token_enc TEXT NOT NULL, -- Encrypted user access token
+  page_token_enc TEXT NOT NULL, -- Encrypted page access token
+  ig_token_enc TEXT, -- Encrypted Instagram access token (optional)
   token_expires_at TIMESTAMPTZ, -- Token expiration timestamp
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

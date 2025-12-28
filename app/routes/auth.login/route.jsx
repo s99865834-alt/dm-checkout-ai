@@ -5,9 +5,22 @@ import { login } from "../../shopify.server";
 import { loginErrorMessage } from "./error.server";
 
 export const loader = async ({ request }) => {
-  const errors = loginErrorMessage(await login(request));
+  const url = new URL(request.url);
+  const redirectParam = url.searchParams.get("redirect");
+  
+  const loginResult = await login(request);
+  const errors = loginErrorMessage(loginResult);
+  
+  // If login() returned a redirect (OAuth needed), return it
+  // Otherwise return errors for the form
+  if (loginResult && loginResult instanceof Response && loginResult.status >= 300 && loginResult.status < 400) {
+    // This is a redirect response - return it directly
+    // If we have a redirect parameter, we'll need to handle it after OAuth completes
+    // For now, just return the OAuth redirect
+    return loginResult;
+  }
 
-  return { errors };
+  return { errors, redirect: redirectParam };
 };
 
 export const action = async ({ request }) => {
