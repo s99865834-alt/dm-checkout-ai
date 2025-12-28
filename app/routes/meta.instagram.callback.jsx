@@ -340,7 +340,7 @@ export async function loader({ request }) {
     console.log(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
     
     // Return HTML that redirects to Shopify admin app
-    // This breaks out of any iframe and redirects the top window immediately
+    // Use immediate JavaScript redirect - this is the most reliable method
     return new Response(
       `<!DOCTYPE html>
 <html>
@@ -348,40 +348,29 @@ export async function loader({ request }) {
   <title>Redirecting to Shopify...</title>
   <meta http-equiv="refresh" content="0;url=${shopifyAdminAppUrl}">
   <script>
-    // Immediate redirect - try multiple methods
-    (function() {
-      const url = ${JSON.stringify(shopifyAdminAppUrl)};
-      
-      // Method 1: Try to redirect top window (breaks out of iframe)
-      try {
-        if (window.top && window.top !== window.self) {
-          window.top.location.replace(url);
-          return;
-        }
-      } catch (e) {
-        // Cross-origin error, try other methods
-      }
-      
-      // Method 2: Redirect current window
-      try {
-        window.location.replace(url);
-      } catch (e) {
-        // Method 3: Fallback to href
-        window.location.href = url;
-      }
-    })();
+    // Immediate redirect - no delays, no conditions
+    window.location.replace(${JSON.stringify(shopifyAdminAppUrl)});
   </script>
 </head>
 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
   <h1 style="color: #28a745;">✅ Instagram Connected!</h1>
   <p>Redirecting to Shopify...</p>
-  <p><a href="${shopifyAdminAppUrl}">Click here if not redirected</a></p>
+  <p><a href="${shopifyAdminAppUrl}" style="color: #008060; text-decoration: underline;">Click here if not redirected automatically</a></p>
+  <script>
+    // Backup redirect in case first one didn't work
+    setTimeout(function() {
+      window.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
+    }, 100);
+  </script>
 </body>
 </html>`,
       {
         status: 200,
         headers: {
           'Content-Type': 'text/html',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         },
       }
     );
