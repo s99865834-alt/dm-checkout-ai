@@ -3,7 +3,7 @@
  * Handles webhook verification and events from Meta (Instagram/Facebook)
  * 
  * Week 6: Basic webhook verification and event logging
- * Week 8: Will add message/comment processing logic
+ * Week 8: Message/comment processing and storage
  */
 
 // Polyfill crypto for Meta webhook HMAC validation
@@ -15,6 +15,10 @@ if (typeof globalThis.crypto === "undefined") {
 if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
+
+import { logMessage } from "../lib/db.server";
+import { getMetaAuth } from "../lib/meta.server";
+import supabase from "../lib/supabase.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
@@ -66,11 +70,91 @@ export const loader = async ({ request }) => {
 };
 
 /**
+ * Resolve shop from Meta webhook event
+ * Matches page_id or ig_business_id from the event to meta_auth records
+ */
+async function resolveShopFromEvent(pageId, igBusinessId) {
+  try {
+    let query = supabase.from("meta_auth").select("shop_id");
+    
+    if (pageId) {
+      query = query.eq("page_id", pageId);
+    } else if (igBusinessId) {
+      query = query.eq("ig_business_id", igBusinessId);
+    } else {
+      return null;
+    }
+    
+    const { data, error } = await query.maybeSingle();
+    
+    if (error || !data) {
+      console.log(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+      return null;
+    }
+    
+    // Verify shop is active
+    const { data: shop, error: shopError } = await supabase
+      .from("shops")
+      .select("id, active")
+      .eq("id", data.shop_id)
+      .single();
+    
+    if (shopError || !shop || !shop.active) {
+      console.log(`[webhook] Shop ${data.shop_id} not found or inactive`);
+      return null;
+    }
+    
+    return shop.id;
+  } catch (error) {
+    console.error(`[webhook] Error resolving shop:`, error);
+    return null;
+  }
+}
+
+/**
+ * Parse Instagram comment event
+ */
+function parseCommentEvent(comment) {
+  try {
+    return {
+      commentId: comment.id || comment.comment_id,
+      commentText: comment.text || comment.message || null,
+      igUserId: comment.from?.id || comment.from?.username || null,
+      mediaId: comment.media?.id || comment.media_id || null,
+      createdTime: comment.timestamp || comment.created_time || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error(`[webhook] Error parsing comment event:`, error);
+    return null;
+  }
+}
+
+/**
+ * Parse Instagram DM/message event
+ */
+function parseMessageEvent(message) {
+  try {
+    // Instagram messaging events structure
+    const sender = message.sender || message.from;
+    const messageData = message.message || message;
+    
+    return {
+      messageId: messageData.mid || message.id || message.message_id,
+      messageText: messageData.text || messageData.body || null,
+      igUserId: sender?.id || message.from?.id || null,
+      timestamp: messageData.timestamp || message.timestamp || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error(`[webhook] Error parsing message event:`, error);
+    return null;
+  }
+}
+
+/**
  * POST handler for webhook events
  * Meta sends POST requests with actual webhook events
  * 
- * Week 6: Logs events for inspection
- * Week 8: Will process comments and DMs
+ * Week 8: Processes comments and DMs, stores them in messages table
  */
 export const action = async ({ request }) => {
   console.log(`[webhook] Meta webhook event received`);
@@ -115,11 +199,43 @@ export const action = async ({ request }) => {
         for (const entry of body.entry) {
           console.log(`[webhook] Processing entry:`, entry.id);
           
+          // For Instagram webhooks, entry.id is the Instagram Business Account ID
+          // We need to resolve shop using this ID
+          const shopId = await resolveShopFromEvent(null, entry.id);
+          
+          if (!shopId) {
+            console.warn(`[webhook] Could not resolve shop for Instagram Business Account ${entry.id}, skipping`);
+            continue;
+          }
+          
           // Handle messaging events (DMs)
           if (entry.messaging) {
             for (const message of entry.messaging) {
               console.log(`[webhook] Instagram message event:`, message);
-              // TODO Week 8: Process message events (DMs)
+              
+              const parsed = parseMessageEvent(message);
+              if (!parsed || !parsed.messageId) {
+                console.warn(`[webhook] Failed to parse message event, skipping`);
+                continue;
+              }
+              
+              try {
+                await logMessage({
+                  shopId,
+                  channel: "dm",
+                  externalId: parsed.messageId,
+                  fromUserId: parsed.igUserId,
+                  text: parsed.messageText,
+                  aiIntent: null,
+                  aiConfidence: null,
+                  sentiment: null,
+                  lastUserMessageAt: parsed.timestamp,
+                });
+                console.log(`[webhook] ✅ DM logged: ${parsed.messageId}`);
+              } catch (error) {
+                console.error(`[webhook] Error logging DM:`, error);
+                // Continue processing other messages
+              }
             }
           }
           
@@ -127,7 +243,30 @@ export const action = async ({ request }) => {
           if (entry.comments) {
             for (const comment of entry.comments) {
               console.log(`[webhook] Instagram comment event:`, comment);
-              // TODO Week 8: Process comment events
+              
+              const parsed = parseCommentEvent(comment);
+              if (!parsed || !parsed.commentId) {
+                console.warn(`[webhook] Failed to parse comment event, skipping`);
+                continue;
+              }
+              
+              try {
+                await logMessage({
+                  shopId,
+                  channel: "comment",
+                  externalId: parsed.commentId,
+                  fromUserId: parsed.igUserId,
+                  text: parsed.commentText,
+                  aiIntent: null,
+                  aiConfidence: null,
+                  sentiment: null,
+                  lastUserMessageAt: null, // Comments don't use last_user_message_at
+                });
+                console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
+              } catch (error) {
+                console.error(`[webhook] Error logging comment:`, error);
+                // Continue processing other comments
+              }
             }
           }
         }
@@ -139,10 +278,41 @@ export const action = async ({ request }) => {
         for (const entry of body.entry) {
           console.log(`[webhook] Processing page entry:`, entry.id);
           
+          // Resolve shop from page_id
+          const shopId = await resolveShopFromEvent(entry.id, null);
+          
+          if (!shopId) {
+            console.warn(`[webhook] Could not resolve shop for page ${entry.id}, skipping`);
+            continue;
+          }
+          
           if (entry.messaging) {
             for (const message of entry.messaging) {
               console.log(`[webhook] Facebook message event:`, message);
-              // TODO Week 8: Process Facebook message events
+              
+              const parsed = parseMessageEvent(message);
+              if (!parsed || !parsed.messageId) {
+                console.warn(`[webhook] Failed to parse Facebook message event, skipping`);
+                continue;
+              }
+              
+              try {
+                await logMessage({
+                  shopId,
+                  channel: "dm",
+                  externalId: parsed.messageId,
+                  fromUserId: parsed.igUserId,
+                  text: parsed.messageText,
+                  aiIntent: null,
+                  aiConfidence: null,
+                  sentiment: null,
+                  lastUserMessageAt: parsed.timestamp,
+                });
+                console.log(`[webhook] ✅ Facebook DM logged: ${parsed.messageId}`);
+              } catch (error) {
+                console.error(`[webhook] Error logging Facebook DM:`, error);
+                // Continue processing other messages
+              }
             }
           }
         }
