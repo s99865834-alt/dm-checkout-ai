@@ -230,7 +230,7 @@ export default function SetupPage() {
                         <s-text>7. Toggle <s-text variant="strong">ON "Allow access to messages"</s-text> ✅</s-text>
                       </s-paragraph>
                     </s-stack>
-                  </s-box>
+                  </s-stack>
                 </s-box>
 
                 <s-paragraph>
