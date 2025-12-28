@@ -207,28 +207,17 @@ export default function InstagramPage() {
                   </s-text>
                 </s-paragraph>
               )}
-              <s-stack direction="inline" gap="base">
-                <s-button 
-                  variant="secondary" 
-                  onClick={() => {
-                    fetcher.submit({}, { method: "post" });
-                  }}
-                  disabled={fetcher.state !== "idle"}
-                >
-                  {fetcher.state !== "idle" ? "Connecting..." : "Reconnect Instagram"}
-                </s-button>
-                <s-button 
-                  variant="tertiary" 
-                  onClick={() => {
-                    if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
-                      fetcher.submit({ action: "disconnect" }, { method: "post" });
-                    }
-                  }}
-                  disabled={fetcher.state !== "idle"}
-                >
-                  {fetcher.state !== "idle" ? "Disconnecting..." : "Disconnect Instagram"}
-                </s-button>
-              </s-stack>
+              <s-button 
+                variant="tertiary" 
+                onClick={() => {
+                  if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
+                    fetcher.submit({ action: "disconnect" }, { method: "post" });
+                  }
+                }}
+                disabled={fetcher.state !== "idle"}
+              >
+                {fetcher.state !== "idle" ? "Disconnecting..." : "Disconnect Instagram"}
+              </s-button>
             </s-stack>
           ) : (
             <s-stack direction="block" gap="base">
