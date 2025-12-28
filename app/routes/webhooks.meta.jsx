@@ -77,11 +77,14 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
   try {
     let query = supabase.from("meta_auth").select("shop_id");
     
-    if (pageId) {
-      query = query.eq("page_id", pageId);
-    } else if (igBusinessId) {
+    // Prioritize ig_business_id for Instagram events
+    if (igBusinessId) {
       query = query.eq("ig_business_id", igBusinessId);
+    } else if (pageId) {
+      // For Facebook Page events
+      query = query.eq("page_id", pageId);
     } else {
+      console.log(`[webhook] No page_id or ig_business_id provided`);
       return null;
     }
     
@@ -104,6 +107,7 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
       return null;
     }
     
+    console.log(`[webhook] Resolved shop ${shop.id} for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
     return shop.id;
   } catch (error) {
     console.error(`[webhook] Error resolving shop:`, error);
