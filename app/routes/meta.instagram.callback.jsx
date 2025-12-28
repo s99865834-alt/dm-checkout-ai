@@ -102,11 +102,25 @@ export async function loader({ request }) {
 
     // Get user's Facebook Pages
     console.log(`[oauth] Fetching user's Facebook Pages`);
-    const pagesData = await metaGraphAPI("/me/accounts", userAccessToken);
+    console.log(`[oauth] Using access token (first 20 chars): ${userAccessToken?.substring(0, 20)}...`);
     
-    if (!pagesData.data || pagesData.data.length === 0) {
+    let pagesData;
+    try {
+      pagesData = await metaGraphAPI("/me/accounts", userAccessToken);
+      console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
+    } catch (apiError) {
+      console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
+      console.error(`[oauth] Error details:`, {
+        message: apiError.message,
+        stack: apiError.stack
+      });
+      return redirect(`/app/instagram?error=${encodeURIComponent(`Failed to fetch Facebook Pages: ${apiError.message}`)}&shop=${encodeURIComponent(targetShop)}`);
+    }
+    
+    if (!pagesData || !pagesData.data || pagesData.data.length === 0) {
       console.error(`[oauth] No Facebook Pages found`);
-      return redirect(`/app/instagram?error=${encodeURIComponent("No Facebook Pages found. Please create a Page and link it to an Instagram Business account.")}`);
+      console.error(`[oauth] Pages data response:`, JSON.stringify(pagesData, null, 2));
+      return redirect(`/app/instagram?error=${encodeURIComponent("No Facebook Pages found. Please create a Facebook Page and link it to an Instagram Business account in Facebook Page settings.")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
     console.log(`[oauth] Found ${pagesData.data.length} Facebook Page(s)`);
