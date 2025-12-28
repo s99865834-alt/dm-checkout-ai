@@ -102,6 +102,14 @@ export const loader = async ({ request }) => {
 export default function SetupPage() {
   const { shop, plan, metaAuth, webhookStatus, instagramInfo } = useLoaderData();
   const fetcher = useFetcher();
+  const navigate = useNavigate();
+
+  // Refresh page after checking webhooks
+  useEffect(() => {
+    if (fetcher.data?.refresh) {
+      navigate("/app/setup", { replace: true });
+    }
+  }, [fetcher.data, navigate]);
 
   const isConnected = !!metaAuth;
   const webhooksWorking = webhookStatus?.subscribed === true;
@@ -358,9 +366,9 @@ export const action = async ({ request }) => {
   const actionType = formData.get("action");
 
   if (actionType === "check-webhooks") {
-    // Re-check webhook status
-    // The loader will handle this on next page load
-    return { success: true, message: "Webhook status will be refreshed" };
+    // Re-check webhook status by redirecting to refresh the loader
+    // This will trigger the loader to check webhook status again
+    return { success: true, refresh: true };
   }
 
   return { error: "Invalid action" };
