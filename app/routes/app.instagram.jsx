@@ -119,6 +119,7 @@ export default function InstagramPage() {
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const connected = searchParams.get("connected") === "true";
+  const disconnected = searchParams.get("disconnected") === "true";
   const error = searchParams.get("error");
   const isConnected = !!metaAuth;
   const fetcher = useFetcher();
