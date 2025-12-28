@@ -179,50 +179,41 @@ export async function loader({ request }) {
     console.log(`[oauth] Instagram connection successful for shop: ${targetShop}`);
     console.log(`[oauth] ✅ Tokens saved successfully - Page ID: ${pageId}, IG Business ID: ${igBusinessId}`);
     
-    // Redirect to Shopify admin app URL
-    // The format for embedded apps is: https://admin.shopify.com/store/{shop}/apps/{client_id}/{path}
+    // Redirect to Shopify admin app URL to trigger Shopify OAuth
+    // After Meta OAuth, we need to restore the Shopify session
+    // The best way is to redirect to Shopify's auth endpoint with the shop parameter
     const shopName = targetShop.replace('.myshopify.com', '');
     const appClientId = process.env.SHOPIFY_API_KEY || 'e8f65f3073d5d5a24b4654be248a0b56';
     
-    // Try redirecting to the app URL directly - Shopify will handle authentication
-    // Use the app's own URL with shop parameter - this should work better
-    const appUrl = `${finalAppUrl}/app/instagram?connected=true&shop=${encodeURIComponent(targetShop)}`;
+    // Redirect to Shopify auth endpoint which will handle OAuth and then redirect to the app
+    // This ensures we get back into the Shopify admin context
+    const shopifyAuthUrl = `${finalAppUrl}/auth?shop=${encodeURIComponent(targetShop)}&redirect=/app/instagram&connected=true`;
     
-    console.log(`[oauth] Redirecting to app URL: ${appUrl}`);
-    console.log(`[oauth] Note: You may need to manually navigate to the Instagram page in Shopify admin`);
-    console.log(`[oauth] The connection is saved and will be visible when you access the app`);
+    console.log(`[oauth] Redirecting to Shopify auth: ${shopifyAuthUrl}`);
+    console.log(`[oauth] After Shopify OAuth, user will be redirected to Instagram page`);
     
-    // Return HTML that redirects to the app
-    // If this doesn't work, user can manually navigate to the app in Shopify admin
+    // Return HTML that redirects to Shopify auth
+    // This will trigger Shopify OAuth, then redirect to the app
     return new Response(
       `<!DOCTYPE html>
 <html>
 <head>
-  <title>Instagram Connected Successfully!</title>
-  <meta http-equiv="refresh" content="3;url=${appUrl}">
+  <title>Instagram Connected - Authenticating with Shopify...</title>
+  <meta http-equiv="refresh" content="2;url=${shopifyAuthUrl}">
   <script>
     setTimeout(function() {
-      window.location.href = ${JSON.stringify(appUrl)};
-    }, 2000);
+      window.location.href = ${JSON.stringify(shopifyAuthUrl)};
+    }, 1000);
   </script>
 </head>
 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; max-width: 600px; margin: 0 auto;">
   <h1 style="color: #28a745;">✅ Instagram Connected Successfully!</h1>
   <p style="font-size: 18px; margin: 20px 0;">Your Instagram Business account has been connected.</p>
   <p style="color: #666; margin: 30px 0;">
-    <strong>Next steps:</strong><br>
-    1. Go back to your Shopify admin<br>
-    2. Open your app (dm-checkout-ai)<br>
-    3. Navigate to the "Instagram Feed" page<br>
-    4. You'll see your connection status there
-  </p>
-  <p style="margin-top: 30px;">
-    <a href="${appUrl}" style="background: #008060; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-      Go to Instagram Page
-    </a>
+    Authenticating with Shopify...
   </p>
   <p style="color: #999; font-size: 12px; margin-top: 20px;">
-    Redirecting automatically in 3 seconds...
+    Redirecting automatically in 2 seconds...
   </p>
 </body>
 </html>`,
