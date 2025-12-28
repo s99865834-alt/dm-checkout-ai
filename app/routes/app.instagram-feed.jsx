@@ -5,7 +5,6 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramMedia } from "../lib/meta.server";
 import { getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
 import { PlanGate } from "../components/PlanGate";
-import shopify from "../shopify.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
