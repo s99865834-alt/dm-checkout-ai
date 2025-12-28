@@ -166,12 +166,18 @@ export async function loader({ request }) {
     }
 
     // Save Meta auth
-    console.log(`[oauth] Saving Meta authentication data for shop: ${targetShop}`);
-    console.log(`[oauth] Shop ID: ${shopData.id}, Page ID: ${pageId}, IG Business ID: ${igBusinessId}`);
+    console.log(`[oauth] ========================================`);
+    console.log(`[oauth] About to save Meta authentication data`);
+    console.log(`[oauth] Shop: ${targetShop}`);
+    console.log(`[oauth] Shop ID: ${shopData.id}`);
+    console.log(`[oauth] Page ID: ${pageId}`);
+    console.log(`[oauth] IG Business ID: ${igBusinessId}`);
     console.log(`[oauth] Token expires at: ${expiresAt || 'unknown'}`);
+    console.log(`[oauth] User token length: ${finalUserToken?.length || 0}`);
+    console.log(`[oauth] Page token length: ${pageAccessToken?.length || 0}`);
     
     try {
-      await saveMetaAuth(
+      const savedData = await saveMetaAuth(
         shopData.id,
         pageId,
         igBusinessId,
@@ -180,9 +186,15 @@ export async function loader({ request }) {
         pageAccessToken, // Use page token for IG API calls
         expiresAt
       );
-      console.log(`[oauth] Meta auth data saved successfully`);
+      console.log(`[oauth] ✅ Meta auth data saved successfully!`);
+      console.log(`[oauth] Saved record ID: ${savedData?.id || 'unknown'}`);
+      console.log(`[oauth] ========================================`);
     } catch (saveError) {
-      console.error(`[oauth] Error saving Meta auth data:`, saveError);
+      console.error(`[oauth] ❌ ERROR saving Meta auth data`);
+      console.error(`[oauth] Error type: ${saveError?.constructor?.name || 'Unknown'}`);
+      console.error(`[oauth] Error message: ${saveError?.message || 'No message'}`);
+      console.error(`[oauth] Error stack:`, saveError?.stack);
+      console.error(`[oauth] ========================================`);
       throw saveError;
     }
 
