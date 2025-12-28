@@ -33,15 +33,30 @@ export const action = async ({ request }) => {
 
     const shopDomain = session.shop;
     
-    // Use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
+    // ALWAYS use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
     // This must match the redirect URI configured in Meta App Dashboard
-    const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL;
-    if (!APP_URL || !APP_URL.startsWith('https://')) {
-      console.error("[oauth] SHOPIFY_APP_URL or APP_URL must be set to an HTTPS URL");
+    // Even in local dev, we use production URL because Meta only allows whitelisted URIs
+    // Hardcode production URL to prevent tunnel URL from being used
+    const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
+    const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL || PRODUCTION_URL;
+    
+    // Ensure we always use production URL, never tunnel URL
+    const finalAppUrl = APP_URL.includes('railway.app') ? APP_URL : PRODUCTION_URL;
+    
+    if (!finalAppUrl || !finalAppUrl.startsWith('https://')) {
+      console.error("[oauth] Invalid APP_URL configuration");
+      console.error("[oauth] SHOPIFY_APP_URL:", process.env.SHOPIFY_APP_URL);
+      console.error("[oauth] APP_URL:", process.env.APP_URL);
+      console.error("[oauth] Using fallback:", PRODUCTION_URL);
       return { error: "Server configuration error. Please contact support." };
     }
     
-    const redirectUri = `${APP_URL}/auth/instagram/callback?shop=${encodeURIComponent(shopDomain)}`;
+    // Force production URL - never use local tunnel URL for OAuth redirects
+    const redirectUri = `${finalAppUrl}/auth/instagram/callback?shop=${encodeURIComponent(shopDomain)}`;
+    
+    // Log for debugging
+    console.log(`[oauth] Using finalAppUrl: ${finalAppUrl}`);
+    console.log(`[oauth] Redirect URI: ${redirectUri}`);
     
     const scopes = [
       "instagram_business_basic",
@@ -59,6 +74,9 @@ export const action = async ({ request }) => {
       `state=${encodeURIComponent(shopDomain)}`;
 
     console.log(`[oauth] OAuth URL generated for shop: ${shopDomain}`);
+    console.log(`[oauth] APP_URL: ${APP_URL}`);
+    console.log(`[oauth] Redirect URI: ${redirectUri}`);
+    console.log(`[oauth] Full OAuth URL: ${authUrl}`);
     return { oauthUrl: authUrl };
   } catch (error) {
     console.error("[oauth] Error generating OAuth URL:", error);

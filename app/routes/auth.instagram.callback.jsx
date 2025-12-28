@@ -6,7 +6,9 @@ import { saveMetaAuth, metaGraphAPI } from "../lib/meta.server";
 const META_APP_ID = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
-const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL || "https://example.com";
+// Always use production URL for OAuth callback (must match what was sent to Meta)
+const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
+const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL;
 
 /**
  * Instagram OAuth Callback
@@ -47,8 +49,12 @@ export async function loader({ request }) {
     console.log(`[oauth] Exchanging code for access token for shop: ${targetShop}`);
 
     // Build redirect URI using production HTTPS URL (must match what was sent to Meta)
-    // Use the same APP_URL that was used in the OAuth initiation
-    const redirectUri = `${APP_URL}/auth/instagram/callback?shop=${encodeURIComponent(targetShop)}`;
+    // Ensure we use production URL, never tunnel URL
+    const finalAppUrl = APP_URL.includes('railway.app') ? APP_URL : PRODUCTION_URL;
+    const redirectUri = `${finalAppUrl}/auth/instagram/callback?shop=${encodeURIComponent(targetShop)}`;
+    
+    console.log(`[oauth] Using finalAppUrl for callback: ${finalAppUrl}`);
+    console.log(`[oauth] Redirect URI: ${redirectUri}`);
 
     // Exchange code for access token
     const tokenUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` +
