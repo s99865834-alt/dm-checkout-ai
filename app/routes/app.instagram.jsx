@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -40,6 +40,21 @@ export const action = async ({ request }) => {
       return { error: "Authentication failed. Please try again." };
     }
 
+    const formData = await request.formData();
+    const actionType = formData.get("action");
+    
+    // Handle disconnect action
+    if (actionType === "disconnect") {
+      const { shop } = await getShopWithPlan(request);
+      if (!shop?.id) {
+        return { error: "Shop not found" };
+      }
+      
+      await deleteMetaAuth(shop.id);
+      return { success: true, message: "Instagram account disconnected successfully" };
+    }
+    
+    // Handle connect action (existing OAuth flow)
     const shopDomain = session.shop;
     
     // ALWAYS use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
@@ -121,6 +136,9 @@ export default function InstagramPage() {
       }
     } else if (fetcher.data?.error) {
       window.location.href = `/app/instagram?error=${encodeURIComponent(fetcher.data.error)}`;
+    } else if (fetcher.data?.success) {
+      // Reload page after successful disconnect
+      window.location.href = `/app/instagram?disconnected=true`;
     }
   }, [fetcher.data]);
 
@@ -150,6 +168,13 @@ export default function InstagramPage() {
             <s-banner tone="success">
               <s-text variant="strong">Successfully Connected!</s-text>
               <s-text>Your Instagram Business account is now connected.</s-text>
+            </s-banner>
+          )}
+          
+          {disconnected && !error && (
+            <s-banner tone="info">
+              <s-text variant="strong">Disconnected</s-text>
+              <s-text>Your Instagram Business account has been disconnected.</s-text>
             </s-banner>
           )}
 
@@ -187,15 +212,28 @@ export default function InstagramPage() {
                   </s-text>
                 </s-paragraph>
               )}
-              <s-button 
-                variant="secondary" 
-                onClick={() => {
-                  fetcher.submit({}, { method: "post" });
-                }}
-                disabled={fetcher.state !== "idle"}
-              >
-                {fetcher.state !== "idle" ? "Connecting..." : "Reconnect Instagram"}
-              </s-button>
+              <s-stack direction="inline" gap="base">
+                <s-button 
+                  variant="secondary" 
+                  onClick={() => {
+                    fetcher.submit({}, { method: "post" });
+                  }}
+                  disabled={fetcher.state !== "idle"}
+                >
+                  {fetcher.state !== "idle" ? "Connecting..." : "Reconnect Instagram"}
+                </s-button>
+                <s-button 
+                  variant="tertiary" 
+                  onClick={() => {
+                    if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
+                      fetcher.submit({ action: "disconnect" }, { method: "post" });
+                    }
+                  }}
+                  disabled={fetcher.state !== "idle"}
+                >
+                  {fetcher.state !== "idle" ? "Disconnecting..." : "Disconnect Instagram"}
+                </s-button>
+              </s-stack>
             </s-stack>
           ) : (
             <s-stack direction="block" gap="base">

@@ -260,3 +260,23 @@ export async function getInstagramAccountInfo(igBusinessId, pageAccessToken) {
   }
 }
 
+/**
+ * Delete Meta authentication data for a shop (disconnect Instagram)
+ */
+export async function deleteMetaAuth(shopId) {
+  console.log(`[meta] Deleting Meta auth for shop_id: ${shopId}`);
+  
+  const { error } = await supabase
+    .from("meta_auth")
+    .delete()
+    .eq("shop_id", shopId);
+
+  if (error) {
+    console.error("[meta] Error deleting Meta auth:", error);
+    throw error;
+  }
+
+  console.log(`[meta] Meta auth deleted successfully for shop_id: ${shopId}`);
+  return true;
+}
+
