@@ -21,35 +21,45 @@ export const loader = async ({ request }) => {
         const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
         if (authWithRefresh?.page_access_token) {
           // Check if Page is subscribed to webhooks
-          const subscriptionData = await metaGraphAPI(
-            `/${metaAuth.page_id}/subscribed_apps`,
-            authWithRefresh.page_access_token,
-            {
-              params: {
-                fields: "subscribed_fields",
-              },
-            }
-          );
-
-          if (subscriptionData?.data && subscriptionData.data.length > 0) {
-            const appSubscription = subscriptionData.data.find(
-              (sub) => sub.id === process.env.META_APP_ID
+          try {
+            const subscriptionData = await metaGraphAPI(
+              `/${metaAuth.page_id}/subscribed_apps`,
+              authWithRefresh.page_access_token
             );
-            if (appSubscription) {
-              webhookStatus = {
-                subscribed: true,
-                fields: appSubscription.subscribed_fields || [],
-              };
+
+            // Meta API returns data in format: { data: [{ id: "app_id", subscribed_fields: [...] }] }
+            if (subscriptionData?.data && Array.isArray(subscriptionData.data) && subscriptionData.data.length > 0) {
+              const appId = process.env.META_APP_ID;
+              const appSubscription = subscriptionData.data.find(
+                (sub) => sub.id === appId
+              );
+              
+              if (appSubscription) {
+                const fields = appSubscription.subscribed_fields || [];
+                webhookStatus = {
+                  subscribed: true,
+                  fields: fields,
+                  hasMessages: fields.includes("messages"),
+                  hasComments: fields.includes("comments"),
+                };
+              } else {
+                webhookStatus = {
+                  subscribed: false,
+                  message: "App not found in webhook subscriptions. Please enable 'Allow access to messages' in Instagram app.",
+                };
+              }
             } else {
               webhookStatus = {
                 subscribed: false,
-                message: "App not found in subscriptions",
+                message: "No webhook subscriptions found. Please enable 'Allow access to messages' in Instagram app.",
               };
             }
-          } else {
+          } catch (apiError) {
+            console.error("[setup] Error checking webhook subscription:", apiError);
+            // If API call fails, assume webhooks aren't working
             webhookStatus = {
               subscribed: false,
-              message: "No webhook subscriptions found",
+              error: "Could not verify webhook status. Please ensure 'Allow access to messages' is enabled in Instagram app.",
             };
           }
         }
@@ -95,8 +105,8 @@ export default function SetupPage() {
 
   const isConnected = !!metaAuth;
   const webhooksWorking = webhookStatus?.subscribed === true;
-  const hasMessagesField = webhookStatus?.fields?.includes("messages");
-  const hasCommentsField = webhookStatus?.fields?.includes("comments");
+  const hasMessagesField = webhookStatus?.hasMessages === true || webhookStatus?.fields?.includes("messages");
+  const hasCommentsField = webhookStatus?.hasComments === true || webhookStatus?.fields?.includes("comments");
 
   return (
     <s-page heading="Setup Guide">
