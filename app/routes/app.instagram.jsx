@@ -165,14 +165,14 @@ export default function InstagramPage() {
             </s-banner>
           )}
           
-          {connected && !error && (
+          {connected && !error && isConnected && (
             <s-banner tone="success">
               <s-text variant="strong">Successfully Connected!</s-text>
               <s-text>Your Instagram Business account is now connected.</s-text>
             </s-banner>
           )}
           
-          {disconnected && !error && (
+          {disconnected && !error && !isConnected && (
             <s-banner tone="info">
               <s-text variant="strong">Disconnected</s-text>
               <s-text>Your Instagram Business account has been disconnected.</s-text>
