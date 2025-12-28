@@ -89,8 +89,14 @@ export async function loader({ request }) {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `code=${code}`;
 
+    console.log(`[oauth] Token exchange URL: ${tokenUrl.replace(META_APP_SECRET, '***SECRET***')}`);
     const tokenResponse = await fetch(tokenUrl);
     const tokenData = await tokenResponse.json();
+    
+    console.log(`[oauth] Token exchange response:`, JSON.stringify({
+      ...tokenData,
+      access_token: tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : null
+    }, null, 2));
 
     if (tokenData.error) {
       console.error(`[oauth] Token exchange error:`, tokenData.error);
@@ -98,21 +104,37 @@ export async function loader({ request }) {
     }
 
     const userAccessToken = tokenData.access_token;
+    if (!userAccessToken) {
+      console.error(`[oauth] No access token in response:`, tokenData);
+      throw new Error("No access token received from Meta");
+    }
+    
     console.log(`[oauth] Access token obtained, expires in: ${tokenData.expires_in || 'unknown'} seconds`);
+    console.log(`[oauth] Token type: ${tokenData.token_type || 'unknown'}`);
+    console.log(`[oauth] Full access token: ${userAccessToken.substring(0, 50)}...`);
 
     // Get user's Facebook Pages
     console.log(`[oauth] Fetching user's Facebook Pages`);
     console.log(`[oauth] Using access token (first 20 chars): ${userAccessToken?.substring(0, 20)}...`);
     
+    // First, verify the token works by calling /me
+    console.log(`[oauth] Verifying token by calling /me endpoint`);
+    let meData;
+    try {
+      meData = await metaGraphAPI("/me", userAccessToken);
+      console.log(`[oauth] /me API response:`, JSON.stringify(meData, null, 2));
+    } catch (meError) {
+      console.error(`[oauth] /me API call failed:`, meError);
+      console.error(`[oauth] This suggests the access token is invalid`);
+      throw meError;
+    }
+    
     let pagesData;
     try {
       // Try fetching pages with fields to get more info
+      console.log(`[oauth] Now fetching pages with /me/accounts`);
       pagesData = await metaGraphAPI("/me/accounts?fields=id,name,access_token,instagram_business_account", userAccessToken);
       console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
-      
-      // Also try /me to see what we have access to
-      const meData = await metaGraphAPI("/me", userAccessToken);
-      console.log(`[oauth] /me API response:`, JSON.stringify(meData, null, 2));
     } catch (apiError) {
       console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
       console.error(`[oauth] Error details:`, {
