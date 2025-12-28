@@ -64,6 +64,7 @@ export const action = async ({ request }) => {
     const scopes = [
       "instagram_basic",
       "pages_show_list",
+      "pages_read_engagement", // Required to read page data
       "pages_manage_metadata",
       "instagram_manage_comments",
       "instagram_manage_messages",

@@ -106,8 +106,13 @@ export async function loader({ request }) {
     
     let pagesData;
     try {
-      pagesData = await metaGraphAPI("/me/accounts", userAccessToken);
+      // Try fetching pages with fields to get more info
+      pagesData = await metaGraphAPI("/me/accounts?fields=id,name,access_token,instagram_business_account", userAccessToken);
       console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
+      
+      // Also try /me to see what we have access to
+      const meData = await metaGraphAPI("/me", userAccessToken);
+      console.log(`[oauth] /me API response:`, JSON.stringify(meData, null, 2));
     } catch (apiError) {
       console.error(`[oauth] Error fetching Facebook Pages:`, apiError);
       console.error(`[oauth] Error details:`, {
@@ -120,7 +125,11 @@ export async function loader({ request }) {
     if (!pagesData || !pagesData.data || pagesData.data.length === 0) {
       console.error(`[oauth] No Facebook Pages found`);
       console.error(`[oauth] Pages data response:`, JSON.stringify(pagesData, null, 2));
-      return redirect(`/app/instagram?error=${encodeURIComponent("No Facebook Pages found. Please create a Facebook Page and link it to an Instagram Business account in Facebook Page settings.")}&shop=${encodeURIComponent(targetShop)}`);
+      console.error(`[oauth] This might mean:`);
+      console.error(`[oauth] 1. The user hasn't granted the app access to their Pages`);
+      console.error(`[oauth] 2. The user needs to select the Page during OAuth`);
+      console.error(`[oauth] 3. The access token doesn't have the right permissions`);
+      return redirect(`/app/instagram?error=${encodeURIComponent("No Facebook Pages found. Please make sure you grant the app access to your Facebook Page during the OAuth flow, and that your Instagram account is linked to the Page.")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
     console.log(`[oauth] Found ${pagesData.data.length} Facebook Page(s)`);
