@@ -137,17 +137,32 @@ export async function loader({ request }) {
       throw meError;
     }
     
-    // Check token permissions
+    // Check token permissions - use app access token for debug_token
     console.log(`[oauth] Checking token permissions`);
     try {
-      const tokenInfo = await metaGraphAPI("/debug_token", process.env.META_APP_SECRET || "", {
+      // debug_token requires app access token (app_id|app_secret) as the access_token parameter
+      const appAccessToken = `${META_APP_ID}|${META_APP_SECRET}`;
+      const tokenInfo = await metaGraphAPI("/debug_token", appAccessToken, {
         params: {
           input_token: userAccessToken
         }
       });
       console.log(`[oauth] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
     } catch (debugError) {
-      console.warn(`[oauth] Could not debug token (this is okay):`, debugError.message);
+      console.warn(`[oauth] Could not debug token:`, debugError.message);
+    }
+    
+    // Check what permissions the token actually has
+    console.log(`[oauth] Checking granted permissions`);
+    try {
+      const permissions = await metaGraphAPI("/me/permissions", userAccessToken);
+      console.log(`[oauth] User permissions:`, JSON.stringify(permissions, null, 2));
+      
+      // Check specifically for pages permissions
+      const pagesPerms = permissions?.data?.filter(p => p.permission?.includes('pages') || p.permission?.includes('page'));
+      console.log(`[oauth] Pages-related permissions:`, JSON.stringify(pagesPerms, null, 2));
+    } catch (permError) {
+      console.warn(`[oauth] Could not fetch permissions:`, permError.message);
     }
     
     let pagesData;
