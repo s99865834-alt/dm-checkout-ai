@@ -229,3 +229,34 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
   return data;
 }
 
+/**
+ * Get Instagram account information (username, media count, etc.)
+ */
+export async function getInstagramAccountInfo(igBusinessId, pageAccessToken) {
+  if (!igBusinessId || !pageAccessToken) {
+    return null;
+  }
+
+  try {
+    // Get Instagram account info
+    const accountInfo = await metaGraphAPI(
+      `/${igBusinessId}`,
+      pageAccessToken,
+      {
+        params: {
+          fields: "username,media_count,profile_picture_url",
+        },
+      }
+    );
+
+    return {
+      username: accountInfo.username || null,
+      mediaCount: accountInfo.media_count || 0,
+      profilePictureUrl: accountInfo.profile_picture_url || null,
+    };
+  } catch (error) {
+    console.error("[meta] Error fetching Instagram account info:", error);
+    return null;
+  }
+}
+

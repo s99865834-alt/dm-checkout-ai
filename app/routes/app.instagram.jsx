@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo } from "../lib/meta.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -15,11 +15,20 @@ export const loader = async ({ request }) => {
   
   // Check if Instagram is connected
   let metaAuth = null;
+  let instagramInfo = null;
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
+    
+    // If connected, fetch Instagram account info
+    if (metaAuth?.ig_business_id && metaAuth?.page_access_token) {
+      instagramInfo = await getInstagramAccountInfo(
+        metaAuth.ig_business_id,
+        metaAuth.page_access_token
+      );
+    }
   }
   
-  return { shop, plan, metaAuth };
+  return { shop, plan, metaAuth, instagramInfo };
 };
 
 export const action = async ({ request }) => {
@@ -91,7 +100,7 @@ export const action = async ({ request }) => {
 
 export default function InstagramPage() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo } = loaderData || {};
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const connected = searchParams.get("connected") === "true";
@@ -149,6 +158,18 @@ export default function InstagramPage() {
               <s-paragraph>
                 <s-text variant="strong">Status: Connected</s-text>
               </s-paragraph>
+              {instagramInfo?.username && (
+                <s-paragraph>
+                  <s-text variant="strong">Instagram Username: </s-text>
+                  <s-text>@{instagramInfo.username}</s-text>
+                </s-paragraph>
+              )}
+              {instagramInfo?.mediaCount !== undefined && (
+                <s-paragraph>
+                  <s-text variant="strong">Number of Posts: </s-text>
+                  <s-text>{instagramInfo.mediaCount}</s-text>
+                </s-paragraph>
+              )}
               <s-paragraph>
                 <s-text variant="subdued">
                   Instagram Business Account ID: {metaAuth.ig_business_id}

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useFetcher, useOutletContext, useNavigate, useSearchParams, useLoaderData } from "react-router";
+import { useFetcher, useOutletContext } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -11,22 +11,7 @@ export const loader = async ({ request }) => {
   const { shop } = await getShopWithPlan(request);
   await authenticate.admin(request);
   
-  // Check if Instagram was just connected (redirect from Meta OAuth)
-  let justConnected = false;
-  if (shop?.id) {
-    const metaAuth = await getMetaAuth(shop.id);
-    // If metaAuth exists and was created/updated recently (within last 5 minutes), consider it just connected
-    if (metaAuth?.updated_at) {
-      const updatedAt = new Date(metaAuth.updated_at);
-      const now = new Date();
-      const minutesAgo = (now - updatedAt) / (1000 * 60);
-      if (minutesAgo < 5) {
-        justConnected = true;
-      }
-    }
-  }
-  
-  return { justConnected };
+  return {};
 };
 
 export const action = async ({ request }) => {
@@ -99,15 +84,6 @@ export default function Index() {
   const shopify = useAppBridge();
   const { shop, plan } = useOutletContext() || {};
   const { hasAccess } = usePlanAccess();
-  const navigate = useNavigate();
-  const loaderData = useLoaderData();
-  
-  // Redirect to Instagram page if just connected
-  useEffect(() => {
-    if (loaderData?.justConnected) {
-      navigate("/app/instagram?connected=true");
-    }
-  }, [loaderData?.justConnected, navigate]);
   
   const isLoading =
     ["loading", "submitting"].includes(fetcher.state) &&
