@@ -6,6 +6,11 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
 
   if (url.searchParams.get("shop")) {
+    // If Instagram connection was just completed, redirect to Instagram page
+    if (url.searchParams.get("instagram_connected")) {
+      const shop = url.searchParams.get("shop");
+      throw redirect(`/app/instagram?connected=true&shop=${encodeURIComponent(shop || "")}`);
+    }
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 

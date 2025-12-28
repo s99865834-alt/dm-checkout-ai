@@ -185,12 +185,13 @@ export async function loader({ request }) {
     const shopName = targetShop.replace('.myshopify.com', '');
     const appClientId = process.env.SHOPIFY_API_KEY || 'e8f65f3073d5d5a24b4654be248a0b56';
     
-    // Redirect to Shopify auth endpoint which will handle OAuth and then redirect to the app
-    // This ensures we get back into the Shopify admin context
-    const shopifyAuthUrl = `${finalAppUrl}/auth?shop=${encodeURIComponent(targetShop)}&redirect=/app/instagram&connected=true`;
+    // Redirect to root with shop parameter - this will trigger Shopify OAuth
+    // The _index route will handle the redirect to /app after OAuth
+    // We'll pass connected=true so the app knows to show success message
+    const shopifyAuthUrl = `${finalAppUrl}/?shop=${encodeURIComponent(targetShop)}&instagram_connected=true`;
     
-    console.log(`[oauth] Redirecting to Shopify auth: ${shopifyAuthUrl}`);
-    console.log(`[oauth] After Shopify OAuth, user will be redirected to Instagram page`);
+    console.log(`[oauth] Redirecting to root with shop parameter: ${shopifyAuthUrl}`);
+    console.log(`[oauth] This will trigger Shopify OAuth, then redirect to app`);
     
     // Return HTML that redirects to Shopify auth
     // This will trigger Shopify OAuth, then redirect to the app
