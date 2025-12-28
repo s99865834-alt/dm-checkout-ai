@@ -69,19 +69,34 @@ export const action = async ({ request }) => {
   try {
     if (actionType === "refresh-token") {
       // Manually trigger token refresh
+      console.log("[test] Starting manual token refresh...");
+      const beforeAuth = await getMetaAuth(shop.id);
       const refreshed = await refreshMetaToken(shop.id);
+      const afterAuth = await getMetaAuth(shop.id);
+      
+      const wasRefreshed = beforeAuth?.user_access_token !== afterAuth?.user_access_token;
+      
       return { 
         success: true, 
-        message: "Token refreshed successfully",
+        message: wasRefreshed 
+          ? "✅ Token refreshed successfully! New token obtained."
+          : "ℹ️ Token refresh checked - token was still valid (no refresh needed)",
         expiresAt: refreshed.token_expires_at,
+        action: "refresh-token",
+        wasRefreshed,
       };
     } else if (actionType === "test-api") {
       // Test API call with automatic refresh
+      console.log("[test] Starting API call test...");
       const metaAuth = await getMetaAuth(shop.id);
       if (!metaAuth?.ig_business_id) {
-        return { error: "No Instagram Business ID found. Please connect Instagram first." };
+        return { 
+          error: "No Instagram Business ID found. Please connect Instagram first.",
+          action: "test-api",
+        };
       }
       
+      console.log(`[test] Making API call to /${metaAuth.ig_business_id}...`);
       const accountInfo = await metaGraphAPIWithRefresh(
         shop.id,
         `/${metaAuth.ig_business_id}`,
@@ -93,31 +108,44 @@ export const action = async ({ request }) => {
         }
       );
       
+      console.log("[test] API call successful:", accountInfo);
+      
       return { 
         success: true, 
-        message: "API call successful",
+        message: "✅ API call successful! Instagram account info retrieved.",
         data: accountInfo,
+        action: "test-api",
       };
     } else if (actionType === "subscribe-webhooks") {
       // Test webhook subscription
+      console.log("[test] Starting webhook subscription test...");
       const metaAuth = await getMetaAuth(shop.id);
       if (!metaAuth?.page_id || !metaAuth?.ig_business_id) {
-        return { error: "No Page ID or IG Business ID found. Please connect Instagram first." };
+        return { 
+          error: "No Page ID or IG Business ID found. Please connect Instagram first.",
+          action: "subscribe-webhooks",
+        };
       }
       
+      console.log(`[test] Subscribing Page ${metaAuth.page_id} to webhooks...`);
       const result = await subscribeToWebhooks(shop.id, metaAuth.page_id, metaAuth.ig_business_id);
+      
       return { 
         success: result, 
         message: result 
-          ? "Webhook subscription initiated" 
-          : "Webhook subscription failed (check logs)",
+          ? "✅ Webhook subscription initiated successfully! Check Meta App Dashboard to verify."
+          : "⚠️ Webhook subscription returned false. Check server logs for details.",
+        action: "subscribe-webhooks",
       };
     }
     
-    return { error: "Invalid action" };
+    return { error: "Invalid action", action: actionType };
   } catch (error) {
     console.error("[test] Error:", error);
-    return { error: error.message || "Unknown error" };
+    return { 
+      error: error.message || "Unknown error",
+      details: error.stack,
+    };
   }
 };
 
@@ -136,31 +164,62 @@ export default function MetaTest() {
         </s-callout>
       </s-section>
 
-      {fetcher.data?.error && (
+      {fetcher.data && (
         <s-section>
-          <s-callout variant="critical" title="Error">
-            <s-paragraph>
-              <s-text>{fetcher.data.error}</s-text>
-            </s-paragraph>
-          </s-callout>
+          {fetcher.data.error ? (
+            <s-callout variant="critical" title="❌ Test Failed">
+              <s-stack direction="block" gap="base">
+                <s-paragraph>
+                  <s-text variant="strong">Error:</s-text> {fetcher.data.error}
+                </s-paragraph>
+                {fetcher.data.details && (
+                  <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                    <s-text variant="subdued" style={{ fontSize: "12px", fontFamily: "monospace" }}>
+                      {fetcher.data.details}
+                    </s-text>
+                  </s-box>
+                )}
+              </s-stack>
+            </s-callout>
+          ) : fetcher.data.success ? (
+            <s-callout variant="success" title="✅ Test Passed">
+              <s-stack direction="block" gap="base">
+                <s-paragraph>
+                  <s-text variant="strong">{fetcher.data.message}</s-text>
+                </s-paragraph>
+                {fetcher.data.expiresAt && (
+                  <s-paragraph>
+                    <s-text variant="strong">New Token Expires:</s-text> {new Date(fetcher.data.expiresAt).toLocaleString()}
+                  </s-paragraph>
+                )}
+                {fetcher.data.data && (
+                  <>
+                    <s-paragraph>
+                      <s-text variant="strong">API Response Data:</s-text>
+                    </s-paragraph>
+                    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                      <pre style={{ margin: 0, fontSize: "12px", overflow: "auto", whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(fetcher.data.data, null, 2)}
+                      </pre>
+                    </s-box>
+                  </>
+                )}
+                {fetcher.data.action && (
+                  <s-paragraph tone="subdued" style={{ fontSize: "12px" }}>
+                    Action: {fetcher.data.action}
+                  </s-paragraph>
+                )}
+              </s-stack>
+            </s-callout>
+          ) : null}
         </s-section>
       )}
 
-      {fetcher.data?.success && (
+      {fetcher.state === "submitting" && (
         <s-section>
-          <s-callout variant="success" title="Success">
+          <s-callout variant="info" title="⏳ Running Test...">
             <s-paragraph>
-              <s-text>{fetcher.data.message}</s-text>
-              {fetcher.data.expiresAt && (
-                <s-text> Token expires: {new Date(fetcher.data.expiresAt).toLocaleString()}</s-text>
-              )}
-              {fetcher.data.data && (
-                <s-box padding="base" margin="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <pre style={{ margin: 0, fontSize: "12px", overflow: "auto" }}>
-                    {JSON.stringify(fetcher.data.data, null, 2)}
-                  </pre>
-                </s-box>
-              )}
+              Please wait while the test is running...
             </s-paragraph>
           </s-callout>
         </s-section>
@@ -256,38 +315,71 @@ export default function MetaTest() {
 
           <s-section heading="Test Actions">
             <s-stack direction="block" gap="base">
-              <fetcher.Form method="post">
-                <input type="hidden" name="action" value="refresh-token" />
-                <s-button 
-                  type="submit" 
-                  variant="secondary"
-                  loading={fetcher.state === "submitting"}
-                >
-                  Manually Refresh Token
-                </s-button>
-              </fetcher.Form>
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="tight">
+                  <s-paragraph>
+                    <s-text variant="strong">1. Manually Refresh Token</s-text>
+                  </s-paragraph>
+                  <s-paragraph tone="subdued" style={{ fontSize: "12px" }}>
+                    Forces a token refresh even if token is still valid. You should see a success message with the new expiration date.
+                  </s-paragraph>
+                  <fetcher.Form method="post">
+                    <input type="hidden" name="action" value="refresh-token" />
+                    <s-button 
+                      type="submit" 
+                      variant="secondary"
+                      loading={fetcher.state === "submitting"}
+                      disabled={fetcher.state === "submitting"}
+                    >
+                      {fetcher.state === "submitting" ? "Refreshing..." : "Manually Refresh Token"}
+                    </s-button>
+                  </fetcher.Form>
+                </s-stack>
+              </s-box>
 
-              <fetcher.Form method="post">
-                <input type="hidden" name="action" value="test-api" />
-                <s-button 
-                  type="submit" 
-                  variant="secondary"
-                  loading={fetcher.state === "submitting"}
-                >
-                  Test API Call (with auto-refresh)
-                </s-button>
-              </fetcher.Form>
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="tight">
+                  <s-paragraph>
+                    <s-text variant="strong">2. Test API Call (with auto-refresh)</s-text>
+                  </s-paragraph>
+                  <s-paragraph tone="subdued" style={{ fontSize: "12px" }}>
+                    Tests making an API call to Meta Graph API. Automatically refreshes token if needed. You should see Instagram account info (username, media count) in the results.
+                  </s-paragraph>
+                  <fetcher.Form method="post">
+                    <input type="hidden" name="action" value="test-api" />
+                    <s-button 
+                      type="submit" 
+                      variant="secondary"
+                      loading={fetcher.state === "submitting"}
+                      disabled={fetcher.state === "submitting"}
+                    >
+                      {fetcher.state === "submitting" ? "Testing API..." : "Test API Call (with auto-refresh)"}
+                    </s-button>
+                  </fetcher.Form>
+                </s-stack>
+              </s-box>
 
-              <fetcher.Form method="post">
-                <input type="hidden" name="action" value="subscribe-webhooks" />
-                <s-button 
-                  type="submit" 
-                  variant="secondary"
-                  loading={fetcher.state === "submitting"}
-                >
-                  Test Webhook Subscription
-                </s-button>
-              </fetcher.Form>
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="tight">
+                  <s-paragraph>
+                    <s-text variant="strong">3. Test Webhook Subscription</s-text>
+                  </s-paragraph>
+                  <s-paragraph tone="subdued" style={{ fontSize: "12px" }}>
+                    Tests webhook subscription functionality. Note: Webhooks are primarily configured in Meta App Dashboard. This verifies the subscription function works.
+                  </s-paragraph>
+                  <fetcher.Form method="post">
+                    <input type="hidden" name="action" value="subscribe-webhooks" />
+                    <s-button 
+                      type="submit" 
+                      variant="secondary"
+                      loading={fetcher.state === "submitting"}
+                      disabled={fetcher.state === "submitting"}
+                    >
+                      {fetcher.state === "submitting" ? "Subscribing..." : "Test Webhook Subscription"}
+                    </s-button>
+                  </fetcher.Form>
+                </s-stack>
+              </s-box>
             </s-stack>
           </s-section>
         </>
