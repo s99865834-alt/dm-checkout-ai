@@ -1,4 +1,4 @@
-import { useOutletContext, useRouteError, useSearchParams, useLoaderData, useFetcher } from "react-router";
+import { useOutletContext, useRouteError, useSearchParams, useLoaderData, useFetcher, useNavigate } from "react-router";
 import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -118,6 +118,7 @@ export default function InstagramPage() {
   const { shop, plan, metaAuth, instagramInfo } = loaderData || {};
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const connected = searchParams.get("connected") === "true";
   const disconnected = searchParams.get("disconnected") === "true";
   const error = searchParams.get("error");
@@ -136,12 +137,12 @@ export default function InstagramPage() {
         window.location.href = fetcher.data.oauthUrl;
       }
     } else if (fetcher.data?.error) {
-      window.location.href = `/app/instagram?error=${encodeURIComponent(fetcher.data.error)}`;
+      navigate(`/app/instagram?error=${encodeURIComponent(fetcher.data.error)}`);
     } else if (fetcher.data?.success) {
-      // Reload page after successful disconnect
-      window.location.href = `/app/instagram?disconnected=true`;
+      // Reload page after successful disconnect - use navigate to stay in embedded app context
+      navigate(`/app/instagram?disconnected=true`);
     }
-  }, [fetcher.data]);
+  }, [fetcher.data, navigate]);
 
   return (
     <s-page heading="Instagram Feed">
