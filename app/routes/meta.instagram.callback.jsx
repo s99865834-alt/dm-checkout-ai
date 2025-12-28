@@ -333,33 +333,44 @@ export async function loader({ request }) {
     const shopName = targetShop.replace('.myshopify.com', '');
     const appClientId = process.env.SHOPIFY_API_KEY || 'e8f65f3073d5d5a24b4654be248a0b56';
     
-    // Redirect to root with shop parameter - this will trigger Shopify OAuth
-    // The _index route will handle the redirect to /app after OAuth
-    // We'll pass connected=true so the app knows to show success message
-    const shopifyAuthUrl = `${finalAppUrl}/?shop=${encodeURIComponent(targetShop)}&instagram_connected=true`;
+    // Redirect directly to Shopify admin app URL
+    // This ensures we're in the Shopify admin context where authentication works
+    const shopifyAdminAppUrl = `https://admin.shopify.com/store/${shopName}/apps/${appClientId}/app/instagram?connected=true`;
     
-    console.log(`[oauth] Redirecting to root with shop parameter: ${shopifyAuthUrl}`);
-    console.log(`[oauth] This will trigger Shopify OAuth, then redirect to app`);
+    console.log(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
     
-    // Return HTML that redirects to Shopify auth
-    // This will trigger Shopify OAuth, then redirect to the app
+    // Return HTML that redirects to Shopify admin app
+    // This breaks out of any iframe and redirects the top window
     return new Response(
       `<!DOCTYPE html>
 <html>
 <head>
-  <title>Instagram Connected - Authenticating with Shopify...</title>
-  <meta http-equiv="refresh" content="2;url=${shopifyAuthUrl}">
+  <title>Instagram Connected Successfully!</title>
+  <meta http-equiv="refresh" content="2;url=${shopifyAdminAppUrl}">
   <script>
-    setTimeout(function() {
-      window.location.href = ${JSON.stringify(shopifyAuthUrl)};
-    }, 1000);
+    // Break out of iframe and redirect to Shopify admin
+    try {
+      if (window.top !== window.self) {
+        window.top.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
+      } else {
+        window.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
+      }
+    } catch (e) {
+      // Fallback if window.top is blocked
+      window.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
+    }
   </script>
 </head>
 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; max-width: 600px; margin: 0 auto;">
   <h1 style="color: #28a745;">✅ Instagram Connected Successfully!</h1>
   <p style="font-size: 18px; margin: 20px 0;">Your Instagram Business account has been connected.</p>
   <p style="color: #666; margin: 30px 0;">
-    Authenticating with Shopify...
+    Redirecting you back to your Shopify app...
+  </p>
+  <p style="margin-top: 30px;">
+    <a href="${shopifyAdminAppUrl}" style="background: #008060; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+      Go to Instagram Page
+    </a>
   </p>
   <p style="color: #999; font-size: 12px; margin-top: 20px;">
     Redirecting automatically in 2 seconds...
