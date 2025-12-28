@@ -16,7 +16,8 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage } from "../lib/db.server";
+import { logMessage, updateMessageAI } from "../lib/db.server";
+import { classifyMessage } from "../lib/ai.server";
 import supabase from "../lib/supabase.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
@@ -277,6 +278,25 @@ export const action = async ({ request }) => {
                 });
                 console.log(`[webhook] ✅ DM logged successfully: ${parsed.messageId}`);
                 console.log(`[webhook] Logged message ID: ${result?.id}`);
+                
+                // Classify message asynchronously (don't block webhook response)
+                if (result?.id && parsed.messageText) {
+                  classifyMessage(parsed.messageText, { shopId })
+                    .then((classification) => {
+                      if (classification.intent !== null && !classification.error) {
+                        return updateMessageAI(
+                          result.id,
+                          classification.intent,
+                          classification.confidence,
+                          classification.sentiment
+                        );
+                      }
+                    })
+                    .catch((error) => {
+                      console.error(`[webhook] Error classifying message:`, error);
+                      // Don't throw - classification failure shouldn't break webhook
+                    });
+                }
               } catch (error) {
                 console.error(`[webhook] Error logging DM:`, error);
                 console.error(`[webhook] Error stack:`, error.stack);
@@ -300,7 +320,7 @@ export const action = async ({ request }) => {
               }
               
               try {
-                await logMessage({
+                const result = await logMessage({
                   shopId,
                   channel: "comment",
                   externalId: parsed.commentId,
@@ -312,6 +332,25 @@ export const action = async ({ request }) => {
                   lastUserMessageAt: null, // Comments don't use last_user_message_at
                 });
                 console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
+                
+                // Classify message asynchronously (don't block webhook response)
+                if (result?.id && parsed.commentText) {
+                  classifyMessage(parsed.commentText, { shopId })
+                    .then((classification) => {
+                      if (classification.intent !== null && !classification.error) {
+                        return updateMessageAI(
+                          result.id,
+                          classification.intent,
+                          classification.confidence,
+                          classification.sentiment
+                        );
+                      }
+                    })
+                    .catch((error) => {
+                      console.error(`[webhook] Error classifying comment:`, error);
+                      // Don't throw - classification failure shouldn't break webhook
+                    });
+                }
               } catch (error) {
                 console.error(`[webhook] Error logging comment:`, error);
                 // Continue processing other comments
