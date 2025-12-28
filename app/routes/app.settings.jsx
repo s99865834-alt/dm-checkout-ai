@@ -98,8 +98,7 @@ export default function SettingsPage() {
 
   return (
     <s-page heading="Publish Mode Settings">
-      <s-page heading="Publish Mode Settings">
-        {shop && plan && (
+      {shop && plan && (
           <s-section>
             <s-stack direction="inline" gap="base">
               <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
