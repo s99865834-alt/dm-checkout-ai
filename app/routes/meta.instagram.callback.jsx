@@ -340,41 +340,42 @@ export async function loader({ request }) {
     console.log(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
     
     // Return HTML that redirects to Shopify admin app
-    // This breaks out of any iframe and redirects the top window
+    // This breaks out of any iframe and redirects the top window immediately
     return new Response(
       `<!DOCTYPE html>
 <html>
 <head>
-  <title>Instagram Connected Successfully!</title>
-  <meta http-equiv="refresh" content="2;url=${shopifyAdminAppUrl}">
+  <title>Redirecting to Shopify...</title>
+  <meta http-equiv="refresh" content="0;url=${shopifyAdminAppUrl}">
   <script>
-    // Break out of iframe and redirect to Shopify admin
-    try {
-      if (window.top !== window.self) {
-        window.top.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
-      } else {
-        window.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
+    // Immediate redirect - try multiple methods
+    (function() {
+      const url = ${JSON.stringify(shopifyAdminAppUrl)};
+      
+      // Method 1: Try to redirect top window (breaks out of iframe)
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.replace(url);
+          return;
+        }
+      } catch (e) {
+        // Cross-origin error, try other methods
       }
-    } catch (e) {
-      // Fallback if window.top is blocked
-      window.location.href = ${JSON.stringify(shopifyAdminAppUrl)};
-    }
+      
+      // Method 2: Redirect current window
+      try {
+        window.location.replace(url);
+      } catch (e) {
+        // Method 3: Fallback to href
+        window.location.href = url;
+      }
+    })();
   </script>
 </head>
-<body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; max-width: 600px; margin: 0 auto;">
-  <h1 style="color: #28a745;">✅ Instagram Connected Successfully!</h1>
-  <p style="font-size: 18px; margin: 20px 0;">Your Instagram Business account has been connected.</p>
-  <p style="color: #666; margin: 30px 0;">
-    Redirecting you back to your Shopify app...
-  </p>
-  <p style="margin-top: 30px;">
-    <a href="${shopifyAdminAppUrl}" style="background: #008060; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-      Go to Instagram Page
-    </a>
-  </p>
-  <p style="color: #999; font-size: 12px; margin-top: 20px;">
-    Redirecting automatically in 2 seconds...
-  </p>
+<body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+  <h1 style="color: #28a745;">✅ Instagram Connected!</h1>
+  <p>Redirecting to Shopify...</p>
+  <p><a href="${shopifyAdminAppUrl}">Click here if not redirected</a></p>
 </body>
 </html>`,
       {
