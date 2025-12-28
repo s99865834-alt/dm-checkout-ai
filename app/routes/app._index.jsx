@@ -4,7 +4,6 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth } from "../lib/meta.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 export const loader = async ({ request }) => {
