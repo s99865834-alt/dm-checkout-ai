@@ -11,3 +11,4 @@ SELECT id, shopify_domain, plan, monthly_cap, priority_support, active
 FROM shops
 WHERE shopify_domain = 'dmteststore-2.myshopify.com';
 
+

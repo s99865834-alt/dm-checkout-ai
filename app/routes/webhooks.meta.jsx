@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import supabase from "../lib/supabase.server";
 
@@ -250,9 +250,27 @@ export const action = async ({ request }) => {
           
           console.log(`[webhook] Resolved shop_id: ${shopId}`);
           
+          // Get shop settings to check publish mode
+          let settings = null;
+          try {
+            settings = await getSettings(shopId);
+            console.log(`[webhook] Shop settings:`, {
+              dm_automation_enabled: settings?.dm_automation_enabled,
+              comment_automation_enabled: settings?.comment_automation_enabled,
+              enabled_post_ids_count: settings?.enabled_post_ids?.length || 0,
+            });
+          } catch (error) {
+            console.error(`[webhook] Error fetching settings:`, error);
+            // Continue processing - default to enabled if settings can't be fetched
+          }
+          
           // Handle messaging events (DMs)
           // Instagram messaging can be in entry.messaging array
           if (entry.messaging && Array.isArray(entry.messaging)) {
+            // Check if DM automation is enabled
+            if (settings?.dm_automation_enabled === false) {
+              console.log(`[webhook] DM automation is disabled for shop ${shopId}, skipping DM processing`);
+            } else {
             console.log(`[webhook] Found ${entry.messaging.length} messaging event(s)`);
             for (const message of entry.messaging) {
               console.log(`[webhook] Instagram message event:`, JSON.stringify(message, null, 2));
@@ -303,23 +321,40 @@ export const action = async ({ request }) => {
                 // Continue processing other messages
               }
             }
+            }
           } else {
             console.log(`[webhook] No messaging events found in entry`);
             console.log(`[webhook] Entry structure:`, JSON.stringify(entry, null, 2));
           }
           
-          // Handle comment events
-          if (entry.comments) {
-            for (const comment of entry.comments) {
-              console.log(`[webhook] Instagram comment event:`, comment);
-              
-              const parsed = parseCommentEvent(comment);
-              if (!parsed || !parsed.commentId) {
-                console.warn(`[webhook] Failed to parse comment event, skipping`);
-                continue;
-              }
-              
-              try {
+          // Handle comment events (from entry.changes)
+          if (entry.changes) {
+            for (const change of entry.changes) {
+              if (change.field === "comments" && change.value) {
+                // Check if comment automation is enabled
+                if (settings?.comment_automation_enabled === false) {
+                  console.log(`[webhook] Comment automation is disabled for shop ${shopId}, skipping comment processing`);
+                  continue;
+                }
+                
+                const comment = change.value;
+                console.log(`[webhook] Instagram comment event:`, comment);
+                
+                const parsed = parseCommentEvent(comment);
+                if (!parsed || !parsed.commentId) {
+                  console.warn(`[webhook] Failed to parse comment event, skipping`);
+                  continue;
+                }
+                
+                // Check if post filtering is enabled and if this post is in the allowed list
+                if (settings?.enabled_post_ids && Array.isArray(settings.enabled_post_ids) && settings.enabled_post_ids.length > 0) {
+                  if (!parsed.mediaId || !settings.enabled_post_ids.includes(parsed.mediaId)) {
+                    console.log(`[webhook] Comment on media ${parsed.mediaId} not in enabled_post_ids list, skipping`);
+                    continue;
+                  }
+                }
+                
+                try {
                 const result = await logMessage({
                   shopId,
                   channel: "comment",
@@ -351,9 +386,10 @@ export const action = async ({ request }) => {
                       // Don't throw - classification failure shouldn't break webhook
                     });
                 }
-              } catch (error) {
-                console.error(`[webhook] Error logging comment:`, error);
-                // Continue processing other comments
+                } catch (error) {
+                  console.error(`[webhook] Error logging comment:`, error);
+                  // Continue processing other comments
+                }
               }
             }
           }
