@@ -156,7 +156,7 @@ export const action = async ({ request }) => {
 };
 
 export default function InstagramFeedPage() {
-  const { shop, plan, metaAuth, mediaData, productMappings, shopifyProducts } = useLoaderData();
+  const { shop, plan, metaAuth, mediaData, productMappings, shopifyProducts, settings } = useLoaderData();
   const fetcher = useFetcher();
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -170,6 +170,25 @@ export default function InstagramFeedPage() {
 
   const isConnected = !!metaAuth;
   const mappingsMap = new Map(productMappings.map((m) => [m.ig_media_id, m]));
+  const enabledPostIds = settings?.enabled_post_ids || [];
+  
+  // Helper to check if a post has automation enabled
+  // If enabledPostIds is empty, all posts are enabled by default
+  const isPostAutomationEnabled = (postId) => {
+    if (enabledPostIds.length === 0) {
+      return true; // All posts enabled by default
+    }
+    return enabledPostIds.includes(postId);
+  };
+
+  const handleTogglePostAutomation = (postId, currentlyEnabled) => {
+    const formData = new FormData();
+    formData.append("action", "toggle-post-automation");
+    formData.append("postId", postId);
+    formData.append("togglePost", currentlyEnabled ? "disable" : "enable");
+
+    fetcher.submit(formData, { method: "post" });
+  };
 
   if (!hasAccess) {
     return (
