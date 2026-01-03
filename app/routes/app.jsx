@@ -29,7 +29,6 @@ export default function App() {
         <s-link href="/app">Home</s-link>
         <s-link href="/app/setup">Setup</s-link>
         <s-link href="/app/instagram-feed">Instagram Feed</s-link>
-        <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/analytics">Analytics</s-link>
         <s-link href="/app/billing/select">Billing</s-link>
         <s-link href="/app/support">Support</s-link>

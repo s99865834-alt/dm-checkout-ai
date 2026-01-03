@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher, useOutletContext, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
+import { getSettings, updateSettings } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -17,8 +18,10 @@ export const loader = async ({ request }) => {
   // Check if Instagram is connected
   let metaAuth = null;
   let instagramInfo = null;
+  let settings = null;
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
+    settings = await getSettings(shop.id);
     
     // If connected, fetch Instagram account info (with automatic token refresh)
     if (metaAuth?.ig_business_id && shop?.id) {
@@ -29,7 +32,7 @@ export const loader = async ({ request }) => {
     }
   }
   
-  return { shop, plan, metaAuth, instagramInfo };
+  return { shop, plan, metaAuth, instagramInfo, settings };
 };
 
 export const action = async ({ request }) => {
@@ -53,6 +56,30 @@ export const action = async ({ request }) => {
       
       await deleteMetaAuth(shop.id);
       return { success: true, message: "Instagram account disconnected successfully" };
+    }
+    
+    // Handle automation settings update
+    if (actionType === "update-automation-settings") {
+      const { shop } = await getShopWithPlan(request);
+      if (!shop?.id) {
+        return { error: "Shop not found" };
+      }
+
+      const dmAutomationEnabled = formData.get("dm_automation_enabled") === "true";
+      const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
+
+      try {
+        await updateSettings(shop.id, {
+          dm_automation_enabled: dmAutomationEnabled,
+          comment_automation_enabled: commentAutomationEnabled,
+          // Note: enabled_post_ids is now managed on the Instagram Feed page
+        });
+
+        return { success: true, message: "Settings updated successfully" };
+      } catch (error) {
+        console.error("[home] Error updating settings:", error);
+        return { error: error.message || "Failed to update settings" };
+      }
     }
     
     // Handle connect action (existing OAuth flow)
@@ -98,13 +125,24 @@ export default function Index() {
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const disconnected = searchParams.get("disconnected") === "true";
   const error = searchParams.get("error");
   const isConnected = !!metaAuth;
+
+  const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
+  const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
+
+  // Update local state when settings change (e.g., on initial load or after page refresh)
+  useEffect(() => {
+    if (settings) {
+      setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
+      setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
+    }
+  }, [settings]);
 
   // Handle OAuth URL redirect - break out of iframe for external OAuth
   useEffect(() => {
@@ -114,9 +152,14 @@ export default function Index() {
       } catch (e) {
         window.location.href = fetcher.data.oauthUrl;
       }
-    } else if (fetcher.data?.error) {
-      navigate(`/app?error=${encodeURIComponent(fetcher.data.error)}`);
-    } else if (fetcher.data?.success) {
+    } else if (fetcher.data?.error && !fetcher.data?.oauthUrl) {
+      // Only navigate on OAuth/connection errors, not on automation settings errors
+      // Automation settings errors will just show the banner
+      if (fetcher.data.error.includes("Instagram") || fetcher.data.error.includes("connection") || fetcher.data.error.includes("OAuth")) {
+        navigate(`/app?error=${encodeURIComponent(fetcher.data.error)}`);
+      }
+    } else if (fetcher.data?.success && fetcher.data?.message?.includes("disconnected")) {
+      // Only navigate on disconnect success, not on automation settings success
       navigate(`/app?disconnected=true`);
     }
   }, [fetcher.data, navigate]);
@@ -231,6 +274,81 @@ export default function Index() {
           )}
         </s-stack>
       </s-section>
+
+      {/* Automation Controls Section */}
+      <PlanGate requiredPlan="PRO" feature="Automation Controls">
+        <s-section heading="Automation Controls">
+          <s-paragraph>
+            Control which types of messages are automatically processed and responded to.
+          </s-paragraph>
+
+          <fetcher.Form method="post">
+            <input type="hidden" name="action" value="update-automation-settings" />
+            <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
+            <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+            <s-stack direction="block" gap="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base">
+                <s-stack direction="block" gap="base">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong">DM Automation</s-text>
+                      <s-text variant="subdued">
+                        Automatically process and respond to Instagram Direct Messages
+                      </s-text>
+                    </s-stack>
+                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={dmAutomationEnabled}
+                        onChange={(e) => setDmAutomationEnabled(e.target.checked)}
+                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
+                      />
+                    </label>
+                  </s-stack>
+                </s-stack>
+              </s-box>
+
+              <s-box padding="base" borderWidth="base" borderRadius="base">
+                <s-stack direction="block" gap="base">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong">Comment Automation</s-text>
+                      <s-text variant="subdued">
+                        Automatically process and respond to Instagram comments
+                      </s-text>
+                    </s-stack>
+                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={commentAutomationEnabled}
+                        onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
+                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
+                      />
+                    </label>
+                  </s-stack>
+                </s-stack>
+              </s-box>
+
+              <s-button type="submit" variant="primary" disabled={fetcher.state !== "idle"}>
+                {fetcher.state === "submitting" ? "Saving..." : "Save Settings"}
+              </s-button>
+            </s-stack>
+          </fetcher.Form>
+        </s-section>
+      </PlanGate>
+
+      {/* Success/Error Messages */}
+      {fetcher.data?.success && (
+        <s-banner tone="success">
+          <s-text>{fetcher.data.message}</s-text>
+        </s-banner>
+      )}
+
+      {fetcher.data?.error && (
+        <s-banner tone="critical">
+          <s-text>{fetcher.data.error}</s-text>
+        </s-banner>
+      )}
     </s-page>
   );
 }
