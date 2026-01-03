@@ -27,28 +27,12 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const dmAutomationEnabled = formData.get("dm_automation_enabled") === "true";
   const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
-  const enabledPostIds = formData.get("enabled_post_ids") || "";
-
-  // Parse enabled_post_ids (comma-separated string or JSON array)
-  let enabledPostIdsArray = [];
-  if (enabledPostIds) {
-    try {
-      // Try parsing as JSON first
-      enabledPostIdsArray = JSON.parse(enabledPostIds);
-    } catch {
-      // If not JSON, treat as comma-separated string
-      enabledPostIdsArray = enabledPostIds
-        .split(",")
-        .map((id) => id.trim())
-        .filter((id) => id.length > 0);
-    }
-  }
 
   try {
     await updateSettings(shop.id, {
       dm_automation_enabled: dmAutomationEnabled,
       comment_automation_enabled: commentAutomationEnabled,
-      enabled_post_ids: enabledPostIdsArray,
+      // Note: enabled_post_ids is now managed on the Instagram Feed page
     });
 
     return { success: true, message: "Settings updated successfully" };
