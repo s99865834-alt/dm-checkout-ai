@@ -5,7 +5,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -14,14 +14,16 @@ const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
   await authenticate.admin(request);
-  
+
   // Check if Instagram is connected
   let metaAuth = null;
   let instagramInfo = null;
   let settings = null;
+  let brandVoice = null;
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     settings = await getSettings(shop.id);
+    brandVoice = await getBrandVoice(shop.id);
     
     // If connected, fetch Instagram account info (with automatic token refresh)
     if (metaAuth?.ig_business_id && shop?.id) {
@@ -32,7 +34,7 @@ export const loader = async ({ request }) => {
     }
   }
   
-  return { shop, plan, metaAuth, instagramInfo, settings };
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice };
 };
 
 export const action = async ({ request }) => {
@@ -47,6 +49,8 @@ export const action = async ({ request }) => {
     const formData = await request.formData();
     const actionType = formData.get("action");
     
+    console.log("[home] Action called with actionType:", actionType);
+    
     // Handle disconnect action
     if (actionType === "disconnect") {
       const { shop } = await getShopWithPlan(request);
@@ -60,24 +64,52 @@ export const action = async ({ request }) => {
     
     // Handle automation settings update
     if (actionType === "update-automation-settings") {
-      const { shop } = await getShopWithPlan(request);
+      console.log("[home] Processing update-automation-settings action");
+      const { shop, plan } = await getShopWithPlan(request);
       if (!shop?.id) {
+        console.error("[home] Shop not found");
         return { error: "Shop not found" };
       }
 
       const dmAutomationEnabled = formData.get("dm_automation_enabled") === "true";
       const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
+      const followupEnabled = formData.get("followup_enabled") === "true";
+      const brandVoiceTone = formData.get("brand_voice_tone") || null;
+      const brandVoiceCustom = formData.get("brand_voice_custom") || "";
+
+      console.log("[home] Form data:", {
+        dmAutomationEnabled,
+        commentAutomationEnabled,
+        brandVoiceTone,
+        brandVoiceCustom,
+      });
 
       try {
+        // Update settings
+        console.log("[home] Updating settings...");
         await updateSettings(shop.id, {
           dm_automation_enabled: dmAutomationEnabled,
           comment_automation_enabled: commentAutomationEnabled,
+          followup_enabled: followupEnabled,
           // Note: enabled_post_ids is now managed on the Instagram Feed page
         });
+        console.log("[home] Settings updated successfully");
 
+        // Update brand voice in brand_voice table
+        const brandVoice = {
+          tone: brandVoiceTone || "friendly", // Default to friendly if not set
+          custom_instruction: brandVoiceCustom && brandVoiceCustom.trim() ? brandVoiceCustom.trim() : null,
+        };
+
+        console.log("[home] Updating brand voice...", brandVoice);
+        await updateBrandVoice(shop.id, brandVoice);
+        console.log("[home] Brand voice updated successfully");
+
+        console.log("[home] Settings and brand voice updated successfully");
         return { success: true, message: "Settings updated successfully" };
       } catch (error) {
         console.error("[home] Error updating settings:", error);
+        console.error("[home] Error stack:", error.stack);
         return { error: error.message || "Failed to update settings" };
       }
     }
@@ -125,24 +157,53 @@ export default function Index() {
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const disconnected = searchParams.get("disconnected") === "true";
   const error = searchParams.get("error");
   const isConnected = !!metaAuth;
+  
+  // Use separate fetchers for different actions to avoid conflicts
+  const automationFetcher = useFetcher();
+  const instagramFetcher = useFetcher();
 
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
+  const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
+  const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
+  const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
 
   // Update local state when settings change (e.g., on initial load or after page refresh)
   useEffect(() => {
-    if (settings) {
-      setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
-      setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
+      if (settings) {
+        setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
+        setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
+        setFollowupEnabled(settings.followup_enabled ?? false);
+      }
+    if (brandVoice) {
+      setBrandVoiceTone(brandVoice.tone || "friendly");
+      setBrandVoiceCustom(brandVoice.custom_instruction || "");
     }
-  }, [settings]);
+  }, [settings, brandVoice]);
+
+  // Update state after successful submission (don't reload page)
+  useEffect(() => {
+    if (automationFetcher.data?.success) {
+      // State will be updated from loader data on next render
+      // No need to reload - the success message will show
+      console.log("Settings saved successfully");
+    }
+  }, [automationFetcher.data]);
+
+  // Debug: Log fetcher state and data
+  useEffect(() => {
+    console.log("Automation fetcher state:", automationFetcher.state);
+    if (automationFetcher.data) {
+      console.log("Automation fetcher data:", automationFetcher.data);
+    }
+  }, [automationFetcher.state, automationFetcher.data]);
 
   // Handle OAuth URL redirect - break out of iframe for external OAuth
   useEffect(() => {
@@ -173,9 +234,47 @@ export default function Index() {
               {plan.name} Plan
             </s-badge>
             {plan.name === "FREE" && shop.usage_count !== undefined && (
-              <s-text variant="subdued">
-                Usage: {shop.usage_count}/{plan.cap} messages this month
-              </s-text>
+              <s-stack direction="block" gap="tight" style={{ flex: 1 }}>
+                <s-stack direction="inline" gap="base" alignment="center">
+                  <s-text variant="subdued">
+                    Usage: {shop.usage_count}/{plan.cap} messages this month
+                  </s-text>
+                  {shop.usage_count >= plan.cap * 0.8 && (
+                    <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                      {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
+                    </s-badge>
+                  )}
+                </s-stack>
+                {shop.usage_count >= plan.cap * 0.8 && (
+                  <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                        {shop.usage_count >= plan.cap 
+                          ? "You've reached your monthly message limit!" 
+                          : "You're approaching your monthly message limit"}
+                      </s-text>
+                      <s-button href="/app/billing/select" variant="primary">
+                        Upgrade Plan
+      </s-button>
+                    </s-stack>
+                  </s-box>
+                )}
+                {/* Progress bar */}
+                <div style={{ 
+                  width: "100%", 
+                  height: "8px", 
+                  backgroundColor: "#e1e3e5", 
+                  borderRadius: "4px",
+                  overflow: "hidden"
+                }}>
+                  <div style={{
+                    width: `${Math.min((shop.usage_count / plan.cap) * 100, 100)}%`,
+                    height: "100%",
+                    backgroundColor: shop.usage_count >= plan.cap ? "#d72c0d" : shop.usage_count >= plan.cap * 0.8 ? "#f59e0b" : "#008060",
+                    transition: "width 0.3s ease"
+                  }} />
+                </div>
+              </s-stack>
             )}
           </s-stack>
         </s-section>
@@ -219,29 +318,29 @@ export default function Index() {
                   Instagram Business Account ID: {metaAuth.ig_business_id}
                 </s-text>
               </s-paragraph>
-              <s-paragraph>
+        <s-paragraph>
                 <s-text variant="subdued">
                   Facebook Page ID: {metaAuth.page_id}
                 </s-text>
-              </s-paragraph>
+        </s-paragraph>
               {metaAuth.token_expires_at && (
-                <s-paragraph>
+        <s-paragraph>
                   <s-text variant="subdued">
                     Token expires: {new Date(metaAuth.token_expires_at).toLocaleDateString()}
                   </s-text>
-                </s-paragraph>
+        </s-paragraph>
               )}
-              <s-button 
+          <s-button
                 variant="secondary" 
                 onClick={() => {
                   if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
-                    fetcher.submit({ action: "disconnect" }, { method: "post" });
+                    instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
                   }
                 }}
-                disabled={fetcher.state !== "idle"}
+                disabled={instagramFetcher.state === "submitting"}
               >
-                {fetcher.state !== "idle" ? "Disconnecting..." : "Disconnect Instagram"}
-              </s-button>
+                {instagramFetcher.state === "submitting" ? "Disconnecting..." : "Disconnect Instagram"}
+          </s-button>
             </s-stack>
           ) : (
             <s-stack direction="block" gap="base">
@@ -261,15 +360,15 @@ export default function Index() {
                   Requirements: You need a Facebook Page with a linked Instagram Business account.
                 </s-text>
               </s-paragraph>
-              <s-button 
+            <s-button
                 variant="primary"
                 onClick={() => {
-                  fetcher.submit({}, { method: "post" });
+                  instagramFetcher.submit({}, { method: "post" });
                 }}
-                disabled={fetcher.state !== "idle"}
+                disabled={instagramFetcher.state === "submitting"}
               >
-                {fetcher.state !== "idle" ? "Connecting..." : "Connect Instagram Business Account"}
-              </s-button>
+                {instagramFetcher.state === "submitting" ? "Connecting..." : "Connect Instagram Business Account"}
+            </s-button>
             </s-stack>
           )}
         </s-stack>
@@ -282,10 +381,13 @@ export default function Index() {
             Control which types of messages are automatically processed and responded to.
           </s-paragraph>
 
-          <fetcher.Form method="post">
+          <automationFetcher.Form method="post">
             <input type="hidden" name="action" value="update-automation-settings" />
             <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
             <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+            <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+            <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
+            <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
             <s-stack direction="block" gap="base">
               <s-box padding="base" borderWidth="base" borderRadius="base">
                 <s-stack direction="block" gap="base">
@@ -329,24 +431,97 @@ export default function Index() {
                 </s-stack>
               </s-box>
 
-              <s-button type="submit" variant="primary" disabled={fetcher.state !== "idle"}>
-                {fetcher.state === "submitting" ? "Saving..." : "Save Settings"}
+              <s-box padding="base" borderWidth="base" borderRadius="base">
+                <s-stack direction="block" gap="base">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong">Follow-Up Automation</s-text>
+                      <s-text variant="subdued">
+                        Automatically send follow-up messages 23-24 hours after the last message if no click was recorded
+                      </s-text>
+                    </s-stack>
+                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={followupEnabled}
+                        onChange={(e) => setFollowupEnabled(e.target.checked)}
+                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
+                      />
+                    </label>
+                  </s-stack>
+                </s-stack>
+              </s-box>
+
+              {/* Brand Voice (Growth/Pro) */}
+              <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
+                <s-box padding="base" borderWidth="base" borderRadius="base">
+                  <s-stack direction="block" gap="base">
+                    <s-text variant="strong">Brand Voice</s-text>
+                    <s-text variant="subdued">
+                      Customize the tone and style of automated messages
+                    </s-text>
+                    
+                    <s-stack direction="block" gap="tight">
+                      <label>
+                        <s-text variant="subdued" style={{ fontSize: "12px" }}>Tone</s-text>
+                        <select
+                          name="brand_voice_tone"
+                          value={brandVoiceTone}
+                          onChange={(e) => setBrandVoiceTone(e.target.value)}
+                          style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5", width: "100%", marginTop: "4px" }}
+                        >
+                          <option value="friendly">Friendly</option>
+                          <option value="expert">Expert</option>
+                          <option value="casual">Casual</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <s-text variant="subdued" style={{ fontSize: "12px" }}>Custom Instruction (Optional)</s-text>
+                        <textarea
+                          name="brand_voice_custom"
+                          value={brandVoiceCustom}
+                          onChange={(e) => setBrandVoiceCustom(e.target.value)}
+                          placeholder="Tell the AI how to sound (e.g., 'Always be enthusiastic and use emojis')"
+                          rows={3}
+                          style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5", width: "100%", marginTop: "4px", fontFamily: "inherit" }}
+                        />
+                      </label>
+                    </s-stack>
+                  </s-stack>
+                </s-box>
+              </PlanGate>
+
+              <s-button type="submit" variant="primary">
+                {automationFetcher.state === "submitting" ? "Saving..." : "Save Settings"}
               </s-button>
             </s-stack>
-          </fetcher.Form>
-        </s-section>
+          </automationFetcher.Form>
+          </s-section>
       </PlanGate>
 
       {/* Success/Error Messages */}
-      {fetcher.data?.success && (
+      {automationFetcher.data?.success && (
         <s-banner tone="success">
-          <s-text>{fetcher.data.message}</s-text>
+          <s-text>{automationFetcher.data.message}</s-text>
         </s-banner>
       )}
 
-      {fetcher.data?.error && (
+      {automationFetcher.data?.error && (
         <s-banner tone="critical">
-          <s-text>{fetcher.data.error}</s-text>
+          <s-text>{automationFetcher.data.error}</s-text>
+        </s-banner>
+      )}
+      
+      {instagramFetcher.data?.success && (
+        <s-banner tone="success">
+          <s-text>{instagramFetcher.data.message}</s-text>
+        </s-banner>
+      )}
+
+      {instagramFetcher.data?.error && (
+        <s-banner tone="critical">
+          <s-text>{instagramFetcher.data.error}</s-text>
         </s-banner>
       )}
     </s-page>

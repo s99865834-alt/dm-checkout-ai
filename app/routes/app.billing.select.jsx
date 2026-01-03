@@ -97,7 +97,6 @@ export default function BillingSelect() {
         "50,000 messages/month",
         "All Growth features",
         "Follow-up automation",
-        "Remarketing tools",
         "Priority support",
       ],
     },
@@ -287,14 +286,6 @@ export default function BillingSelect() {
               <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
                 <td style={{ padding: "12px" }}>
                   <s-text variant="strong">Follow-ups</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">Remarketing</s-text>
                 </td>
                 <td style={{ textAlign: "center", padding: "12px" }}>—</td>
                 <td style={{ textAlign: "center", padding: "12px" }}>—</td>

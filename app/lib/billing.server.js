@@ -14,7 +14,7 @@ const PLAN_PRICING = {
   PRO: {
     amount: "99.00",
     name: "Pro Plan",
-    description: "50,000 messages/month, All Growth features, Follow-ups, Remarketing, Priority support",
+    description: "50,000 messages/month, All Growth features, Follow-ups, Priority support",
   },
 };
 

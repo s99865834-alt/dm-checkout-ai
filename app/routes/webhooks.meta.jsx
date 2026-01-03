@@ -16,8 +16,10 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
+import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
+import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
@@ -270,6 +272,9 @@ export const action = async ({ request }) => {
             // Check if DM automation is enabled
             if (settings?.dm_automation_enabled === false) {
               console.log(`[webhook] DM automation is disabled for shop ${shopId}, skipping DM processing`);
+            } else if (settings?.channel_preference === "comment") {
+              // Pro plan: check channel preference
+              console.log(`[webhook] Channel preference is "comment only", skipping DM processing`);
             } else {
             console.log(`[webhook] Found ${entry.messaging.length} messaging event(s)`);
             for (const message of entry.messaging) {
@@ -297,17 +302,62 @@ export const action = async ({ request }) => {
                 console.log(`[webhook] ✅ DM logged successfully: ${parsed.messageId}`);
                 console.log(`[webhook] Logged message ID: ${result?.id}`);
                 
-                // Classify message asynchronously (don't block webhook response)
+                // Classify message and process automation asynchronously (don't block webhook response)
                 if (result?.id && parsed.messageText) {
                   classifyMessage(parsed.messageText, { shopId })
-                    .then((classification) => {
+                    .then(async (classification) => {
                       if (classification.intent !== null && !classification.error) {
-                        return updateMessageAI(
+                        // Update message with AI classification
+                        await updateMessageAI(
                           result.id,
                           classification.intent,
                           classification.confidence,
                           classification.sentiment
                         );
+
+                        // Fetch updated message with AI data for automation
+                        const { data: updatedMessage } = await supabase
+                          .from("messages")
+                          .select("*")
+                          .eq("id", result.id)
+                          .single();
+
+                        if (updatedMessage) {
+                          // Get shop and plan for automation
+                          try {
+                            const usageData = await getShopPlanAndUsage(shopId);
+                            if (usageData) {
+                              // Get shop data from Supabase
+                              const { data: shopData } = await supabase
+                                .from("shops")
+                                .select("*")
+                                .eq("id", shopId)
+                                .single();
+
+                              if (shopData) {
+                                const shop = shopData;
+                                const plan = getPlanConfig(shop.plan || "FREE");
+
+                                // Process automation (send DM reply if conditions are met)
+                                handleIncomingDm(updatedMessage, shop, plan)
+                                  .then((automationResult) => {
+                                    if (automationResult.sent) {
+                                      console.log(`[webhook] ✅ Automated DM sent for message ${result.id}`);
+                                    } else {
+                                      console.log(`[webhook] Automation skipped for message ${result.id}: ${automationResult.reason}`);
+                                    }
+                                  })
+                                  .catch((error) => {
+                                    console.error(`[webhook] Error in automation:`, error);
+                                    // Don't throw - automation failure shouldn't break webhook
+                                  });
+                              }
+                            }
+                          } catch (error) {
+                            console.error(`[webhook] Error getting shop/plan for automation:`, error);
+                            // Don't throw - continue processing
+                          }
+                        }
                       }
                     })
                     .catch((error) => {
@@ -334,6 +384,12 @@ export const action = async ({ request }) => {
                 // Check if comment automation is enabled
                 if (settings?.comment_automation_enabled === false) {
                   console.log(`[webhook] Comment automation is disabled for shop ${shopId}, skipping comment processing`);
+                  continue;
+                }
+                
+                // Check channel preference (Pro only)
+                if (settings?.channel_preference === "dm") {
+                  console.log(`[webhook] Channel preference is "DM only", skipping comment processing`);
                   continue;
                 }
                 
@@ -368,17 +424,62 @@ export const action = async ({ request }) => {
                 });
                 console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
                 
-                // Classify message asynchronously (don't block webhook response)
+                // Classify message and process automation asynchronously (don't block webhook response)
                 if (result?.id && parsed.commentText) {
                   classifyMessage(parsed.commentText, { shopId })
-                    .then((classification) => {
+                    .then(async (classification) => {
                       if (classification.intent !== null && !classification.error) {
-                        return updateMessageAI(
+                        // Update message with AI classification
+                        await updateMessageAI(
                           result.id,
                           classification.intent,
                           classification.confidence,
                           classification.sentiment
                         );
+
+                        // Fetch updated message with AI data for automation
+                        const { data: updatedMessage } = await supabase
+                          .from("messages")
+                          .select("*")
+                          .eq("id", result.id)
+                          .single();
+
+                        if (updatedMessage && parsed.mediaId) {
+                          // Get shop and plan for automation
+                          try {
+                            const usageData = await getShopPlanAndUsage(shopId);
+                            if (usageData) {
+                              // Get shop data from Supabase
+                              const { data: shopData } = await supabase
+                                .from("shops")
+                                .select("*")
+                                .eq("id", shopId)
+                                .single();
+
+                              if (shopData) {
+                                const shop = shopData;
+                                const plan = getPlanConfig(shop.plan || "FREE");
+
+                                // Process comment-to-DM automation (Growth/Pro only)
+                                handleIncomingComment(updatedMessage, parsed.mediaId, shop, plan)
+                                  .then((automationResult) => {
+                                    if (automationResult.sent) {
+                                      console.log(`[webhook] ✅ Comment-to-DM sent for comment ${result.id}`);
+                                    } else {
+                                      console.log(`[webhook] Comment-to-DM skipped for comment ${result.id}: ${automationResult.reason}`);
+                                    }
+                                  })
+                                  .catch((error) => {
+                                    console.error(`[webhook] Error in comment automation:`, error);
+                                    // Don't throw - automation failure shouldn't break webhook
+                                  });
+                              }
+                            }
+                          } catch (error) {
+                            console.error(`[webhook] Error getting shop/plan for comment automation:`, error);
+                            // Don't throw - continue processing
+                          }
+                        }
                       }
                     })
                     .catch((error) => {
