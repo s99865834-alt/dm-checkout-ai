@@ -3,7 +3,7 @@ import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramMedia } from "../lib/meta.server";
-import { getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
+import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings } from "../lib/db.server";
 import { PlanGate } from "../components/PlanGate";
 
 export const loader = async ({ request }) => {
@@ -14,8 +14,12 @@ export const loader = async ({ request }) => {
   let mediaData = null;
   let productMappings = [];
   let shopifyProducts = [];
+  let settings = null;
 
   if (shop?.id) {
+    // Get settings for enabled_post_ids
+    settings = await getSettings(shop.id);
+    
     metaAuth = await getMetaAuth(shop.id);
 
     if (metaAuth?.ig_business_id) {
@@ -72,6 +76,7 @@ export const loader = async ({ request }) => {
     mediaData,
     productMappings,
     shopifyProducts,
+    settings,
   };
 };
 
@@ -88,8 +93,40 @@ export const action = async ({ request }) => {
   const igMediaId = formData.get("igMediaId");
   const productId = formData.get("productId");
   const variantId = formData.get("variantId") || null;
+  const togglePost = formData.get("togglePost"); // "enable" or "disable"
+  const postId = formData.get("postId");
 
-  if (actionType === "save-mapping") {
+  if (actionType === "toggle-post-automation") {
+    if (!postId) {
+      return { error: "Missing post ID" };
+    }
+
+    try {
+      // Get current settings
+      const currentSettings = await getSettings(shop.id);
+      const currentEnabledPosts = currentSettings?.enabled_post_ids || [];
+      
+      let newEnabledPosts;
+      if (togglePost === "enable") {
+        // Add post to enabled list if not already there
+        newEnabledPosts = currentEnabledPosts.includes(postId)
+          ? currentEnabledPosts
+          : [...currentEnabledPosts, postId];
+      } else {
+        // Remove post from enabled list
+        newEnabledPosts = currentEnabledPosts.filter((id) => id !== postId);
+      }
+
+      await updateSettings(shop.id, {
+        enabled_post_ids: newEnabledPosts,
+      });
+
+      return { success: true, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+    } catch (error) {
+      console.error("[instagram-feed] Error toggling post automation:", error);
+      return { error: error.message || "Failed to toggle post automation" };
+    }
+  } else if (actionType === "save-mapping") {
     if (!igMediaId || !productId) {
       return { error: "Missing required fields" };
     }
@@ -223,7 +260,12 @@ export default function InstagramFeedPage() {
           <>
             <s-section heading="Your Instagram Posts">
               <s-paragraph>
-                Map your Instagram posts to Shopify products. When customers comment or DM about a post, we'll know which product to show them.
+                Map your Instagram posts to Shopify products and control automation for each post. When customers comment or DM about a post, we'll know which product to show them.
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  Use the checkboxes below each post to enable/disable AI automation for that specific post. By default, all posts have automation enabled.
+                </s-text>
               </s-paragraph>
 
               {mediaData.data && mediaData.data.length > 0 ? (
@@ -233,6 +275,7 @@ export default function InstagramFeedPage() {
                     const mappedProduct = mapping
                       ? shopifyProducts.find((p) => p.id === mapping.product_id)
                       : null;
+                    const automationEnabled = isPostAutomationEnabled(media.id);
 
                     return (
                       <s-box key={media.id} padding="base" borderWidth="base" borderRadius="base">
@@ -257,6 +300,31 @@ export default function InstagramFeedPage() {
                               <s-text variant="subdued">💬 {media.comments_count}</s-text>
                             )}
                           </s-stack>
+
+                          {/* Automation Toggle */}
+                          <s-box padding="tight" borderWidth="base" borderRadius="base" background={automationEnabled ? "success-subdued" : "subdued"}>
+                            <s-stack direction="inline" gap="base" alignment="space-between">
+                              <s-stack direction="block" gap="tight">
+                                <s-text variant="strong">
+                                  {automationEnabled ? "✅ Automation Enabled" : "❌ Automation Disabled"}
+                                </s-text>
+                                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                                  {automationEnabled
+                                    ? "AI will respond to comments/DMs on this post"
+                                    : "AI will NOT respond to comments/DMs on this post"}
+                                </s-text>
+                              </s-stack>
+                              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={automationEnabled}
+                                  onChange={() => handleTogglePostAutomation(media.id, automationEnabled)}
+                                  disabled={fetcher.state !== "idle"}
+                                  style={{ width: "20px", height: "20px", cursor: "pointer" }}
+                                />
+                              </label>
+                            </s-stack>
+                          </s-box>
 
                           {mapping ? (
                             <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">

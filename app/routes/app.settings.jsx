@@ -64,7 +64,6 @@ export default function SettingsPage() {
 
   const dmAutomationEnabled = settings?.dm_automation_enabled ?? true;
   const commentAutomationEnabled = settings?.comment_automation_enabled ?? true;
-  const enabledPostIds = settings?.enabled_post_ids || [];
 
   // Check plan access directly from loader data
   const planHierarchy = { FREE: 0, GROWTH: 1, PRO: 2 };
@@ -166,51 +165,6 @@ export default function SettingsPage() {
           </fetcher.Form>
         </s-section>
 
-        <s-section heading="Post Filtering">
-          <s-paragraph>
-            By default, automation runs on all posts. You can restrict automation to specific posts by listing their Instagram media IDs below.
-          </s-paragraph>
-          <s-paragraph>
-            <s-text variant="subdued">
-              Leave empty to enable automation on all posts. Enter comma-separated Instagram media IDs (e.g., "123456789,987654321") or a JSON array (e.g., ["123456789", "987654321"]).
-            </s-text>
-          </s-paragraph>
-
-          <fetcher.Form method="post">
-            <s-stack direction="block" gap="base">
-              <s-box padding="base" borderWidth="base" borderRadius="base">
-                <s-stack direction="block" gap="base">
-                  <label htmlFor="enabled_post_ids">
-                    <s-text variant="strong">Enabled Post IDs</s-text>
-                  </label>
-                  <textarea
-                    id="enabled_post_ids"
-                    name="enabled_post_ids"
-                    rows="4"
-                    placeholder='Enter Instagram media IDs (e.g., "123456789,987654321" or ["123456789", "987654321"])'
-                    defaultValue={Array.isArray(enabledPostIds) ? enabledPostIds.join(", ") : enabledPostIds}
-                    style={{
-                      width: "100%",
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #e1e3e5",
-                      fontFamily: "inherit",
-                    }}
-                  />
-                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                    {enabledPostIds.length > 0
-                      ? `Currently enabled for ${enabledPostIds.length} post(s)`
-                      : "Currently enabled for all posts"}
-                  </s-text>
-                </s-stack>
-              </s-box>
-
-              <s-button type="submit" variant="primary" disabled={fetcher.state !== "idle"}>
-                {fetcher.state === "submitting" ? "Saving..." : "Save Post Filter"}
-              </s-button>
-            </s-stack>
-          </fetcher.Form>
-        </s-section>
 
         {fetcher.data?.success && (
           <s-banner tone="success">
