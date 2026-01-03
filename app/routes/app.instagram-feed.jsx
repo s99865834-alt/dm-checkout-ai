@@ -294,6 +294,9 @@ export default function InstagramFeedPage() {
                     const mappedProduct = mapping
                       ? shopifyProducts.find((p) => p.id === mapping.product_id)
                       : null;
+                    const mappedVariant = mapping && mappedProduct && mapping.variant_id
+                      ? mappedProduct.variants?.nodes?.find((v) => v.id === mapping.variant_id)
+                      : null;
                     const automationEnabled = isPostAutomationEnabled(media.id);
 
                     return (
@@ -349,7 +352,10 @@ export default function InstagramFeedPage() {
                             <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
                               <s-stack direction="block" gap="tight">
                                 <s-text variant="strong" tone="success">✅ Mapped to Product</s-text>
-                                <s-text variant="subdued">{mappedProduct?.title || "Product"}</s-text>
+                                <s-text variant="subdued">
+                                  {mappedProduct?.title || "Product"}
+                                  {mappedVariant && ` (${mappedVariant.title})`}
+                                </s-text>
                                 <s-button
                                   variant="secondary"
                                   size="small"
