@@ -28,7 +28,6 @@ export default function App() {
       <s-app-nav>
         <s-link href="/app">Home</s-link>
         <s-link href="/app/setup">Setup</s-link>
-        <s-link href="/app/messages">Messages</s-link>
         <s-link href="/app/instagram-feed">Instagram Feed</s-link>
         <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/analytics">Analytics</s-link>

@@ -1,9 +1,9 @@
-import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit } from "react-router";
+import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
-import { getAttributionRecords } from "../lib/db.server";
+import { getAttributionRecords, getMessages, getMessageCount } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
@@ -17,6 +17,16 @@ export const loader = async ({ request }) => {
   const endDate = url.searchParams.get("end_date") || null;
   const limit = parseInt(url.searchParams.get("limit") || "50", 10);
 
+  // Parse message filters (separate from attribution filters)
+  const messageChannel = url.searchParams.get("message_channel") || null;
+  const messagePage = parseInt(url.searchParams.get("message_page") || "1", 10);
+  const messageLimit = 50;
+  const messageOffset = (messagePage - 1) * messageLimit;
+  const messageStartDate = url.searchParams.get("message_start_date") || null;
+  const messageEndDate = url.searchParams.get("message_end_date") || null;
+  const messageOrderBy = url.searchParams.get("message_order_by") || "created_at";
+  const messageOrderDirection = url.searchParams.get("message_order_direction") || "desc";
+
   // Fetch attribution records with filters
   const attributionRecords = await getAttributionRecords(shop.id, {
     channel,
@@ -26,20 +36,56 @@ export const loader = async ({ request }) => {
     limit,
   });
 
+  // Fetch messages with filters
+  let messages = [];
+  let messageTotalCount = 0;
+  let messageTotalPages = 0;
+  if (shop?.id) {
+    messages = await getMessages(shop.id, {
+      channel: messageChannel,
+      limit: messageLimit,
+      offset: messageOffset,
+      startDate: messageStartDate,
+      endDate: messageEndDate,
+      orderBy: messageOrderBy,
+      orderDirection: messageOrderDirection,
+    });
+
+    messageTotalCount = await getMessageCount(shop.id, {
+      channel: messageChannel,
+      startDate: messageStartDate,
+      endDate: messageEndDate,
+    });
+
+    messageTotalPages = Math.ceil(messageTotalCount / messageLimit);
+  }
+
   return {
     shop,
     plan,
     attributionRecords,
     filters: { channel, orderId, startDate, endDate, limit },
+    messages,
+    messageTotalCount,
+    messageTotalPages,
+    messageCurrentPage: messagePage,
+    messageFilters: {
+      channel: messageChannel,
+      startDate: messageStartDate,
+      endDate: messageEndDate,
+      orderBy: messageOrderBy,
+      orderDirection: messageOrderDirection,
+    },
   };
 };
 
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
-  const { attributionRecords, filters } = useLoaderData();
+  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters } = useLoaderData();
   const [searchParams] = useSearchParams();
   const submit = useSubmit();
+  const navigate = useNavigate();
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -82,6 +128,35 @@ export default function AnalyticsPage() {
   // Clear filters
   const clearFilters = () => {
     submit({}, { method: "get" });
+  };
+
+  // Message filter handlers
+  const updateMessageFilter = (key, value) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (value) {
+      newParams.set(key, value);
+    } else {
+      newParams.delete(key);
+    }
+    newParams.delete("message_page"); // Reset to page 1 when filtering
+    navigate(`/app/analytics?${newParams.toString()}`);
+  };
+
+  const goToMessagePage = (page) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("message_page", page.toString());
+    navigate(`/app/analytics?${newParams.toString()}`);
+  };
+
+  const clearMessageFilters = () => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete("message_channel");
+    newParams.delete("message_start_date");
+    newParams.delete("message_end_date");
+    newParams.delete("message_order_by");
+    newParams.delete("message_order_direction");
+    newParams.delete("message_page");
+    navigate(`/app/analytics?${newParams.toString()}`);
   };
 
   return (
@@ -352,6 +427,177 @@ export default function AnalyticsPage() {
           </s-box>
         </s-stack>
       </s-section>
+
+      {/* Message Log Section */}
+      <PlanGate requiredPlan="GROWTH" feature="Message Log">
+        <s-section heading="Message Log">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text variant="subdued">
+                Total Messages: {messageTotalCount}
+              </s-text>
+            </s-paragraph>
+
+            {/* Message Filters */}
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+              <s-stack direction="block" gap="base">
+                <s-stack direction="inline" gap="base" alignment="center">
+                  <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>Channel</s-text>
+                    <select
+                      value={messageFilters.channel || ""}
+                      onChange={(e) => updateMessageFilter("message_channel", e.target.value || null)}
+                      style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                    >
+                      <option value="">All Channels</option>
+                      <option value="dm">DM</option>
+                      <option value="comment">Comment</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>Start Date</s-text>
+                    <input
+                      type="date"
+                      value={messageFilters.startDate || ""}
+                      onChange={(e) => updateMessageFilter("message_start_date", e.target.value || null)}
+                      style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                    />
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>End Date</s-text>
+                    <input
+                      type="date"
+                      value={messageFilters.endDate || ""}
+                      onChange={(e) => updateMessageFilter("message_end_date", e.target.value || null)}
+                      style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                    />
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>Sort By</s-text>
+                    <select
+                      value={messageFilters.orderBy}
+                      onChange={(e) => updateMessageFilter("message_order_by", e.target.value)}
+                      style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                    >
+                      <option value="created_at">Date</option>
+                      <option value="channel">Channel</option>
+                      <option value="text">Text</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>Order</s-text>
+                    <select
+                      value={messageFilters.orderDirection}
+                      onChange={(e) => updateMessageFilter("message_order_direction", e.target.value)}
+                      style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5" }}
+                    >
+                      <option value="desc">Newest First</option>
+                      <option value="asc">Oldest First</option>
+                    </select>
+                  </label>
+
+                  <s-button
+                    variant="secondary"
+                    onClick={clearMessageFilters}
+                  >
+                    Clear Filters
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </s-box>
+
+            {/* Messages List */}
+            {messages.length === 0 ? (
+              <s-paragraph>
+                <s-text tone="subdued">No messages found.</s-text>
+              </s-paragraph>
+            ) : (
+              <s-stack direction="block" gap="base">
+                {messages.map((message) => (
+                  <s-box
+                    key={message.id}
+                    padding="base"
+                    borderWidth="base"
+                    borderRadius="base"
+                    background="subdued"
+                  >
+                    <s-stack direction="block" gap="tight">
+                      <s-stack direction="inline" gap="base" alignment="center">
+                        <s-badge tone={message.channel === "dm" ? "info" : "success"}>
+                          {message.channel.toUpperCase()}
+                        </s-badge>
+                        <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                          {new Date(message.created_at).toLocaleString()}
+                        </s-text>
+                        {message.external_id && (
+                          <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                            ID: {message.external_id.substring(0, 20)}...
+                          </s-text>
+                        )}
+                      </s-stack>
+
+                      {message.text && (
+                        <s-paragraph>
+                          <s-text>{message.text}</s-text>
+                        </s-paragraph>
+                      )}
+
+                      {(message.ai_intent || message.sentiment) && (
+                        <s-stack direction="inline" gap="base">
+                          {message.ai_intent && (
+                            <s-badge tone="info">
+                              Intent: {message.ai_intent}
+                              {message.ai_confidence && ` (${(message.ai_confidence * 100).toFixed(0)}%)`}
+                            </s-badge>
+                          )}
+                          {message.sentiment && (
+                            <s-badge tone={message.sentiment === "positive" ? "success" : message.sentiment === "negative" ? "critical" : "subdued"}>
+                              {message.sentiment}
+                            </s-badge>
+                          )}
+                        </s-stack>
+                      )}
+
+                      {message.from_user_id && (
+                        <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                          From: {message.from_user_id}
+                        </s-text>
+                      )}
+                    </s-stack>
+                  </s-box>
+                ))}
+              </s-stack>
+            )}
+
+            {/* Message Pagination */}
+            {messageTotalPages > 1 && (
+              <s-stack direction="inline" gap="base" alignment="center" style={{ marginTop: "1rem" }}>
+                <s-button
+                  variant="secondary"
+                  disabled={messageCurrentPage === 1}
+                  onClick={() => goToMessagePage(messageCurrentPage - 1)}
+                >
+                  Previous
+                </s-button>
+                <s-text variant="subdued">
+                  Page {messageCurrentPage} of {messageTotalPages}
+                </s-text>
+                <s-button
+                  variant="secondary"
+                  disabled={messageCurrentPage === messageTotalPages}
+                  onClick={() => goToMessagePage(messageCurrentPage + 1)}
+                >
+                  Next
+                </s-button>
+              </s-stack>
+            )}
+          </s-stack>
+        </s-section>
+      </PlanGate>
     </s-page>
   );
 }
