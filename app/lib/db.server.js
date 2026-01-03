@@ -726,7 +726,6 @@ export async function saveProductMapping(shopId, igMediaId, productId, variantId
     ig_media_id: igMediaId,
     product_id: productId,
     variant_id: variantId,
-    updated_at: new Date().toISOString(),
   };
 
   let data, error;
@@ -746,10 +745,7 @@ export async function saveProductMapping(shopId, igMediaId, productId, variantId
     // Insert new mapping
     const { data: inserted, error: insertError } = await supabase
       .from("post_product_map")
-      .insert({
-        ...mappingData,
-        created_at: new Date().toISOString(),
-      })
+      .insert(mappingData)
       .select()
       .single();
 
