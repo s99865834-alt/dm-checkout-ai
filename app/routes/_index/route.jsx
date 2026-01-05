@@ -1,10 +1,10 @@
-import { redirect, Form, useLoaderData } from "react-router";
+import { redirect } from "react-router";
 import { login } from "../../shopify.server";
-import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
 
+  // If there's a shop parameter, redirect to the app
   if (url.searchParams.get("shop")) {
     // If Instagram connection was just completed, redirect to Instagram page
     if (url.searchParams.get("instagram_connected")) {
@@ -14,46 +14,33 @@ export const loader = async ({ request }) => {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
-  return { showForm: Boolean(login) };
+  // If there's a login function, redirect to login
+  if (login) {
+    throw redirect("/auth/login");
+  }
+
+  return {};
 };
 
 export default function App() {
-  const { showForm } = useLoaderData();
-
   return (
-    <div className={styles.index}>
-      <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
-        <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
-        </p>
-        {showForm && (
-          <Form className={styles.form} method="post" action="/auth/login">
-            <label className={styles.label}>
-              <span>Shop domain</span>
-              <input className={styles.input} type="text" name="shop" />
-              <span>e.g: my-shop-domain.myshopify.com</span>
-            </label>
-            <button className={styles.button} type="submit">
-              Log in
-            </button>
-          </Form>
-        )}
-        <ul className={styles.list}>
-          <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
-          </li>
-          <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
-          </li>
-          <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
-          </li>
-        </ul>
-      </div>
+    <div style={{
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      minHeight: "100vh",
+      margin: 0,
+      fontFamily: "system-ui, -apple-system, sans-serif"
+    }}>
+      <h1 style={{
+        fontSize: "48px",
+        fontWeight: "400",
+        color: "#333",
+        textAlign: "center",
+        margin: 0
+      }}>
+        Welcome to socialrepl.ai
+      </h1>
     </div>
   );
 }
