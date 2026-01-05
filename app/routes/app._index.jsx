@@ -4,7 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -20,6 +20,7 @@ export const loader = async ({ request }) => {
   let instagramInfo = null;
   let settings = null;
   let brandVoice = null;
+  let webhookStatus = null;
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     settings = await getSettings(shop.id);
@@ -31,10 +32,15 @@ export const loader = async ({ request }) => {
         metaAuth.ig_business_id,
         shop.id
       );
+      
+      // Check webhook subscription status
+      if (metaAuth.page_id) {
+        webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
+      }
     }
   }
   
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice };
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, webhookStatus };
 };
 
 export const action = async ({ request }) => {
@@ -114,7 +120,7 @@ export const action = async ({ request }) => {
       }
     }
     
-    // Handle connect action (existing OAuth flow)
+    // Handle connect action (OAuth flow)
     const shopDomain = session.shop;
     
     // ALWAYS use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
@@ -157,7 +163,7 @@ export default function Index() {
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, webhookStatus } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -224,6 +230,14 @@ export default function Index() {
       navigate(`/app?disconnected=true`);
     }
   }, [fetcher.data, navigate]);
+  
+  // Handle Instagram connection success/error (OAuth)
+  useEffect(() => {
+    if (instagramFetcher.data?.error) {
+      // Show error in URL params for display
+      navigate(`/app?error=${encodeURIComponent(instagramFetcher.data.error)}`);
+    }
+  }, [instagramFetcher.data, navigate]);
 
   return (
     <s-page heading="DM Checkout AI">
@@ -289,6 +303,20 @@ export default function Index() {
             </s-banner>
           )}
           
+          {instagramFetcher.data?.success && instagramFetcher.data?.message?.includes("connected") && (
+            <s-banner tone="success">
+              <s-text variant="strong">Connected Successfully!</s-text>
+              <s-text>{instagramFetcher.data.message}</s-text>
+            </s-banner>
+          )}
+          
+          {instagramFetcher.data?.error && (
+            <s-banner tone="critical">
+              <s-text variant="strong">Connection Error</s-text>
+              <s-text>{instagramFetcher.data.error}</s-text>
+            </s-banner>
+          )}
+          
           {disconnected && !error && !isConnected && (
             <s-banner tone="info">
               <s-text variant="strong">Disconnected</s-text>
@@ -330,6 +358,61 @@ export default function Index() {
                   </s-text>
         </s-paragraph>
               )}
+              
+              {/* Webhook Status */}
+              {webhookStatus && (
+                <s-box padding="base" borderWidth="base" borderRadius="base" background={webhookStatus.subscribed ? "success-subdued" : "warning-subdued"}>
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">
+                      Webhook Status: {webhookStatus.subscribed ? "✅ Subscribed" : "⚠️ Not Subscribed"}
+                    </s-text>
+                    {webhookStatus.error && (
+                      <s-text variant="subdued">
+                        {webhookStatus.error} {webhookStatus.code && `(Code: ${webhookStatus.code})`}
+                      </s-text>
+                    )}
+                    {!webhookStatus.subscribed && (
+                      <s-stack direction="block" gap="base">
+                        <s-text variant="subdued">
+                          Webhooks won't work until your Meta app is approved. Until then, you can test manually.
+                        </s-text>
+                        {metaAuth?.ig_business_id && (
+                          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                            <s-stack direction="block" gap="tight">
+                              <s-text variant="strong">Test with Your Test Account:</s-text>
+                              <s-text variant="subdued">
+                                Your Instagram Business ID: <code>{metaAuth.ig_business_id}</code>
+                              </s-text>
+                              <s-text variant="subdued">
+                                Use this ID in the test webhook payload below.
+                              </s-text>
+                              <s-text variant="subdued" style={{ marginTop: "8px", fontFamily: "monospace", fontSize: "11px", whiteSpace: "pre-wrap" }}>
+{`curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "object": "instagram",
+    "entry": [{
+      "id": "${metaAuth.ig_business_id}",
+      "messaging": [{
+        "sender": {"id": "test_user_123"},
+        "recipient": {"id": "${metaAuth.ig_business_id}"},
+        "message": {
+          "mid": "test_message_${Date.now()}",
+          "text": "I want to buy this product"
+        },
+        "timestamp": ${Math.floor(Date.now() / 1000)}
+      }]
+    }]
+  }'`}
+                              </s-text>
+                            </s-stack>
+                          </s-box>
+                        )}
+                      </s-stack>
+                    )}
+                  </s-stack>
+                </s-box>
+              )}
           <s-button
                 variant="secondary" 
                 onClick={() => {
@@ -363,11 +446,11 @@ export default function Index() {
             <s-button
                 variant="primary"
                 onClick={() => {
-                  instagramFetcher.submit({}, { method: "post" });
+                  fetcher.submit({}, { method: "post" });
                 }}
-                disabled={instagramFetcher.state === "submitting"}
+                disabled={fetcher.state === "submitting"}
               >
-                {instagramFetcher.state === "submitting" ? "Connecting..." : "Connect Instagram Business Account"}
+                {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram Business Account"}
             </s-button>
             </s-stack>
           )}
