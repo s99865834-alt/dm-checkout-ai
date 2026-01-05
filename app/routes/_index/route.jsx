@@ -1,5 +1,4 @@
 import { redirect } from "react-router";
-import { login } from "../../shopify.server";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
@@ -12,11 +11,6 @@ export const loader = async ({ request }) => {
       throw redirect(`/app?connected=true&shop=${encodeURIComponent(shop || "")}`);
     }
     throw redirect(`/app?${url.searchParams.toString()}`);
-  }
-
-  // If there's a login function, redirect to login
-  if (login) {
-    throw redirect("/auth/login");
   }
 
   return {};
