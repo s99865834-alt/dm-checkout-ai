@@ -26,15 +26,26 @@ export default function App() {
       margin: 0,
       fontFamily: "system-ui, -apple-system, sans-serif"
     }}>
-      <h1 style={{
-        fontSize: "48px",
-        fontWeight: "400",
-        color: "#333",
-        textAlign: "center",
-        margin: 0
-      }}>
-        Welcome to socialrepl.ai
-      </h1>
+      <div>
+        <h1 style={{
+          fontSize: "48px",
+          fontWeight: "400",
+          color: "#333",
+          textAlign: "center",
+          margin: 0
+        }}>
+          Welcome to socialrepl.ai
+        </h1>
+        <p style={{
+          fontSize: "16px",
+          fontWeight: "300",
+          color: "#666",
+          textAlign: "center",
+          margin: "8px 0 0 0"
+        }}>
+          brought to you by Tennyson Labs
+        </p>
+      </div>
     </div>
   );
 }
