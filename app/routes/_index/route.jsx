@@ -43,7 +43,7 @@ export default function App() {
           textAlign: "center",
           margin: "8px 0 0 0"
         }}>
-          brought to you by Tennyson Labs LLC LLC
+          brought to you by Tennyson Labs
         </p>
       </div>
     </div>
