@@ -1,4 +1,5 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useRouteError, useNavigate } from "react-router";
+import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
@@ -14,8 +15,40 @@ export const loader = async ({ request }) => {
   };
 };
 
+// Only revalidate when the shop/plan actually changes, not on every navigation
+export const shouldRevalidate = ({ currentUrl, nextUrl }) => {
+  // Only revalidate if the URL path actually changed (not just query params)
+  return currentUrl.pathname !== nextUrl.pathname;
+};
+
 export default function App() {
   const { apiKey, shop, plan } = useLoaderData();
+  const navigate = useNavigate();
+  const navRef = useRef(null);
+
+  // Intercept s-link clicks for client-side navigation
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+
+    const handleClick = (e) => {
+      // Find the closest s-link element
+      const link = e.target.closest('s-link');
+      if (link) {
+        const href = link.getAttribute('href');
+        if (href && href.startsWith('/app')) {
+          e.preventDefault();
+          e.stopPropagation();
+          navigate(href);
+        }
+      }
+    };
+
+    nav.addEventListener('click', handleClick, true);
+    return () => {
+      nav.removeEventListener('click', handleClick, true);
+    };
+  }, [navigate]);
 
   const planBadgeColor = {
     FREE: "subdued",
@@ -25,7 +58,7 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
+      <s-app-nav ref={navRef}>
         <s-link href="/app">Home</s-link>
         <s-link href="/app/setup">Setup</s-link>
         <s-link href="/app/instagram-feed">Instagram Feed</s-link>

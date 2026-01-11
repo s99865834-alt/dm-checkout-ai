@@ -663,7 +663,7 @@ export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
       },
       body: JSON.stringify({
         access_token: auth.page_access_token,
-        subscribed_fields: "messages,comments",
+        subscribed_fields: "messages",
       }),
     });
 
