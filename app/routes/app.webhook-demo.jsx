@@ -1,0 +1,633 @@
+import { useState } from "react";
+import { useLoaderData, useRevalidator } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
+import { getShopWithPlan } from "../lib/loader-helpers.server";
+import { getMetaAuth } from "../lib/meta.server";
+import supabase from "../lib/supabase.server";
+
+export const loader = async ({ request }) => {
+  const { shop, plan } = await getShopWithPlan(request);
+  await authenticate.admin(request);
+
+  let metaAuth = null;
+  let recentMessages = [];
+
+  if (shop?.id) {
+    metaAuth = await getMetaAuth(shop.id);
+
+    // Get recent messages for display with links_sent (to get reply text)
+    if (metaAuth?.ig_business_id) {
+      const { data: messages } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("shop_id", shop.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (messages && messages.length > 0) {
+        // Get links_sent for these messages to get reply text (if automation actually sent)
+        const messageIds = messages.map((m) => m.id);
+        const { data: linksSent } = await supabase
+          .from("links_sent")
+          .select("message_id, reply_text")
+          .in("message_id", messageIds);
+
+        // Create a map of message_id -> reply_text
+        const replyTextMap = {};
+        if (linksSent) {
+          linksSent.forEach((link) => {
+            if (link.message_id && link.reply_text) {
+              replyTextMap[link.message_id] = link.reply_text;
+            }
+          });
+        }
+
+        // Generate AI response preview for each message (same logic as Step 2)
+        const { getProductMappings } = await import("../lib/db.server");
+        const { buildCheckoutLink, buildProductPageLink } = await import("../lib/automation.server");
+        const { getBrandVoice } = await import("../lib/db.server");
+        const { generateReplyMessage } = await import("../lib/automation.server");
+        
+        const productMappings = await getProductMappings(shop.id);
+        const brandVoiceData = await getBrandVoice(shop.id);
+                const productSpecificIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
+                const generalIntents = ["store_question"];
+                const eligibleIntents = [...productSpecificIntents, ...generalIntents];
+
+        // Attach reply text to messages (from links_sent or generate preview)
+        recentMessages = await Promise.all(messages.map(async (msg) => {
+          // If we have an actual sent reply, use that
+          if (replyTextMap[msg.id]) {
+            return {
+              ...msg,
+              reply_text: replyTextMap[msg.id],
+              reply_source: "sent", // Indicates this was actually sent
+            };
+          }
+
+          // Otherwise, generate a preview (same as Step 2)
+          if (msg.ai_intent && eligibleIntents.includes(msg.ai_intent)) {
+            try {
+              // Handle store_question separately (doesn't need product mapping)
+              if (msg.ai_intent === "store_question") {
+                const previewReply = await generateReplyMessage(
+                  brandVoiceData,
+                  null,
+                  null,
+                  msg.ai_intent,
+                  null,
+                  null,
+                  msg.text,
+                  null
+                );
+                
+                return {
+                  ...msg,
+                  reply_text: previewReply,
+                  reply_source: "preview",
+                };
+              }
+              
+              // Product-specific intents need product mappings
+              if (!productMappings || productMappings.length === 0) {
+                return {
+                  ...msg,
+                  reply_text: null,
+                  reply_source: null,
+                };
+              }
+              
+              const productMapping = productMappings[0];
+              let productPageUrl = null;
+              let checkoutUrl = null;
+              
+              if (msg.ai_intent === "product_question" || msg.ai_intent === "variant_inquiry") {
+                productPageUrl = await buildProductPageLink(
+                  shop,
+                  productMapping.product_id,
+                  productMapping.variant_id,
+                  productMapping.product_handle || null
+                );
+                const checkoutLink = await buildCheckoutLink(
+                  shop,
+                  productMapping.product_id,
+                  productMapping.variant_id,
+                  1
+                );
+                checkoutUrl = checkoutLink.url;
+              } else {
+                const checkoutLink = await buildCheckoutLink(
+                  shop,
+                  productMapping.product_id,
+                  productMapping.variant_id,
+                  1
+                );
+                checkoutUrl = checkoutLink.url;
+              }
+
+              const previewReply = await generateReplyMessage(
+                brandVoiceData,
+                null,
+                checkoutUrl,
+                msg.ai_intent,
+                null,
+                productPageUrl,
+                msg.text,
+                null
+              );
+
+              return {
+                ...msg,
+                reply_text: previewReply,
+                reply_source: "preview", // Indicates this is a preview, not actually sent
+              };
+            } catch (error) {
+              console.error(`[webhook-demo] Error generating preview for message ${msg.id}:`, error);
+              return {
+                ...msg,
+                reply_text: null,
+                reply_source: null,
+              };
+            }
+          }
+
+          // No eligible intent or no product mapping
+          return {
+            ...msg,
+            reply_text: null,
+            reply_source: null,
+          };
+        }));
+      } else {
+        recentMessages = [];
+      }
+    }
+  }
+
+  return { shop, plan, metaAuth, recentMessages };
+};
+
+export default function WebhookDemo() {
+  const { shop, plan, metaAuth, recentMessages } = useLoaderData();
+  const revalidator = useRevalidator();
+  const [selectedExample, setSelectedExample] = useState("purchase");
+  const [customMessage, setCustomMessage] = useState("");
+  const [demoResults, setDemoResults] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
+
+  const igBusinessId = metaAuth?.ig_business_id || "17841478724885002";
+
+  const examples = {
+    purchase: {
+      name: "Purchase Intent",
+      message: "I want to buy this product",
+      description: "Customer wants to purchase a product",
+    },
+    question: {
+      name: "Product Question",
+      message: "What colors does this come in?",
+      description: "Customer asking about product details",
+    },
+    size: {
+      name: "Size Inquiry",
+      message: "Do you have this in a large size?",
+      description: "Customer asking about product size",
+    },
+    custom: {
+      name: "Custom Message",
+      message: customMessage,
+      description: "Test with your own message",
+    },
+  };
+
+  const handleSendTestWebhook = async () => {
+    const example = examples[selectedExample];
+    const messageText = selectedExample === "custom" ? customMessage : example.message;
+
+    if (!messageText.trim()) {
+      alert("Please enter a message");
+      return;
+    }
+
+    setIsRunning(true);
+    setDemoResults({
+      status: "sending",
+      step: "Sending test webhook...",
+      timestamp: new Date().toISOString(),
+    });
+
+    const testPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: igBusinessId,
+          messaging: [
+            {
+              sender: { id: `test_user_${Date.now()}` },
+              recipient: { id: igBusinessId },
+              message: {
+                mid: `test_message_${Date.now()}`,
+                text: messageText,
+              },
+              timestamp: Math.floor(Date.now() / 1000),
+            },
+          ],
+        },
+      ],
+    };
+
+    try {
+      const response = await fetch("/meta/test-webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(testPayload),
+      });
+
+      const result = await response.json();
+
+      setDemoResults({
+        status: result.success ? "success" : "error",
+        step: result.success ? "Webhook processed successfully!" : "Error processing webhook",
+        message: result.message || result.error,
+        timestamp: new Date().toISOString(),
+        payload: testPayload,
+        aiPreview: result.aiPreview || null,
+      });
+
+      // Refresh messages after a short delay (without full page reload)
+      if (result.success) {
+        setTimeout(() => {
+          revalidator.revalidate();
+        }, 2000);
+      }
+    } catch (error) {
+      setDemoResults({
+        status: "error",
+        step: "Error sending webhook",
+        message: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  return (
+    <s-page heading="Webhook Demo - Meta App Review">
+      <s-section>
+        <s-callout variant="info" title="Demo Mode">
+          <s-paragraph>
+            This page demonstrates the webhook functionality for Meta App Review. 
+            Use this to show how your app processes Instagram messages and sends automated replies.
+          </s-paragraph>
+        </s-callout>
+      </s-section>
+
+      <s-section heading="Step 1: Send Test Webhook">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text variant="strong">Select a test scenario:</s-text>
+            </s-paragraph>
+
+            <s-stack direction="block" gap="tight">
+              {Object.entries(examples).map(([key, example]) => (
+                <label key={key} style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="example"
+                    value={key}
+                    checked={selectedExample === key}
+                    onChange={(e) => setSelectedExample(e.target.value)}
+                    style={{ cursor: "pointer" }}
+                  />
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">{example.name}</s-text>
+                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      {example.description}
+                    </s-text>
+                    {key !== "custom" && (
+                      <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
+                        "{example.message}"
+                      </s-text>
+                    )}
+                  </s-stack>
+                </label>
+              ))}
+            </s-stack>
+
+            {selectedExample === "custom" && (
+              <label>
+                <s-text variant="subdued" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
+                  Custom Message
+                </s-text>
+                <textarea
+                  value={customMessage}
+                  onChange={(e) => setCustomMessage(e.target.value)}
+                  placeholder="Enter your test message here..."
+                  rows={3}
+                  style={{
+                    padding: "8px",
+                    borderRadius: "4px",
+                    border: "1px solid #e1e3e5",
+                    width: "100%",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </label>
+            )}
+
+            <s-button
+              variant="primary"
+              onClick={handleSendTestWebhook}
+              disabled={isRunning || (selectedExample === "custom" && !customMessage.trim())}
+            >
+              {isRunning ? "Processing..." : "Send Test Webhook"}
+            </s-button>
+          </s-stack>
+        </s-box>
+      </s-section>
+
+      <s-section heading="Step 2: Webhook Processing Results">
+        {demoResults ? (
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+            background={demoResults.status === "success" ? "success-subdued" : "critical-subdued"}
+          >
+            <s-stack direction="block" gap="base">
+              <s-stack direction="inline" gap="base" alignment="center">
+                {demoResults.status === "success" ? (
+                  <s-text variant="strong" tone="success">✅ {demoResults.step}</s-text>
+                ) : (
+                  <s-text variant="strong" tone="critical">❌ {demoResults.step}</s-text>
+                )}
+                <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                  {new Date(demoResults.timestamp).toLocaleTimeString()}
+                </s-text>
+              </s-stack>
+
+              {demoResults.message && (
+                <s-text variant="subdued">{demoResults.message}</s-text>
+              )}
+
+              {demoResults.status === "success" && (
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" style={{ marginTop: "16px" }}>
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">What happened:</s-text>
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        1. ✅ Webhook received and validated
+                      </s-text>
+                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        2. ✅ Message logged to database
+                      </s-text>
+                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        3. ✅ AI classified message intent
+                      </s-text>
+                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        4. ✅ Automated reply sent (if conditions met)
+                      </s-text>
+                    </s-stack>
+                  </s-stack>
+                </s-box>
+              )}
+
+              {/* AI Preview */}
+              {demoResults.aiPreview && (
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued" style={{ marginTop: "16px" }}>
+                  <s-stack direction="block" gap="base">
+                    <s-text variant="strong">AI Analysis & Response Preview:</s-text>
+                    
+                    <s-stack direction="block" gap="tight">
+                      <s-stack direction="inline" gap="base" alignment="center">
+                        <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                          <s-text variant="strong">Intent:</s-text> {demoResults.aiPreview.intent || "none"}
+                        </s-text>
+                        {demoResults.aiPreview.confidence && (
+                          <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                            <s-text variant="strong">Confidence:</s-text> {(demoResults.aiPreview.confidence * 100).toFixed(0)}%
+                          </s-text>
+                        )}
+                        {demoResults.aiPreview.sentiment && (
+                          <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                            <s-text variant="strong">Sentiment:</s-text> {demoResults.aiPreview.sentiment}
+                          </s-text>
+                        )}
+                      </s-stack>
+
+                      {demoResults.aiPreview.wouldSend && demoResults.aiPreview.responseText ? (
+                        <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
+                          <s-stack direction="block" gap="tight">
+                            <s-text variant="strong" style={{ fontSize: "13px" }}>
+                              ✅ Would Send Automated Response:
+                            </s-text>
+                            <s-text variant="subdued" style={{ 
+                              fontSize: "13px", 
+                              whiteSpace: "pre-wrap",
+                              fontFamily: "inherit",
+                              lineHeight: "1.5",
+                            }}>
+                              {demoResults.aiPreview.responseText}
+                            </s-text>
+                          </s-stack>
+                        </s-box>
+                      ) : (
+                        <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
+                          <s-stack direction="block" gap="tight">
+                            <s-text variant="strong" style={{ fontSize: "13px" }}>
+                              ⚠️ Would NOT Send Automated Response
+                            </s-text>
+                            <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                              {demoResults.aiPreview.reason || "Message does not meet criteria for automation"}
+                            </s-text>
+                          </s-stack>
+                        </s-box>
+                      )}
+                    </s-stack>
+                  </s-stack>
+                </s-box>
+              )}
+            </s-stack>
+          </s-box>
+        ) : (
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <s-paragraph>
+              <s-text variant="subdued">
+                Results will appear here after you send a test webhook in Step 1 above.
+              </s-text>
+            </s-paragraph>
+          </s-box>
+        )}
+      </s-section>
+
+      <s-section heading="Step 3: Recent Messages (Database)">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+          {recentMessages.length > 0 ? (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                <s-text variant="strong">Last {recentMessages.length} messages:</s-text>
+              </s-paragraph>
+              <s-stack direction="block" gap="tight">
+                {recentMessages.map((msg) => (
+                  <s-box
+                    key={msg.id}
+                    padding="tight"
+                    borderWidth="base"
+                    borderRadius="base"
+                    background="base"
+                  >
+                    <s-stack direction="block" gap="tight">
+                      <s-stack direction="inline" gap="base" alignment="space-between">
+                        <s-text variant="strong" style={{ fontSize: "13px" }}>
+                          {msg.channel === "dm" ? "💬 DM" : "💭 Comment"}
+                        </s-text>
+                        <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                          {new Date(msg.created_at).toLocaleString()}
+                        </s-text>
+                      </s-stack>
+                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        {msg.text || "(No text)"}
+                      </s-text>
+                      {msg.ai_intent && (
+                        <s-stack direction="inline" gap="tight">
+                          <s-badge tone="info">Intent: {msg.ai_intent}</s-badge>
+                          {msg.ai_confidence && (
+                            <s-badge tone="subdued">
+                              Confidence: {(msg.ai_confidence * 100).toFixed(0)}%
+                            </s-badge>
+                          )}
+                        </s-stack>
+                      )}
+                      {msg.reply_text ? (
+                        <s-box
+                          padding="tight"
+                          borderWidth="base"
+                          borderRadius="base"
+                          background={msg.reply_source === "sent" ? "success-subdued" : "info-subdued"}
+                          style={{ marginTop: "8px" }}
+                        >
+                          <s-stack direction="block" gap="tight">
+                            <s-text variant="strong" tone={msg.reply_source === "sent" ? "success" : "info"} style={{ fontSize: "12px" }}>
+                              {msg.reply_source === "sent" ? "✅ AI Response Sent:" : "💡 AI Response Preview:"}
+                            </s-text>
+                            <s-text variant="subdued" style={{ fontSize: "11px", whiteSpace: "pre-wrap" }}>
+                              {msg.reply_text}
+                            </s-text>
+                          </s-stack>
+                        </s-box>
+                      ) : (
+                        <s-box
+                          padding="tight"
+                          borderWidth="base"
+                          borderRadius="base"
+                          background="subdued"
+                          style={{ marginTop: "8px" }}
+                        >
+                          <s-stack direction="block" gap="tight">
+                            <s-text variant="strong" style={{ fontSize: "12px" }}>
+                              ⚠️ No Response Sent:
+                            </s-text>
+                            <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                              {(() => {
+                                // Check if message was just created (within last 10 seconds) - might still be processing
+                                const messageAge = (Date.now() - new Date(msg.created_at).getTime()) / 1000;
+                                const isRecent = messageAge < 10;
+                                
+                                if (isRecent && !msg.ai_intent) {
+                                  return "Processing... (AI classification in progress)";
+                                }
+                                const productSpecificIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
+                                const generalIntents = ["store_question"];
+                                const allEligibleIntents = [...productSpecificIntents, ...generalIntents];
+                                
+                                if (isRecent && msg.ai_intent && allEligibleIntents.includes(msg.ai_intent)) {
+                                  return "Processing... (Automation may still be running)";
+                                }
+                                
+                                // Not recent, so show actual reason
+                                if (!msg.ai_intent) {
+                                  return "Message not classified (AI processing may have failed)";
+                                }
+                                if (!allEligibleIntents.includes(msg.ai_intent)) {
+                                  return `Intent "${msg.ai_intent}" not eligible for automation`;
+                                }
+                                if (msg.ai_confidence && msg.ai_confidence < 0.7) {
+                                  return `Confidence too low (${(msg.ai_confidence * 100).toFixed(0)}% < 70% threshold)`;
+                                }
+                                return "Automation did not send response (check server logs for details)";
+                              })()}
+                            </s-text>
+                          </s-stack>
+                        </s-box>
+                      )}
+                    </s-stack>
+                  </s-box>
+                ))}
+              </s-stack>
+            </s-stack>
+          ) : (
+            <s-paragraph>
+              <s-text variant="subdued">No messages yet. Send a test webhook above to see results here.</s-text>
+            </s-paragraph>
+          )}
+        </s-box>
+      </s-section>
+
+      <s-section heading="Demo Instructions for Meta Reviewers">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text variant="strong">How to demonstrate functionality:</s-text>
+            </s-paragraph>
+            <s-stack direction="block" gap="tight">
+              <s-paragraph>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  1. Select a test scenario above (or create a custom message)
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  2. Click "Send Test Webhook" to simulate an Instagram message
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  3. Watch the results appear showing webhook processing
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  4. Check the "Recent Messages" section to see the message logged in the database
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  5. The automated reply is sent via Instagram Messaging API (check server logs for confirmation)
+                </s-text>
+              </s-paragraph>
+            </s-stack>
+            <s-paragraph style={{ marginTop: "16px" }}>
+              <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
+                Note: Real-time webhooks require the app to be in Live mode. This demo shows the functionality 
+                using test webhooks. Once approved, real Instagram messages will trigger webhooks automatically.
+              </s-text>
+            </s-paragraph>
+          </s-stack>
+        </s-box>
+      </s-section>
+    </s-page>
+  );
+}
+
+export const headers = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
+
+export function ErrorBoundary({ error }) {
+  return boundary.error(error);
+}

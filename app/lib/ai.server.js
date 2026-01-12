@@ -144,7 +144,7 @@ Message: "${text}"
 
 Respond with ONLY a valid JSON object (no markdown, no code blocks) with the following structure:
 {
-  "intent": "purchase" | "product_question" | "variant_inquiry" | "price_request" | "clarification_needed" | "not_relevant",
+  "intent": "purchase" | "product_question" | "variant_inquiry" | "price_request" | "store_question" | "clarification_needed" | "not_relevant",
   "confidence": 0.0-1.0,
   "sentiment": "positive" | "neutral" | "negative",
   "entities": {
@@ -155,10 +155,11 @@ Respond with ONLY a valid JSON object (no markdown, no code blocks) with the fol
 }
 
 Intent meanings:
-- "purchase": Customer wants to buy something or is ready to purchase
-- "product_question": Customer is asking about a product (features, details, etc.)
-- "variant_inquiry": Customer is asking about specific variants (size, color, etc.)
-- "price_request": Customer is asking about pricing
+- "purchase": Customer wants to buy something, is ready to purchase, or expresses strong interest/enthusiasm that suggests purchase intent (e.g., "love this!", "I need this", "want this", "this is amazing")
+- "product_question": Customer is asking about a specific product (features, details, etc.) - requires product context
+- "variant_inquiry": Customer is asking about specific variants (size, color, etc.) - requires product context
+- "price_request": Customer is asking about pricing for a specific product - requires product context
+- "store_question": Customer is asking about the store in general (return policy, shipping, sales, store hours, general policies, etc.) - does NOT require a specific product
 - "clarification_needed": Customer needs more information to proceed
 - "not_relevant": Message is not related to products or purchasing
 
@@ -211,6 +212,7 @@ Entities: Extract any product details mentioned (size, color, product name)`;
       "product_question",
       "variant_inquiry",
       "price_request",
+      "store_question",
       "clarification_needed",
       "not_relevant",
     ];

@@ -1,0 +1,25 @@
+# Meta App Review Response: instagram_business_manage_messages Permission (Paragraph Format)
+
+## How Our App Uses This Permission
+
+Our app uses `instagram_business_manage_messages` to provide automated customer service and sales automation for Instagram Business accounts. We receive incoming Instagram DMs via Meta webhooks when customers message the business account, automatically logging each message to our database for tracking and analytics. Each message is processed in real-time using AI to analyze customer intent, sentiment, and key entities such as product names, sizes, and colors. This classification determines whether an automated response is appropriate.
+
+When a message indicates purchase intent or product interest, our app automatically generates personalized responses that include brand voice customization (friendly, expert, or casual tone based on merchant settings), product-specific checkout links when customers express interest in specific products, and personalized messaging that matches the merchant's brand voice. These responses are sent directly to customers via the Instagram Messaging API. When customers express interest in products, our app automatically generates Shopify checkout links that include UTM tracking parameters for attribution analytics, with each link being unique and tracked to measure conversion rates.
+
+Our app supports multi-turn conversations for Growth and Pro plan users, sending follow-up messages when appropriate to nurture customer relationships while maintaining message history to provide context for follow-up interactions. All messages are stored in our database for analytics purposes, and we provide merchants with analytics dashboards showing messages received and sent, response rates, click-through rates on checkout links, revenue attribution from Instagram DMs, and customer sentiment analysis. This data is aggregated and anonymized for marketing insights.
+
+## How It Adds Value for Users
+
+For merchants, our app provides 24/7 automated customer service that responds to customer inquiries instantly, even when offline, improving customer satisfaction and reducing response time. Automated checkout links sent directly to interested customers reduce friction and increase conversion rates, leading to increased sales. Merchants don't need to manually respond to every DM, freeing up time for other business activities. Analytics help merchants understand customer behavior, popular products, and messaging effectiveness, while automated responses maintain consistent brand voice and messaging across all customer interactions. Merchants can handle high volumes of customer inquiries without proportional increases in staff time, providing scalability.
+
+For customers, our app ensures they receive immediate responses to their inquiries, improving shopping experience. Direct checkout links make it easy for customers to purchase products they're interested in, and AI-powered responses feel natural and relevant to customer inquiries, providing a personalized experience.
+
+## Why It's Necessary for App Functionality
+
+This permission is absolutely essential for our app's core functionality. Our entire value proposition is automating Instagram DM responses, and without `instagram_business_manage_messages`, we cannot receive incoming messages from customers, send automated responses, generate and send checkout links, or provide any of our automation features. Our app processes messages in real-time via webhooks, and we need this permission to receive webhook notifications when customers send DMs, access message content to analyze customer intent, and send responses immediately to maintain conversation flow.
+
+Without this permission, merchants would have to manually monitor Instagram DMs constantly, respond to each message individually, copy and paste checkout links manually, and track conversations manually. Our app's business model is built entirely around automating Instagram messaging, and without this permission, the app cannot function, merchants cannot use any automation features, and the app provides no value to users. We use message data to provide merchants with valuable insights about customer behavior patterns, product interest levels, message response effectiveness, and revenue attribution from Instagram. Without `instagram_business_manage_messages`, our app cannot perform its primary function of automating Instagram customer service and sales. This permission is the foundation of our entire application.
+
+## Usage Compliance
+
+Our app uses this permission in compliance with Meta's guidelines. We only send messages in response to customer inquiries, not unsolicited messages. We use message data to improve customer service and provide better responses, and we use aggregated, anonymized message data for analytics insights to help merchants improve their messaging strategy. All message data is stored securely and used only for the purposes stated above, and merchants can enable or disable automated responses at any time through our app settings.

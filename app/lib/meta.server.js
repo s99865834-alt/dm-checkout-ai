@@ -126,7 +126,7 @@ export async function refreshMetaToken(shopId) {
     throw new Error("No Meta auth found for shop");
   }
 
-  // Check if token needs refresh (expiring in < 7 days)
+  // Check if token needs refresh (expiring in < 7 days or already expired)
   if (!auth.token_expires_at) {
     // No expiration date, assume it needs refresh
     console.log("[meta] Token has no expiration date, attempting refresh");
@@ -138,6 +138,10 @@ export async function refreshMetaToken(shopId) {
     if (daysUntilExpiry > 7) {
       console.log(`[meta] Token still valid for ${daysUntilExpiry.toFixed(1)} days`);
       return auth; // Token is still valid
+    }
+    
+    if (expiresAt < now) {
+      console.log("[meta] Token has expired, refreshing immediately");
     }
   }
 
@@ -233,8 +237,11 @@ export async function getMetaAuthWithRefresh(shopId) {
   const now = new Date();
   const daysUntilExpiry = (expiresAt - now) / (1000 * 60 * 60 * 24);
 
-  // Refresh if expiring in less than 7 days
-  if (daysUntilExpiry < 7) {
+  // Refresh if expired or expiring in less than 7 days
+  if (daysUntilExpiry < 7 || expiresAt < now) {
+    if (expiresAt < now) {
+      console.log("[meta] Token has expired, refreshing immediately");
+    }
     try {
       return await refreshMetaToken(shopId);
     } catch (error) {

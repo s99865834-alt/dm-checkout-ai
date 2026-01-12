@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLoaderData, useFetcher, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getMetaAuthWithRefresh, metaGraphAPI, processManualToken } from "../lib/meta.server";
+import { getMetaAuth, getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
@@ -104,16 +104,11 @@ export default function SetupPage() {
   const { shop, plan, metaAuth, webhookStatus, instagramInfo } = useLoaderData();
   const fetcher = useFetcher();
   const navigate = useNavigate();
-  const [testToken, setTestToken] = useState("");
-  const [testTokenError, setTestTokenError] = useState("");
 
-  // Refresh page after checking webhooks or connecting test account
+  // Refresh page after checking webhooks
   useEffect(() => {
     if (fetcher.data?.refresh || fetcher.data?.success) {
       navigate("/app/setup", { replace: true });
-    }
-    if (fetcher.data?.error) {
-      setTestTokenError(fetcher.data.error);
     }
   }, [fetcher.data, navigate]);
 
@@ -312,131 +307,6 @@ export default function SetupPage() {
         </s-section>
       )}
 
-      {/* Test Account Section - For Testing Before App Approval */}
-      <s-section heading="Test Account (For Development)">
-        <s-callout variant="info" title="Testing Before App Approval">
-          <s-paragraph>
-            <s-text variant="subdued">
-              If you have a Meta test user approved in your Meta app, you can connect it here to test webhooks and functionality before your app is published. This won't affect your production Instagram connection.
-            </s-text>
-          </s-paragraph>
-        </s-callout>
-
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              <s-text variant="strong">Connect Test Account</s-text>
-            </s-paragraph>
-            <s-paragraph>
-              <s-text variant="subdued">
-                To connect your test account:
-              </s-text>
-            </s-paragraph>
-            <s-stack direction="block" gap="tight">
-              <s-paragraph>
-                <s-text variant="subdued">1. Go to your Meta App Dashboard → Roles → Test Users</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">2. Click on your test user → "Generate Token"</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">3. Select permissions: instagram_basic, pages_show_list, pages_read_engagement, pages_manage_metadata, instagram_manage_comments, instagram_manage_messages</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">4. Copy the generated token and paste it below</s-text>
-              </s-paragraph>
-            </s-stack>
-
-            <fetcher.Form method="post">
-              <input type="hidden" name="action" value="connect-test-account" />
-              <s-stack direction="block" gap="base">
-                <label>
-                  <s-text variant="subdued" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
-                    Test Account Access Token
-                  </s-text>
-                  <textarea
-                    name="test_token"
-                    value={testToken}
-                    onChange={(e) => {
-                      setTestToken(e.target.value);
-                      setTestTokenError("");
-                    }}
-                    placeholder="Paste the access token from Meta App Dashboard here"
-                    rows={3}
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: testTokenError ? "1px solid #d72c0d" : "1px solid #e1e3e5",
-                      width: "100%",
-                      fontFamily: "monospace",
-                      fontSize: "12px",
-                    }}
-                  />
-                </label>
-
-                {testTokenError && (
-                  <s-banner tone="critical">
-                    <s-text variant="strong">Error</s-text>
-                    <s-text>{testTokenError}</s-text>
-                  </s-banner>
-                )}
-
-                {fetcher.data?.success && (
-                  <s-banner tone="success">
-                    <s-text variant="strong">Success!</s-text>
-                    <s-text>Test account connected successfully. Webhooks will now work with your test account.</s-text>
-                  </s-banner>
-                )}
-
-                <s-button
-                  type="submit"
-                  variant="primary"
-                  loading={fetcher.state === "submitting"}
-                  disabled={!testToken.trim()}
-                >
-                  {fetcher.state === "submitting" ? "Connecting..." : "Connect Test Account"}
-                </s-button>
-              </s-stack>
-            </fetcher.Form>
-
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued" style={{ marginTop: "16px" }}>
-              <s-stack direction="block" gap="tight">
-                <s-paragraph>
-                  <s-text variant="strong">How to Test Webhooks:</s-text>
-                </s-paragraph>
-                <s-stack direction="block" gap="tight">
-                  <s-paragraph>
-                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                      1. After connecting your test account, webhooks will automatically work for your test Instagram Business account
-                    </s-text>
-                  </s-paragraph>
-                  <s-paragraph>
-                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                      2. Send a DM or comment from your test user to your Instagram Business account
-                    </s-text>
-                  </s-paragraph>
-                  <s-paragraph>
-                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                      3. Check the webhook logs in your server console or use the test webhook endpoint at <code>/meta/test-webhook</code>
-                    </s-text>
-                  </s-paragraph>
-                  <s-paragraph>
-                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                      4. The webhook will process the message and trigger automation (if enabled)
-                    </s-text>
-                  </s-paragraph>
-                </s-stack>
-                <s-paragraph>
-                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                    <s-text variant="strong">Important:</s-text> Connecting a test account will temporarily replace your production Instagram connection. You can reconnect your production account later using the OAuth flow on the Home page.
-                  </s-text>
-                </s-paragraph>
-              </s-stack>
-            </s-box>
-          </s-stack>
-        </s-box>
-      </s-section>
-
       {/* Additional Information */}
       <s-section heading="Additional Information">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -568,39 +438,6 @@ export const action = async ({ request }) => {
     } catch (error) {
       console.error("[setup] Error subscribing to webhooks:", error);
       return { error: error.message || "Failed to subscribe to webhooks" };
-    }
-  }
-
-  if (actionType === "connect-test-account") {
-    try {
-      const testToken = formData.get("test_token");
-      
-      if (!testToken || !testToken.trim()) {
-        return { error: "Please provide a test account access token" };
-      }
-
-      console.log("[setup] Processing test account token for shop:", shop.id);
-      
-      // Use the existing processManualToken function
-      // This will extract page_id, ig_business_id, and exchange for long-lived token
-      const result = await processManualToken(shop.id, testToken.trim());
-      
-      console.log("[setup] Test account connected successfully:", {
-        pageId: result.pageId,
-        igBusinessId: result.igBusinessId,
-        pageName: result.pageName,
-      });
-
-      return {
-        success: true,
-        refresh: true,
-        message: `Test account connected successfully! Instagram Business ID: ${result.igBusinessId}`,
-      };
-    } catch (error) {
-      console.error("[setup] Error connecting test account:", error);
-      return {
-        error: error.message || "Failed to connect test account. Please check your token and try again.",
-      };
     }
   }
 
