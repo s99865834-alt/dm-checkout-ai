@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth } from "../lib/meta.server";
+import { getProductMappings } from "../lib/db.server";
 import supabase from "../lib/supabase.server";
 
 export const loader = async ({ request }) => {
@@ -12,9 +13,11 @@ export const loader = async ({ request }) => {
 
   let metaAuth = null;
   let recentMessages = [];
+  let productMappings = [];
 
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
+    productMappings = await getProductMappings(shop.id);
 
     // Get recent messages for display with links_sent (to get reply text)
     if (metaAuth?.ig_business_id) {
@@ -165,18 +168,23 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, recentMessages };
+  return { shop, plan, metaAuth, recentMessages, productMappings };
 };
 
 export default function WebhookDemo() {
-  const { shop, plan, metaAuth, recentMessages } = useLoaderData();
+  const { shop, plan, metaAuth, recentMessages, productMappings } = useLoaderData();
   const revalidator = useRevalidator();
   const [selectedExample, setSelectedExample] = useState("purchase");
+  const [testType, setTestType] = useState("dm"); // "dm" or "comment"
   const [customMessage, setCustomMessage] = useState("");
   const [demoResults, setDemoResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
 
   const igBusinessId = metaAuth?.ig_business_id || "17841478724885002";
+  
+  // Get first product mapping for comment > DM scenario (to provide product context)
+  const firstProductMapping = productMappings && productMappings.length > 0 ? productMappings[0] : null;
+  const testMediaId = firstProductMapping?.ig_media_id || "test_media_123"; // Use actual media ID if available
 
   const examples = {
     purchase: {
@@ -217,25 +225,60 @@ export default function WebhookDemo() {
       timestamp: new Date().toISOString(),
     });
 
-    const testPayload = {
-      object: "instagram",
-      entry: [
-        {
-          id: igBusinessId,
-          messaging: [
-            {
-              sender: { id: `test_user_${Date.now()}` },
-              recipient: { id: igBusinessId },
-              message: {
-                mid: `test_message_${Date.now()}`,
-                text: messageText,
+    let testPayload;
+    
+    if (testType === "comment") {
+      // Comment > DM scenario: Comment event that triggers DM with product context
+      const testCommentId = `test_comment_${Date.now()}`;
+      const testUserId = `test_user_${Date.now()}`;
+      
+      testPayload = {
+        object: "instagram",
+        entry: [
+          {
+            id: igBusinessId,
+            changes: [
+              {
+                field: "comments",
+                value: {
+                  id: testCommentId,
+                  text: messageText,
+                  from: {
+                    id: testUserId,
+                    username: "test_user",
+                  },
+                  media: {
+                    id: testMediaId,
+                  },
+                  created_time: Math.floor(Date.now() / 1000).toString(),
+                },
               },
-              timestamp: Math.floor(Date.now() / 1000),
-            },
-          ],
-        },
-      ],
-    };
+            ],
+          },
+        ],
+      };
+    } else {
+      // Direct DM scenario: No product context
+      testPayload = {
+        object: "instagram",
+        entry: [
+          {
+            id: igBusinessId,
+            messaging: [
+              {
+                sender: { id: `test_user_${Date.now()}` },
+                recipient: { id: igBusinessId },
+                message: {
+                  mid: `test_message_${Date.now()}`,
+                  text: messageText,
+                },
+                timestamp: Math.floor(Date.now() / 1000),
+              },
+            ],
+          },
+        ],
+      };
+    }
 
     try {
       const response = await fetch("/meta/test-webhook", {
@@ -290,6 +333,47 @@ export default function WebhookDemo() {
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           <s-stack direction="block" gap="base">
             <s-paragraph>
+              <s-text variant="strong">Select test type:</s-text>
+            </s-paragraph>
+            
+            <s-stack direction="block" gap="tight">
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="testType"
+                  value="dm"
+                  checked={testType === "dm"}
+                  onChange={(e) => setTestType(e.target.value)}
+                  style={{ cursor: "pointer" }}
+                />
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">📩 Direct DM</s-text>
+                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                    Tests a direct DM without product context. The AI won't know which product the customer is asking about unless mentioned in the message.
+                  </s-text>
+                </s-stack>
+              </label>
+              
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="testType"
+                  value="comment"
+                  checked={testType === "comment"}
+                  onChange={(e) => setTestType(e.target.value)}
+                  style={{ cursor: "pointer" }}
+                />
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">💬 Comment → DM</s-text>
+                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                    Tests a comment on an Instagram post that triggers a DM. The AI has product context from the post mapping.
+                    {firstProductMapping ? ` Using product mapping for media ID: ${testMediaId}` : " ⚠️ No product mapping found - please map a product first"}
+                  </s-text>
+                </s-stack>
+              </label>
+            </s-stack>
+            
+            <s-paragraph style={{ marginTop: "16px" }}>
               <s-text variant="strong">Select a test scenario:</s-text>
             </s-paragraph>
 
@@ -404,6 +488,28 @@ export default function WebhookDemo() {
                     <s-text variant="strong">AI Analysis & Response Preview:</s-text>
                     
                     <s-stack direction="block" gap="tight">
+                      {/* Show test type and product context */}
+                      {demoResults.aiPreview.hasProductContext !== undefined && (
+                        <s-box padding="tight" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.hasProductContext ? "success-subdued" : "subdued"} style={{ marginBottom: "8px" }}>
+                          <s-stack direction="inline" gap="tight" alignment="center">
+                            {demoResults.aiPreview.hasProductContext ? (
+                              <>
+                                <s-text variant="strong" tone="success" style={{ fontSize: "12px" }}>✅ Comment → DM</s-text>
+                                <s-text variant="subdued" style={{ fontSize: "11px" }}>Has product context from Instagram post</s-text>
+                                {demoResults.aiPreview.mediaId && (
+                                  <s-text variant="subdued" style={{ fontSize: "10px" }}>(Media ID: {demoResults.aiPreview.mediaId})</s-text>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <s-text variant="strong" style={{ fontSize: "12px" }}>📩 Direct DM</s-text>
+                                <s-text variant="subdued" style={{ fontSize: "11px" }}>No product context (unless mentioned in message)</s-text>
+                              </>
+                            )}
+                          </s-stack>
+                        </s-box>
+                      )}
+                      
                       <s-stack direction="inline" gap="base" alignment="center">
                         <s-text variant="subdued" style={{ fontSize: "12px" }}>
                           <s-text variant="strong">Intent:</s-text> {demoResults.aiPreview.intent || "none"}
@@ -420,34 +526,43 @@ export default function WebhookDemo() {
                         )}
                       </s-stack>
 
-                      {demoResults.aiPreview.wouldSend && demoResults.aiPreview.responseText ? (
-                        <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
-                          <s-stack direction="block" gap="tight">
-                            <s-text variant="strong" style={{ fontSize: "13px" }}>
-                              ✅ Would Send Automated Response:
-                            </s-text>
-                            <s-text variant="subdued" style={{ 
-                              fontSize: "13px", 
-                              whiteSpace: "pre-wrap",
-                              fontFamily: "inherit",
-                              lineHeight: "1.5",
-                            }}>
-                              {demoResults.aiPreview.responseText}
-                            </s-text>
-                          </s-stack>
-                        </s-box>
-                      ) : (
-                        <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
-                          <s-stack direction="block" gap="tight">
-                            <s-text variant="strong" style={{ fontSize: "13px" }}>
-                              ⚠️ Would NOT Send Automated Response
-                            </s-text>
-                            <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                              {demoResults.aiPreview.reason || "Message does not meet criteria for automation"}
-                            </s-text>
-                          </s-stack>
-                        </s-box>
-                      )}
+                          {demoResults.aiPreview.wouldSend && demoResults.aiPreview.responseText ? (
+                            <s-box padding="base" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.isClarifyingQuestion ? "info-subdued" : "base"} style={{ marginTop: "8px" }}>
+                              <s-stack direction="block" gap="tight">
+                                <s-text variant="strong" style={{ fontSize: "13px" }}>
+                                  {demoResults.aiPreview.isClarifyingQuestion ? (
+                                    <>💬 Would Send Clarifying Question (PRO tier):</>
+                                  ) : (
+                                    <>✅ Would Send Automated Response:</>
+                                  )}
+                                </s-text>
+                                {demoResults.aiPreview.isClarifyingQuestion && (
+                                  <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
+                                    PRO tier can ask which product the customer is referring to since follow-up is enabled
+                                  </s-text>
+                                )}
+                                <s-text variant="subdued" style={{ 
+                                  fontSize: "13px", 
+                                  whiteSpace: "pre-wrap",
+                                  fontFamily: "inherit",
+                                  lineHeight: "1.5",
+                                }}>
+                                  {demoResults.aiPreview.responseText}
+                                </s-text>
+                              </s-stack>
+                            </s-box>
+                          ) : (
+                            <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
+                              <s-stack direction="block" gap="tight">
+                                <s-text variant="strong" style={{ fontSize: "13px" }}>
+                                  ⚠️ Would NOT Send Automated Response
+                                </s-text>
+                                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                                  {demoResults.aiPreview.reason || "Message does not meet criteria for automation"}
+                                </s-text>
+                              </s-stack>
+                            </s-box>
+                          )}
                     </s-stack>
                   </s-stack>
                 </s-box>

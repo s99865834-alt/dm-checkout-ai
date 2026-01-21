@@ -288,6 +288,26 @@ export async function handleIncomingDm(message, shop, plan) {
       return { sent: false, reason: "DM automation disabled" };
     }
 
+    // 1.5. Meta Compliance: Check for opt-out keywords (STOP, UNSUBSCRIBE, OPT OUT)
+    const optOutKeywords = ["stop", "unsubscribe", "opt out", "optout", "cancel", "no messages"];
+    const messageTextLower = (message.text || "").toLowerCase();
+    if (optOutKeywords.some(keyword => messageTextLower.includes(keyword))) {
+      console.log(`[automation] Opt-out keyword detected in message ${message.id}, skipping automation`);
+      return { sent: false, reason: "User opted out of automated messages" };
+    }
+
+    // 1.6. Meta Compliance: Verify message is within 24-hour messaging window
+    // For initial messages, this is always true (they just sent it)
+    // For follow-ups, canSendFollowUp already checks this, but we verify here for clarity
+    if (message.last_user_message_at) {
+      const lastMessageTime = new Date(message.last_user_message_at);
+      const now = new Date();
+      const hoursSinceLastMessage = (now - lastMessageTime) / (1000 * 60 * 60);
+      if (hoursSinceLastMessage >= 24) {
+        console.log(`[automation] Message ${message.id} is outside 24-hour messaging window (${hoursSinceLastMessage.toFixed(1)} hours), skipping automation`);
+        return { sent: false, reason: "Outside 24-hour messaging window" };
+      }
+    }
 
     // 2. If shop plan is FREE, check usage_count < cap (25)
     if (plan.name === "FREE") {
@@ -324,9 +344,29 @@ export async function handleIncomingDm(message, shop, plan) {
       // Get brand voice and generate reply message for store questions
       const brandVoiceData = await getBrandVoice(shop.id);
       
-      // For store questions, the AI can answer based on the question content
-      // Store-specific data fetching would require request context, which we don't have in webhooks
-      // The AI will still be able to provide helpful general answers
+      // Fetch store-specific information from Shopify using shop domain
+      let storeInfo = null;
+      if (shop.shopify_domain) {
+        try {
+          const { getShopifyStoreInfo } = await import("./shopify-data.server");
+          storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
+          if (storeInfo) {
+            console.log(`[automation] Fetched store info for ${shop.shopify_domain}:`, {
+              hasRefundPolicy: !!storeInfo.refundPolicy,
+              refundPolicyTitle: storeInfo.refundPolicy?.title,
+              refundPolicyBodyLength: storeInfo.refundPolicy?.body?.length || 0,
+              refundPolicyUrl: storeInfo.refundPolicy?.url,
+              storeEmail: storeInfo.email,
+            });
+          } else {
+            console.log(`[automation] Could not fetch store info for ${shop.shopify_domain} (session may not exist)`);
+          }
+        } catch (error) {
+          console.error(`[automation] Error fetching store info for ${shop.shopify_domain}:`, error);
+          // Continue without store info - AI can still answer based on question content
+        }
+      }
+      
       const replyText = await generateReplyMessage(
         brandVoiceData,
         null,
@@ -335,7 +375,7 @@ export async function handleIncomingDm(message, shop, plan) {
         null,
         null,
         message.text,
-        null // storeInfo - can be enhanced later to fetch from Shopify API
+        storeInfo // Pass store-specific information to AI
       );
 
       // Send DM reply
@@ -349,29 +389,83 @@ export async function handleIncomingDm(message, shop, plan) {
     }
 
     // 6. For product-specific intents, resolve the product using post_product_map or search
-    const productMappings = await getProductMappings(shop.id);
+    // CRITICAL: Direct DMs (channel === "dm") don't have product context from Instagram posts
+    // Only comments (channel === "comment") have media_id that links to a product via handleIncomingComment
+    // For Direct DMs, we should NOT use product mappings because we don't know which product they're referring to
+    // unless the message explicitly mentions a product name (would need to search - TODO)
     
-    // Try to find product mapping (for now, just use first available mapping)
-    // In a real scenario, you'd match based on the media ID from the DM context
-    // For product_question, we can also try to search for products mentioned in the message
-    let productMapping = null;
-    if (productMappings && productMappings.length > 0) {
-      // For now, use the first mapping
-      // TODO: Match based on media context from DM or search for product name in message
-      productMapping = productMappings[0];
+    // Direct DMs with product-specific intents: PRO tier can ask for clarification, others skip
+    if (message.channel === "dm" && productSpecificIntents.includes(message.ai_intent)) {
+      // PRO tier: Ask which product they're referring to (follow-up capability)
+      if (plan.followup === true) {
+        // Meta Compliance: Check for loop prevention - don't ask clarifying question multiple times
+        // Count how many clarifying questions have been sent to this user in the last 24 hours
+        // Clarifying questions are identified by links_sent entries with url = null (no product link)
+        const { data: recentClarifyingQuestions } = await supabase
+          .from("links_sent")
+          .select("id, created_at, message_id")
+          .eq("shop_id", shop.id)
+          .is("url", null) // Clarifying questions have no URL
+          .not("reply_text", "is", null) // But they have reply text
+          .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        
+        // Get the messages associated with these clarifying questions to check if they're from the same user
+        if (recentClarifyingQuestions && recentClarifyingQuestions.length > 0) {
+          const clarifyingMessageIds = recentClarifyingQuestions.map(q => q.message_id);
+          const { data: clarifyingMessages } = await supabase
+            .from("messages")
+            .select("id, from_user_id")
+            .in("id", clarifyingMessageIds)
+            .eq("from_user_id", message.from_user_id);
+          
+          // Limit to 2 clarifying questions per user per 24-hour window to prevent loops
+          if (clarifyingMessages && clarifyingMessages.length >= 2) {
+            console.log(`[automation] Loop prevention: Already sent ${clarifyingMessages.length} clarifying questions to user ${message.from_user_id} in last 24 hours, skipping`);
+            return { sent: false, reason: "Loop prevention: Maximum clarifying questions reached. Please contact support for assistance." };
+          }
+        }
+        
+        console.log(`[automation] Direct DM without product context - PRO tier will ask for clarification for intent: ${message.ai_intent}`);
+        
+        // Get brand voice and generate clarifying question
+        const brandVoiceData = await getBrandVoice(shop.id);
+        const clarifyingReply = await generateClarifyingQuestion(brandVoiceData, message.text, message.ai_intent);
+        
+        // Send clarifying DM
+        await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
+        
+        // Increment usage count
+        await incrementUsage(shop.id, 1);
+        
+        // Log the clarifying message (no product link sent)
+        // Mark it as a clarifying question for loop prevention tracking
+        await logLinkSent({
+          shopId: shop.id,
+          messageId: message.id,
+          productId: null,
+          variantId: null,
+          url: null,
+          linkId: null,
+          replyText: clarifyingReply,
+        });
+        
+        // Also mark this message as having received a clarifying question
+        // We'll use a special marker in the reply_text or add a flag
+        // For now, we'll track via the links_sent table with a special marker
+        
+        console.log(`[automation] ✅ Clarifying question sent for Direct DM ${message.id}`);
+        return { sent: true, reason: "PRO tier: Asked customer which product they're referring to" };
+      } else {
+        // Non-PRO tier: Skip (no follow-up capability)
+        console.log(`[automation] Direct DM without product context - skipping product-specific automation for intent: ${message.ai_intent} (follow-up not available on ${plan.name} plan)`);
+        return { sent: false, reason: "Direct DM without product context - cannot determine which product customer is referring to" };
+      }
     }
-
-    // If no product mapping found but it's a product_question, try searching for products
-    if (!productMapping && message.ai_intent === "product_question" && message.text) {
-      // TODO: Search for products mentioned in the message text
-      // This would require passing the request object to search Shopify products
-      console.log(`[automation] No product mapping found, but product_question intent - would search products if request context available`);
-    }
-
-    if (!productMapping && productSpecificIntents.includes(message.ai_intent)) {
-      console.log(`[automation] No product mapping found for shop ${shop.id}`);
-      return { sent: false, reason: "No product mapping found" };
-    }
+    
+    // Note: Comments are handled by handleIncomingComment, not handleIncomingDm
+    // So if we reach here, it means it's a store_question or other non-product-specific intent
+    // Store questions are already handled above, so this code path shouldn't be reached
+    // But keep it for safety/edge cases
 
     // 5. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
     let productPageUrl = null;
@@ -543,11 +637,11 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     } else {
       // For purchase intent, price requests - use checkout link
       const checkoutLink = await buildCheckoutLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        1
-      );
+      shop,
+      productMapping.product_id,
+      productMapping.variant_id,
+      1
+    );
       checkoutUrl = checkoutLink.url;
       linkId = checkoutLink.linkId;
     }
@@ -582,6 +676,81 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     console.error(`[automation] Error processing comment ${message.id}:`, error);
     return { sent: false, reason: error.message || "Unknown error" };
   }
+}
+
+/**
+ * Generate a clarifying question asking which product the customer is referring to
+ * Used for Direct DMs with product-specific intents when no product context is available (PRO tier only)
+ * @param {Object} brandVoice - Brand voice configuration
+ * @param {string} originalMessage - The customer's original message
+ * @param {string} intent - The detected intent (purchase, product_question, etc.)
+ * @returns {Promise<string>} - The clarifying question message
+ */
+export async function generateClarifyingQuestion(brandVoice, originalMessage, intent) {
+  const tone = brandVoice?.tone || "friendly";
+  const customInstruction = brandVoice?.custom_instruction || "";
+
+  try {
+    const OpenAI = (await import("openai")).default;
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    
+    if (OPENAI_API_KEY) {
+      const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+      
+      const intentContext = {
+        purchase: "wants to buy a product",
+        product_question: "asked a question about a product",
+        variant_inquiry: "asked about product variants (size, color, etc.)",
+        price_request: "asked about the price of a product",
+      }[intent] || "mentioned a product";
+
+      const prompt = `Generate a brief Instagram DM reply asking a customer which product they're referring to.
+
+Customer's message: "${originalMessage}"
+Customer intent: ${intentContext}
+
+Requirements:
+${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
+${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
+- Acknowledge their message briefly
+- Ask which product they're referring to (they sent a Direct DM without product context)
+- Keep it brief (1-2 sentences max)
+- Be helpful but concise
+- Instagram DMs only support plain text, NOT markdown
+- Meta Compliance: If they need further assistance, mention they can contact support (but don't be pushy about it - only mention if natural)
+
+Write the response:`;
+
+      const systemMessage = customInstruction 
+        ? `You are an assistant that generates Instagram DM replies. Follow the custom style instruction exactly - it is the most important requirement. Do not default to being friendly or helpful unless the instruction explicitly says so.`
+        : `You are a helpful assistant that generates customer service messages for Instagram DMs. Keep responses brief and friendly.`;
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 150,
+      });
+
+      if (response?.choices?.[0]?.message?.content) {
+        return response.choices[0].message.content.trim();
+      }
+    }
+  } catch (error) {
+    console.error("[automation] Error generating clarifying question:", error);
+  }
+
+  // Fallback message if AI generation fails
+  const fallbackMessages = {
+    friendly: `Hi! Thanks for reaching out! 😊 Which product are you interested in?`,
+    expert: `Hello! Could you please specify which product you're referring to?`,
+    casual: `Hey! 👋 Which product are you talking about?`,
+  };
+  
+  return fallbackMessages[tone] || fallbackMessages.friendly;
 }
 
 /**
@@ -704,15 +873,29 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           }
           promptBase += `. They are asking about store policies, information, sales, shipping, returns, etc. - NOT about a specific product.`;
           if (storeInfo) {
-            promptBase += ` Use the following store information to answer their question:`;
-            if (storeInfo.refundPolicy) {
-              promptBase += ` Return Policy: ${storeInfo.refundPolicy.title} - ${storeInfo.refundPolicy.body?.substring(0, 500) || 'See policy page'}`;
-            }
-            if (storeInfo.shippingPolicy) {
-              promptBase += ` Shipping Policy: ${storeInfo.shippingPolicy.title} - ${storeInfo.shippingPolicy.body?.substring(0, 500) || 'See policy page'}`;
-            }
+            promptBase += ` Use the following store information to answer their question. CRITICAL: Use ONLY the exact information provided below - do NOT make up email addresses, contact info, or URLs:`;
             if (storeInfo.name) {
               promptBase += ` Store Name: ${storeInfo.name}`;
+            }
+            if (storeInfo.email) {
+              promptBase += ` Store Email: ${storeInfo.email}`;
+            }
+            if (storeInfo.refundPolicy) {
+              const refundBody = storeInfo.refundPolicy.body || '';
+              // Include full refund policy body (or at least first 2000 chars to capture email addresses)
+              promptBase += ` Return Policy Title: ${storeInfo.refundPolicy.title || 'Return Policy'}`;
+              promptBase += ` Return Policy Content: ${refundBody.substring(0, 2000)}${refundBody.length > 2000 ? '...' : ''}`;
+              if (storeInfo.refundPolicy.url) {
+                promptBase += ` Return Policy URL: ${storeInfo.refundPolicy.url}`;
+              }
+            }
+            if (storeInfo.shippingPolicy) {
+              const shippingBody = storeInfo.shippingPolicy.body || '';
+              promptBase += ` Shipping Policy Title: ${storeInfo.shippingPolicy.title || 'Shipping Policy'}`;
+              promptBase += ` Shipping Policy Content: ${shippingBody.substring(0, 1000)}${shippingBody.length > 1000 ? '...' : ''}`;
+              if (storeInfo.shippingPolicy.url) {
+                promptBase += ` Shipping Policy URL: ${storeInfo.shippingPolicy.url}`;
+              }
             }
             if (storeInfo.description) {
               promptBase += ` Store Description: ${storeInfo.description.substring(0, 300)}`;
@@ -726,6 +909,14 @@ export async function generateReplyMessage(brandVoice, productName = null, check
         
         const prompt = `${promptBase}
 
+CRITICAL ACCURACY REQUIREMENTS:
+- NEVER make up, invent, or fabricate ANY information
+- NEVER create fake email addresses, URLs, contact information, product details, prices, or policy information
+- ONLY use information that is explicitly provided above
+- If information is not provided, say "I don't have that information" or direct them to check the provided links
+- If you don't know something, admit it - do NOT guess or assume
+- Accuracy is more important than being helpful
+
 IMPORTANT CONTEXT:
 ${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
@@ -736,7 +927,12 @@ ${intent === "price_request" && productPrice ? `The exact price is ${productPric
 ${intent === "price_request" && !productPrice ? `You don't have the exact price, but you MUST acknowledge their price question. Tell them they can see the price when they click the checkout link.` : ""}
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
-${intent === "store_question" ? `The customer asked a general question about the store (policies, shipping, returns, sales, etc.). Answer their question using the store information provided. If you don't have the specific information, be honest and direct them to the store website or contact information.` : ""}
+${intent === "store_question" ? `The customer asked a general question about the store (policies, shipping, returns, sales, etc.). Answer their question using ONLY the exact store information provided above. CRITICAL: 
+- Extract email addresses, contact information, and URLs directly from the policy content - do NOT make up or invent any contact information
+- If the policy mentions an email address, use that EXACT email - do NOT create a generic one like "support@store.com"
+- If the policy provides a URL, use that EXACT URL - do NOT create fake URLs like "https://is.gd/storeinfo"
+- If the information is not in the provided store information, say "I don't have that specific information, but you can check our policy page" or similar
+- NEVER guess or assume contact information` : ""}
 ${intent === "store_question" && storeInfo ? `Store Information Available: ${JSON.stringify(storeInfo, null, 2)}` : ""}
 
 Requirements:
@@ -748,21 +944,39 @@ ${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge the
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl && checkoutUrl ? `- Then, if they're ready to buy, you can optionally mention the checkout link (${checkoutUrl}) at the end` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
-${intent === "store_question" ? `- Answer their question directly using the store information provided. Be helpful and specific. If you don't have the exact information, direct them to the store website or suggest they contact support.` : ""}
+${intent === "store_question" ? `- Answer their question directly using ONLY the exact store information provided above
+- Extract email addresses, contact info, and URLs directly from the policy content - do NOT invent or make up any information
+- If an email address is mentioned in the policy, use that EXACT email address
+- If a URL is provided in the policy, use that EXACT URL
+- If information is missing, say "I don't have that information" rather than making something up
+- NEVER create generic placeholders like "support@store.com" or fake URLs` : ""}
+${intent === "store_question" && storeInfo?.refundPolicy?.url ? `- If mentioning the return policy, you can include the policy URL: ${storeInfo.refundPolicy.url}` : ""}
+${intent === "store_question" && storeInfo?.shippingPolicy?.url ? `- If mentioning shipping, you can include the shipping policy URL: ${storeInfo.shippingPolicy.url}` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
-- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the URL (which will be automatically shortened for cleaner appearance). Instagram will automatically make URLs clickable. For example, write "Check it out here: https://is.gd/abc123" or "Checkout here: https://is.gd/xyz789" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking (e.g., "Checkout here:", "See product details:", "View all colors:").
+- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the full URL directly. ${intent === "store_question" ? `IMPORTANT: Only include URLs if they are provided in the store information above - do NOT make up or invent URLs like "https://is.gd/storeinfo". If no URL is provided, just use the email address or contact information from the policy.` : `URLs will be automatically shortened for cleaner appearance.`} Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? "- Structure: Acknowledge question → Direct to product page link for details/variants → Optionally mention checkout link at the end if ready to buy" : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- Don't make up details you don't know - just acknowledge their question and direct them to the link for full details" : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- CRITICAL: Don't make up details you don't know - just acknowledge their question and direct them to the link for full details. If you don't know the answer, say so." : ""}
+${intent === "price_request" && !productPrice ? "- CRITICAL: If you don't have the exact price, direct them to the checkout link to see the price. Do NOT guess or estimate the price." : ""}
 ${customInstruction ? `` : `- End with an offer to help with questions`}
 
 Write the response:`;
 
         const systemMessage = customInstruction 
-          ? `You are an assistant that generates Instagram DM replies. Follow the custom style instruction exactly - it is the most important requirement. Do not default to being friendly or helpful unless the instruction explicitly says so.`
-          : `You are a helpful assistant that generates customer service messages for Instagram DMs. Keep responses brief and friendly.`;
+          ? `You are an assistant that generates Instagram DM replies. CRITICAL RULES:
+1. NEVER make up, invent, or fabricate any information (email addresses, URLs, contact info, product details, prices, policies, etc.)
+2. ONLY use information explicitly provided in the user's message or context
+3. If information is not provided, say "I don't have that information" or direct them to check the provided links
+4. Follow the custom style instruction exactly - it is the most important requirement after accuracy
+5. Do not default to being friendly or helpful unless the instruction explicitly says so.`
+          : `You are an assistant that generates customer service messages for Instagram DMs. CRITICAL RULES:
+1. NEVER make up, invent, or fabricate any information (email addresses, URLs, contact info, product details, prices, policies, etc.)
+2. ONLY use information explicitly provided in the user's message or context
+3. If information is not provided, say "I don't have that information" or direct them to check the provided links
+4. Keep responses brief and friendly
+5. Accuracy is more important than being helpful - never guess or assume`;
         
         const response = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -770,7 +984,7 @@ Write the response:`;
             { role: "system", content: systemMessage },
             { role: "user", content: prompt }
           ],
-          temperature: 0.8,
+          temperature: 0.3, // Lower temperature to reduce creativity/hallucination - prioritize accuracy over creativity
           max_tokens: 250, // Increased from 150 to allow for complete responses with links
         });
 

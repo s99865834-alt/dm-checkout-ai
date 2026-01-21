@@ -3,21 +3,33 @@
  * Fetches store information, policies, products, etc. for AI responses
  */
 
-import { authenticate } from "../shopify.server";
+import { sessionStorage } from "../shopify.server";
+import shopify from "../shopify.server";
 
 /**
- * Get Shopify store information including policies
- * @param {Object} request - Request object (for authentication)
+ * Get Shopify store information including policies using shop domain
+ * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
  * @returns {Promise<Object>} - Store information including policies
  */
-export async function getShopifyStoreInfo(request) {
+export async function getShopifyStoreInfo(shopDomain) {
   try {
-    if (!request) {
-      console.log("[shopify-data] No request object provided, skipping store info fetch");
+    if (!shopDomain) {
+      console.log("[shopify-data] No shop domain provided, skipping store info fetch");
       return null;
     }
     
-    const { admin } = await authenticate.admin(request);
+    // Get session from storage using shop domain
+    // Session ID format: {shop}_{apiKey}
+    const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
+    const session = await sessionStorage.loadSession(sessionId);
+    
+    if (!session || !session.accessToken) {
+      console.error("[shopify-data] No valid session found for shop:", shopDomain);
+      return null;
+    }
+    
+    // Create GraphQL client using the session
+    const admin = new shopify.clients.Graphql({ session });
     
     // Fetch shop information and policies
     const response = await admin.graphql(`
@@ -75,6 +87,7 @@ export async function getShopifyStoreInfo(request) {
  */
 export async function searchShopifyProducts(request, searchTerm, limit = 5) {
   try {
+    const { authenticate } = await import("../shopify.server");
     const { admin } = await authenticate.admin(request);
     
     const response = await admin.graphql(`
@@ -126,6 +139,7 @@ export async function searchShopifyProducts(request, searchTerm, limit = 5) {
  */
 export async function getActiveDiscounts(request) {
   try {
+    const { authenticate } = await import("../shopify.server");
     const { admin } = await authenticate.admin(request);
     
     const response = await admin.graphql(`

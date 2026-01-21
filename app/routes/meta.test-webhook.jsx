@@ -20,8 +20,22 @@ export const action = async ({ request }) => {
     
     console.log("[test-webhook] Received test webhook payload:", JSON.stringify(body, null, 2));
 
-    // Extract message text for preview
-    const messageText = body?.entry?.[0]?.messaging?.[0]?.message?.text || "";
+    // Extract message text for preview (from either messaging or comment event)
+    let messageText = "";
+    let mediaId = null;
+    let isCommentEvent = false;
+    
+    // Check if it's a comment event (Comment > DM scenario)
+    if (body?.entry?.[0]?.changes?.[0]?.field === "comments") {
+      const commentValue = body?.entry?.[0]?.changes?.[0]?.value;
+      messageText = commentValue?.text || "";
+      mediaId = commentValue?.media?.id || null;
+      isCommentEvent = true;
+    } else {
+      // Direct DM scenario
+      messageText = body?.entry?.[0]?.messaging?.[0]?.message?.text || "";
+    }
+    
     const igBusinessId = body?.entry?.[0]?.id || "";
     
     // Import the actual webhook handler
@@ -72,7 +86,9 @@ export const action = async ({ request }) => {
                   // Handle store_question separately (doesn't need product mapping)
                   if (classification.intent === "store_question") {
                     const { generateReplyMessage } = await import("../lib/automation.server");
-                    const replyText = await generateReplyMessage(brandVoiceData, null, null, classification.intent, null, null, messageText, null);
+                    const { getShopifyStoreInfo } = await import("../lib/shopify-data.server");
+                    const storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
+                    const replyText = await generateReplyMessage(brandVoiceData, null, null, classification.intent, null, null, messageText, storeInfo);
                     
                     aiPreview = {
                       intent: classification.intent,
@@ -80,6 +96,8 @@ export const action = async ({ request }) => {
                       sentiment: classification.sentiment,
                       responseText: replyText,
                       wouldSend: true,
+                      hasProductContext: false,
+                      testType: isCommentEvent ? "comment" : "dm",
                     };
                   } else {
                     // Product-specific intents need product mappings
@@ -87,8 +105,17 @@ export const action = async ({ request }) => {
                     const { buildCheckoutLink, buildProductPageLink } = await import("../lib/automation.server");
                     
                     const productMappings = await getProductMappings(shop.id);
-                    if (productMappings && productMappings.length > 0) {
-                      const productMapping = productMappings[0];
+                    
+                    // For comment events, find product mapping by media_id
+                    // For Direct DM events, do NOT use product mappings - no product context available
+                    let productMapping = null;
+                    if (isCommentEvent && mediaId) {
+                      // Comment > DM: Find product mapping for this specific media ID
+                      productMapping = productMappings?.find((m) => m.ig_media_id === mediaId);
+                    }
+                    // Direct DM: Do NOT use product mappings - we don't know which product they're referring to
+                    
+                    if (productMapping) {
                       
                       // For product_question and variant_inquiry, use PDP link first; for others, use checkout link
                       let productPageUrl = null;
@@ -132,16 +159,52 @@ export const action = async ({ request }) => {
                         sentiment: classification.sentiment,
                         responseText: replyText,
                         wouldSend: true,
+                        hasProductContext: isCommentEvent && mediaId ? true : false,
+                        testType: isCommentEvent ? "comment" : "dm",
+                        mediaId: mediaId || null,
+                        productMappingFound: !!productMapping,
                       };
                     } else {
-                      aiPreview = {
-                        intent: classification.intent,
-                        confidence: classification.confidence,
-                        sentiment: classification.sentiment,
-                        responseText: null,
-                        wouldSend: false,
-                        reason: "No product mapping found",
-                      };
+                      // No product mapping found
+                      // For Direct DMs with product-specific intents: PRO tier asks for clarification, others skip
+                      if (!isCommentEvent && plan.followup === true) {
+                        // PRO tier: Generate clarifying question
+                        const { generateClarifyingQuestion } = await import("../lib/automation.server");
+                        const clarifyingReply = await generateClarifyingQuestion(brandVoiceData, messageText, classification.intent);
+                        
+                        aiPreview = {
+                          intent: classification.intent,
+                          confidence: classification.confidence,
+                          sentiment: classification.sentiment,
+                          responseText: clarifyingReply,
+                          wouldSend: true,
+                          reason: "PRO tier: Will ask customer which product they're referring to",
+                          hasProductContext: false,
+                          testType: "dm",
+                          mediaId: null,
+                          productMappingFound: false,
+                          isClarifyingQuestion: true,
+                        };
+                      } else {
+                        const reason = isCommentEvent && mediaId 
+                          ? `No product mapping found for media ID: ${mediaId}` 
+                          : plan.followup === true 
+                            ? "Direct DM without product context - cannot determine which product customer is referring to"
+                            : `Direct DM without product context - cannot determine which product customer is referring to (follow-up not available on ${plan.name} plan)`;
+                        
+                        aiPreview = {
+                          intent: classification.intent,
+                          confidence: classification.confidence,
+                          sentiment: classification.sentiment,
+                          responseText: null,
+                          wouldSend: false,
+                          reason: reason,
+                          hasProductContext: false,
+                          testType: isCommentEvent ? "comment" : "dm",
+                          mediaId: mediaId || null,
+                          productMappingFound: false,
+                        };
+                      }
                     }
                   }
                 } else {

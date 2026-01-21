@@ -163,9 +163,10 @@ export default function InstagramFeedPage() {
   const [selectedVariant, setSelectedVariant] = useState("");
 
   // Check plan access directly from loader data
+  // Product mapping is available for Growth+ (Growth and PRO tiers)
   const planHierarchy = { FREE: 0, GROWTH: 1, PRO: 2 };
   const currentPlanLevel = planHierarchy[plan?.name] || 0;
-  const requiredPlanLevel = planHierarchy["PRO"] || 0;
+  const requiredPlanLevel = planHierarchy["GROWTH"] || 0;
   const hasAccess = currentPlanLevel >= requiredPlanLevel;
 
   const isConnected = !!metaAuth;
@@ -193,20 +194,20 @@ export default function InstagramFeedPage() {
   if (!hasAccess) {
     return (
       <s-page heading="Instagram Feed & Product Mapping">
-        <s-callout variant="info" title="Instagram Feed requires Pro plan">
+        <s-callout variant="info" title="Instagram Feed requires Growth plan">
           <s-stack direction="block" gap="base">
             <s-paragraph>
               <s-text>
-                This feature is available on the <s-text variant="strong">Pro</s-text> plan ($99/month).
+                This feature is available on the <s-text variant="strong">Growth</s-text> plan or higher.
               </s-text>
             </s-paragraph>
             <s-paragraph>
               <s-text variant="subdued">
-                Upgrade to unlock Instagram Feed and other premium features.
+                Upgrade to unlock Instagram Feed, product mapping, and comment-to-DM automation.
               </s-text>
             </s-paragraph>
             <s-button href="/app/billing/select" variant="primary">
-              Upgrade to Pro
+              Upgrade to Growth
             </s-button>
           </s-stack>
         </s-callout>
