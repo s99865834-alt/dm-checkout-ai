@@ -2,7 +2,7 @@
 
 client_id = "e8f65f3073d5d5a24b4654be248a0b56"
 name = "dm-checkout-ai"
-application_url = "https://example.com"
+application_url = "https://dm-checkout-ai-production.up.railway.app"
 embedded = true
 
 [build]
@@ -31,4 +31,4 @@ api_version = "2026-01"
 scopes = "write_products,read_orders"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://dm-checkout-ai-production.up.railway.app/auth/callback" ]
