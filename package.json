@@ -24,7 +24,7 @@
     "node": ">=20.10"
   },
   "dependencies": {
-    "@prisma/client": "^6.2.1",
+    "@prisma/client": "^6.19.2",
     "@react-router/dev": "^7.9.1",
     "@react-router/fs-routes": "^7.9.1",
     "@react-router/node": "^7.9.1",
@@ -58,7 +58,7 @@
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "prettier": "^3.2.4",
-    "prisma": "^6.2.1",
+    "prisma": "^6.19.2",
     "typescript": "^5.2.2",
     "vite": "^6.2.2"
   },
