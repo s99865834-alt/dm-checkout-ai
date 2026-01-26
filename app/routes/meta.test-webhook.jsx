@@ -68,6 +68,127 @@ export const action = async ({ request }) => {
             const { shop, plan } = await getShopWithPlan(request);
             
             if (shop?.id) {
+              // Fetch automation settings so the preview matches real automation controls
+              const { getSettings } = await import("../lib/db.server");
+              const settings = await getSettings(shop.id);
+
+              const dmAutomationEnabled = settings?.dm_automation_enabled !== false;
+              const commentAutomationEnabled = settings?.comment_automation_enabled !== false;
+              const followupAutomationEnabled = settings?.followup_enabled === true;
+              const channelPreference = settings?.channel_preference || "both";
+
+              // Apply channel preference and automation toggles
+              if (!isCommentEvent) {
+                if (!dmAutomationEnabled) {
+                  aiPreview = {
+                    intent: "none",
+                    confidence: 0,
+                    sentiment: "neutral",
+                    responseText: null,
+                    wouldSend: false,
+                    reason: "DM automation disabled (Automation Controls)",
+                    testType: "dm",
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
+                  };
+                } else if (channelPreference === "comment") {
+                  aiPreview = {
+                    intent: "none",
+                    confidence: 0,
+                    sentiment: "neutral",
+                    responseText: null,
+                    wouldSend: false,
+                    reason: 'Channel preference is "comment only" (DMs disabled)',
+                    testType: "dm",
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
+                  };
+                }
+              } else {
+                if (!commentAutomationEnabled) {
+                  aiPreview = {
+                    intent: "none",
+                    confidence: 0,
+                    sentiment: "neutral",
+                    responseText: null,
+                    wouldSend: false,
+                    reason: "Comment automation disabled (Automation Controls)",
+                    testType: "comment",
+                    mediaId: mediaId || null,
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
+                  };
+                } else if (channelPreference === "dm") {
+                  aiPreview = {
+                    intent: "none",
+                    confidence: 0,
+                    sentiment: "neutral",
+                    responseText: null,
+                    wouldSend: false,
+                    reason: 'Channel preference is "DM only" (comments disabled)',
+                    testType: "comment",
+                    mediaId: mediaId || null,
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
+                  };
+                } else if (
+                  mediaId &&
+                  Array.isArray(settings?.enabled_post_ids) &&
+                  settings.enabled_post_ids.length > 0 &&
+                  !settings.enabled_post_ids.includes(mediaId)
+                ) {
+                  aiPreview = {
+                    intent: "none",
+                    confidence: 0,
+                    sentiment: "neutral",
+                    responseText: null,
+                    wouldSend: false,
+                    reason: `Post filtering enabled — media ID ${mediaId} is not enabled`,
+                    testType: "comment",
+                    mediaId: mediaId || null,
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
+                  };
+                }
+              }
+
+              // If automation is disabled by controls above, don't attempt AI preview generation.
+              if (aiPreview && aiPreview.wouldSend === false && aiPreview.reason) {
+                // Keep aiPreview as-is (matches real automation)
+                return new Response(
+                  JSON.stringify({
+                    success: true,
+                    message: "Test webhook processed",
+                    responseStatus: response.status,
+                    aiPreview: aiPreview,
+                  }),
+                  {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                  }
+                );
+              }
+
               // Classify the message directly
               const { classifyMessage } = await import("../lib/ai.server");
               const classification = await classifyMessage(messageText, { shopId: shop.id });
@@ -83,8 +204,29 @@ export const action = async ({ request }) => {
                   const { getBrandVoice } = await import("../lib/db.server");
                   const brandVoiceData = await getBrandVoice(shop.id);
                   
+                  // store_question is only handled for Direct DMs (not comment-to-DM)
+                  if (classification.intent === "store_question" && isCommentEvent) {
+                    aiPreview = {
+                      intent: classification.intent,
+                      confidence: classification.confidence,
+                      sentiment: classification.sentiment,
+                      responseText: null,
+                      wouldSend: false,
+                      reason: "Store questions are only handled for Direct DMs (not comments)",
+                      hasProductContext: false,
+                      testType: "comment",
+                      mediaId: mediaId || null,
+                      automation: {
+                        dmAutomationEnabled,
+                        commentAutomationEnabled,
+                        followupAutomationEnabled,
+                        channelPreference,
+                      },
+                    };
+                  }
+
                   // Handle store_question separately (doesn't need product mapping)
-                  if (classification.intent === "store_question") {
+                  if (!aiPreview && classification.intent === "store_question") {
                     const { generateReplyMessage } = await import("../lib/automation.server");
                     const { getShopifyStoreInfo } = await import("../lib/shopify-data.server");
                     const storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
@@ -113,6 +255,12 @@ export const action = async ({ request }) => {
                       wouldSend: true,
                       hasProductContext: false,
                       testType: isCommentEvent ? "comment" : "dm",
+                      automation: {
+                        dmAutomationEnabled,
+                        commentAutomationEnabled,
+                        followupAutomationEnabled,
+                        channelPreference,
+                      },
                     };
                   } else {
                     // Product-specific intents need product mappings
@@ -132,6 +280,31 @@ export const action = async ({ request }) => {
                     
                     if (productMapping) {
                       
+                      // Comment-to-DM requires confidence threshold in real automation
+                      if (isCommentEvent && (!classification.confidence || classification.confidence < 0.7)) {
+                        aiPreview = {
+                          intent: classification.intent,
+                          confidence: classification.confidence,
+                          sentiment: classification.sentiment,
+                          responseText: null,
+                          wouldSend: false,
+                          reason: `Confidence ${(classification.confidence ?? 0).toFixed(2)} below threshold (0.70)`,
+                          hasProductContext: true,
+                          testType: "comment",
+                          mediaId: mediaId || null,
+                          productMappingFound: true,
+                          automation: {
+                            dmAutomationEnabled,
+                            commentAutomationEnabled,
+                            followupAutomationEnabled,
+                            channelPreference,
+                          },
+                        };
+                      }
+
+                      if (aiPreview) {
+                        // Keep aiPreview as set (e.g. below confidence threshold)
+                      } else {
                       // For product_question and variant_inquiry, use PDP link first; for others, use checkout link
                       let productPageUrl = null;
                       let checkoutUrl = null;
@@ -193,11 +366,18 @@ export const action = async ({ request }) => {
                         testType: isCommentEvent ? "comment" : "dm",
                         mediaId: mediaId || null,
                         productMappingFound: !!productMapping,
+                        automation: {
+                          dmAutomationEnabled,
+                          commentAutomationEnabled,
+                          followupAutomationEnabled,
+                          channelPreference,
+                        },
                       };
+                      }
                     } else {
                       // No product mapping found
                       // For Direct DMs with product-specific intents: PRO tier asks for clarification, others skip
-                      if (!isCommentEvent && plan.followup === true) {
+                      if (!isCommentEvent && plan.followup === true && followupAutomationEnabled) {
                         // PRO tier: Generate clarifying question
                         const { generateClarifyingQuestion } = await import("../lib/automation.server");
                         const clarifyingReply = await generateClarifyingQuestion(
@@ -219,12 +399,23 @@ export const action = async ({ request }) => {
                           mediaId: null,
                           productMappingFound: false,
                           isClarifyingQuestion: true,
+                          automation: {
+                            dmAutomationEnabled,
+                            commentAutomationEnabled,
+                            followupAutomationEnabled,
+                            channelPreference,
+                          },
                         };
                       } else {
+                        const followupDisabledReason =
+                          !isCommentEvent && plan.followup === true && !followupAutomationEnabled
+                            ? "Follow-up automation is disabled (clarifying questions are disabled)"
+                            : null;
+
                         const reason = isCommentEvent && mediaId 
                           ? `No product mapping found for media ID: ${mediaId}` 
                           : plan.followup === true 
-                            ? "Direct DM without product context - cannot determine which product customer is referring to"
+                            ? (followupDisabledReason || "Direct DM without product context - cannot determine which product customer is referring to")
                             : `Direct DM without product context - cannot determine which product customer is referring to (follow-up not available on ${plan.name} plan)`;
                         
                         aiPreview = {
@@ -238,6 +429,12 @@ export const action = async ({ request }) => {
                           testType: isCommentEvent ? "comment" : "dm",
                           mediaId: mediaId || null,
                           productMappingFound: false,
+                          automation: {
+                            dmAutomationEnabled,
+                            commentAutomationEnabled,
+                            followupAutomationEnabled,
+                            channelPreference,
+                          },
                         };
                       }
                     }
@@ -250,6 +447,12 @@ export const action = async ({ request }) => {
                     responseText: null,
                     wouldSend: false,
                     reason: `Intent "${classification.intent}" not eligible for automation`,
+                    automation: {
+                      dmAutomationEnabled,
+                      commentAutomationEnabled,
+                      followupAutomationEnabled,
+                      channelPreference,
+                    },
                   };
                 }
               } else {
@@ -260,6 +463,12 @@ export const action = async ({ request }) => {
                   responseText: null,
                   wouldSend: false,
                   reason: classification?.error || "Could not classify message",
+                  automation: {
+                    dmAutomationEnabled,
+                    commentAutomationEnabled,
+                    followupAutomationEnabled,
+                    channelPreference,
+                  },
                 };
               }
             }

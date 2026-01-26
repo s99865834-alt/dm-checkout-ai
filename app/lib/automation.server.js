@@ -290,6 +290,9 @@ export async function handleIncomingDm(message, shop, plan) {
       return { sent: false, reason: "DM automation disabled" };
     }
 
+    // Follow-up automation toggle (PRO). When disabled, we do NOT ask clarifying questions.
+    const followupAutomationEnabled = settings?.followup_enabled === true;
+
     // 1.5. Meta Compliance: Check for opt-out keywords (STOP, UNSUBSCRIBE, OPT OUT)
     const optOutKeywords = ["stop", "unsubscribe", "opt out", "optout", "cancel", "no messages"];
     const messageTextLower = (message.text || "").toLowerCase();
@@ -549,7 +552,7 @@ export async function handleIncomingDm(message, shop, plan) {
       }
 
       // No prior product context => Direct DM without context
-      if (plan.followup === true) {
+      if (plan.followup === true && followupAutomationEnabled) {
         // Meta Compliance: loop prevention - don't ask clarifying question multiple times
         const { data: recentClarifyingQuestions } = await supabase
           .from("links_sent")
@@ -609,12 +612,14 @@ export async function handleIncomingDm(message, shop, plan) {
       }
 
       console.log(
-        `[automation] Direct DM without product context - skipping product-specific automation for intent: ${intent} (follow-up not available on ${plan.name} plan)`
+        `[automation] Direct DM without product context - skipping product-specific automation for intent: ${intent} (follow-up automation disabled or unavailable)`
       );
       return {
         sent: false,
         reason:
-          "Direct DM without product context - cannot determine which product customer is referring to",
+          followupAutomationEnabled
+            ? "Direct DM without product context - cannot determine which product customer is referring to"
+            : "Follow-up automation is disabled — cannot ask clarifying questions, so no automated response will be sent",
       };
     }
 

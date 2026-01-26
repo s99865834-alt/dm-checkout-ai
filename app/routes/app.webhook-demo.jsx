@@ -4,7 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth } from "../lib/meta.server";
-import { getProductMappings } from "../lib/db.server";
+import { getProductMappings, getSettings } from "../lib/db.server";
 import supabase from "../lib/supabase.server";
 
 export const loader = async ({ request }) => {
@@ -14,10 +14,12 @@ export const loader = async ({ request }) => {
   let metaAuth = null;
   let recentMessages = [];
   let productMappings = [];
+  let settings = null;
 
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     productMappings = await getProductMappings(shop.id);
+    settings = await getSettings(shop.id);
 
     // Get recent messages for display with links_sent (to get reply text)
     if (metaAuth?.ig_business_id) {
@@ -220,11 +222,11 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, recentMessages, productMappings };
+  return { shop, plan, metaAuth, recentMessages, productMappings, settings };
 };
 
 export default function WebhookDemo() {
-  const { shop, plan, metaAuth, recentMessages, productMappings } = useLoaderData();
+  const { shop, plan, metaAuth, recentMessages, productMappings, settings } = useLoaderData();
   const revalidator = useRevalidator();
   const [selectedExample, setSelectedExample] = useState("purchase");
   const [testType, setTestType] = useState("dm"); // "dm" or "comment"
@@ -413,6 +415,30 @@ export default function WebhookDemo() {
                 processing using test webhooks for review.
               </s-text>
             </s-paragraph>
+
+            {settings && (
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">Current Automation Controls:</s-text>
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="subdued">
+                      DM automation: {settings.dm_automation_enabled === false ? "Off" : "On"}
+                    </s-text>
+                    <s-text variant="subdued">
+                      Comment automation: {settings.comment_automation_enabled === false ? "Off" : "On"}
+                    </s-text>
+                    <s-text variant="subdued">
+                      Follow-up automation: {settings.followup_enabled === true ? "On" : "Off"}
+                    </s-text>
+                    {settings.channel_preference && settings.channel_preference !== "both" && (
+                      <s-text variant="subdued">
+                        Channel preference: {settings.channel_preference === "dm" ? "DM only" : "Comment only"}
+                      </s-text>
+                    )}
+                  </s-stack>
+                </s-stack>
+              </s-box>
+            )}
           </s-stack>
         </s-box>
       </s-section>
