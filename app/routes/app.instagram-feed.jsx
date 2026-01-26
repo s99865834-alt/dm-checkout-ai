@@ -279,17 +279,18 @@ export default function InstagramFeedPage() {
         ) : (
           <>
             <s-section heading="Your Instagram Posts">
-              <s-paragraph>
-                Map your Instagram posts to Shopify products and control automation for each post. When customers comment or DM about a post, we'll know which product to show them.
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">
-                  Use the checkboxes below each post to enable/disable AI automation for that specific post. By default, all posts have automation enabled.
-                </s-text>
-              </s-paragraph>
+              <s-stack direction="block" gap="base">
+                <s-paragraph>
+                  Map your Instagram posts to Shopify products and control automation for each post. When customers comment or DM about a post, we'll know which product to show them.
+                </s-paragraph>
+                <s-paragraph>
+                  <s-text variant="subdued">
+                    Use the checkboxes below each post to enable/disable AI automation for that specific post. By default, all posts have automation enabled.
+                  </s-text>
+                </s-paragraph>
 
               {mediaData.data && mediaData.data.length > 0 ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px", marginTop: "16px" }}>
+                <div className="srMediaGrid">
                   {mediaData.data.map((media) => {
                     const mapping = mappingsMap.get(media.id);
                     const mappedProduct = mapping
@@ -307,11 +308,11 @@ export default function InstagramFeedPage() {
                             <img
                               src={media.media_url}
                               alt={media.caption || "Instagram post"}
-                              style={{ width: "100%", borderRadius: "8px" }}
+                              className="srMediaImage"
                             />
                           )}
                           {media.caption && (
-                            <s-text variant="subdued" style={{ fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                            <s-text variant="subdued" className="srClamp2">
                               {media.caption}
                             </s-text>
                           )}
@@ -331,19 +332,18 @@ export default function InstagramFeedPage() {
                                 <s-text variant="strong">
                                   {automationEnabled ? "✅ Automation Enabled" : "❌ Automation Disabled"}
                                 </s-text>
-                                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                                <s-text variant="subdued">
                                   {automationEnabled
                                     ? "AI will respond to comments/DMs on this post"
                                     : "AI will NOT respond to comments/DMs on this post"}
                                 </s-text>
                               </s-stack>
-                              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                              <label className="srCheckboxLabel">
                                 <input
                                   type="checkbox"
                                   checked={automationEnabled}
                                   onChange={() => handleTogglePostAutomation(media.id, automationEnabled)}
                                   disabled={fetcher.state !== "idle"}
-                                  style={{ width: "20px", height: "20px", cursor: "pointer" }}
                                 />
                               </label>
                             </s-stack>
@@ -396,7 +396,7 @@ export default function InstagramFeedPage() {
                                     setSelectedProduct(e.target.value);
                                     setSelectedVariant(""); // Reset variant when product changes
                                   }}
-                                  style={{ width: "100%", padding: "8px", borderRadius: "4px" }}
+                                  className="srSelect"
                                 >
                                   <option value="">-- Select Product --</option>
                                   {shopifyProducts.map((product) => (
@@ -415,7 +415,7 @@ export default function InstagramFeedPage() {
                                       id={`variant-${media.id}`}
                                       value={selectedVariant}
                                       onChange={(e) => setSelectedVariant(e.target.value)}
-                                      style={{ width: "100%", padding: "8px", borderRadius: "4px" }}
+                                      className="srSelect"
                                     >
                                       <option value="">-- Default Variant --</option>
                                       {selectedProductVariants.map((variant) => (
@@ -459,6 +459,7 @@ export default function InstagramFeedPage() {
               ) : (
                 <s-paragraph>No Instagram posts found.</s-paragraph>
               )}
+              </s-stack>
             </s-section>
           </>
         )}

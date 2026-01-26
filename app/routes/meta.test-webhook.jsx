@@ -88,7 +88,22 @@ export const action = async ({ request }) => {
                     const { generateReplyMessage } = await import("../lib/automation.server");
                     const { getShopifyStoreInfo } = await import("../lib/shopify-data.server");
                     const storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
-                    const replyText = await generateReplyMessage(brandVoiceData, null, null, classification.intent, null, null, messageText, storeInfo);
+                    const replyText = await generateReplyMessage(
+                      brandVoiceData,
+                      null,
+                      null,
+                      classification.intent,
+                      null,
+                      null,
+                      messageText,
+                      storeInfo,
+                      {
+                        originChannel: isCommentEvent ? "comment" : "dm",
+                        inboundChannel: isCommentEvent ? "comment" : "dm",
+                        triggerChannel: isCommentEvent ? "comment" : "dm",
+                        recentMessages: [{ channel: isCommentEvent ? "comment" : "dm", text: messageText }],
+                      }
+                    );
                     
                     aiPreview = {
                       intent: classification.intent,
@@ -151,7 +166,22 @@ export const action = async ({ request }) => {
                       // Import the actual generateReplyMessage function to match behavior
                       const { generateReplyMessage } = await import("../lib/automation.server");
                       // Pass the intent, links, and original message so the AI can understand context
-                      const replyText = await generateReplyMessage(brandVoiceData, null, checkoutUrl, classification.intent, null, productPageUrl, messageText, null);
+                      const replyText = await generateReplyMessage(
+                        brandVoiceData,
+                        null,
+                        checkoutUrl,
+                        classification.intent,
+                        null,
+                        productPageUrl,
+                        messageText,
+                        null,
+                        {
+                          originChannel: "comment",
+                          inboundChannel: "comment",
+                          triggerChannel: "comment",
+                          recentMessages: [{ channel: "comment", text: messageText }],
+                        }
+                      );
                       
                       aiPreview = {
                         intent: classification.intent,
@@ -170,7 +200,12 @@ export const action = async ({ request }) => {
                       if (!isCommentEvent && plan.followup === true) {
                         // PRO tier: Generate clarifying question
                         const { generateClarifyingQuestion } = await import("../lib/automation.server");
-                        const clarifyingReply = await generateClarifyingQuestion(brandVoiceData, messageText, classification.intent);
+                        const clarifyingReply = await generateClarifyingQuestion(
+                          brandVoiceData,
+                          messageText,
+                          classification.intent,
+                          { originChannel: "dm", inboundChannel: "dm" }
+                        );
                         
                         aiPreview = {
                           intent: classification.intent,

@@ -2,6 +2,15 @@
 
 Based on Meta's official requirements, here's everything you need for app approval:
 
+## 🔗 Reference URLs (stable)
+
+- **App base URL (production)**: `https://dm-checkout-ai-production.up.railway.app`
+- **Webhook receiver**: `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
+- **Test webhook endpoint**: `https://dm-checkout-ai-production.up.railway.app/meta/test-webhook`
+- **Privacy policy**: `https://dm-checkout-ai-production.up.railway.app/privacy`
+- **Terms**: `https://dm-checkout-ai-production.up.railway.app/terms`
+- **Data deletion callback**: `https://dm-checkout-ai-production.up.railway.app/meta/data-deletion`
+
 ## ✅ What You Have (Completed)
 
 1. **Webhook Endpoint Configured**
@@ -38,11 +47,11 @@ Based on Meta's official requirements, here's everything you need for app approv
    - **What**: Record a video showing your app's functionality
    - **Duration**: 2-5 minutes recommended
    - **Must Show**:
-     - User sends DM to Instagram Business account
-     - Webhook receives the message
-     - AI classifies the message
-     - Automated reply is sent
-     - Message appears in database
+     - Open Shopify Admin → Apps → **DM Checkout AI**
+     - Navigate to **Webhook Demo** (`/app/webhook-demo`)
+     - Send a **test webhook** (Direct DM and/or Comment → DM)
+     - Show **AI classification** + **automation decision** (Step 2)
+     - Show the message **logged in the database** (Step 3)
    - **How to Create**:
      - Use the Webhook Demo page (`/app/webhook-demo`)
      - Record screen while sending test webhooks
@@ -73,9 +82,10 @@ Based on Meta's official requirements, here's everything you need for app approv
 ### 4. **Platform Policies Compliance** (REQUIRED)
    - ✅ **User-Initiated Conversations**: Your app only responds to user messages (not sending unsolicited messages)
    - ✅ **24-Hour Window**: Automated replies only within 24-hour messaging window
-   - ❓ **Privacy Policy**: Must have a privacy policy URL
-   - ❓ **Terms of Service**: Must have terms of service URL
-   - ❓ **Data Usage**: Clearly explain how you use Instagram data
+   - ✅ **Privacy Policy**: `https://dm-checkout-ai-production.up.railway.app/privacy`
+   - ✅ **Terms of Service**: `https://dm-checkout-ai-production.up.railway.app/terms`
+   - ✅ **Data Deletion Callback**: `https://dm-checkout-ai-production.up.railway.app/meta/data-deletion`
+   - ✅ **Data Usage**: Explain what data is stored (message text/IDs/timestamps + AI classification + reply text) and why (merchant-requested automation + audit/debug)
 
 ### 5. **Business Verification** (May be Required)
    - Check if your app type requires Business Verification
@@ -128,7 +138,9 @@ Before submitting, ensure:
 ### For `instagram_manage_messages`:
 
 **Use Case:**
-"Our app automatically responds to Instagram Direct Messages from customers who express purchase intent. When a customer sends a message like 'I want to buy this product', our AI classifies the message and sends an automated reply with a checkout link."
+"Our app helps merchants respond to inbound Instagram DMs. The app classifies messages and responds only when it is safe and policy-compliant:
+- If the DM has enough product context, it can send a product page/checkout link.
+- If the DM lacks product context (e.g., 'I want to buy this product'), PRO tier asks a clarifying question ('Which product?'). Non‑PRO sends no automated reply to avoid guessing the wrong product."
 
 **User Benefit:**
 "Merchants can respond to customer inquiries instantly, even outside business hours, improving customer satisfaction and increasing sales conversions."
@@ -137,11 +149,12 @@ Before submitting, ensure:
 [Link to your video]
 
 **Instructions:**
-1. Go to [your app URL]
-2. Connect Instagram Business account
-3. Navigate to Webhook Demo page
-4. Send a test webhook with message "I want to buy this product"
-5. Observe automated reply being sent
+1. Log into the provided Shopify test store Admin → Apps → **DM Checkout AI**
+2. Go to **Webhook Demo** (`/app/webhook-demo`)
+3. Select **Direct DM** and send “I want to buy this product”
+4. Expected: intent “purchase” with **no product context** → PRO asks clarifying question; non‑PRO sends no response
+5. Select **Comment → DM** and send the same scenario
+6. Expected: with product context → response may include product link (depending on mapping and confidence)
 
 ### For `instagram_manage_comments`:
 

@@ -153,7 +153,7 @@ export default function BillingSelect() {
       )}
 
       <s-section>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
+        <div className="srPlanGrid">
           {plans.map((plan) => {
             const isCurrent = isCurrentPlan(plan.name);
             const upgrade = canUpgrade(plan.name);
@@ -225,79 +225,79 @@ export default function BillingSelect() {
           borderRadius="base"
           background="subdued"
         >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="srTable">
             <thead>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <th style={{ textAlign: "left", padding: "12px", fontWeight: "600" }}>
+              <tr>
+                <th className="srTh srTextLeft">
                   Feature
                 </th>
-                <th style={{ textAlign: "center", padding: "12px", fontWeight: "600" }}>
+                <th className="srTh srTextCenter">
                   Free
                 </th>
-                <th style={{ textAlign: "center", padding: "12px", fontWeight: "600" }}>
+                <th className="srTh srTextCenter">
                   Growth
                 </th>
-                <th style={{ textAlign: "center", padding: "12px", fontWeight: "600" }}>
+                <th className="srTh srTextCenter">
                   Pro
                 </th>
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
+              <tr>
+                <td>
                   <s-text variant="strong">Monthly Messages</s-text>
                 </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>25</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>500</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>50,000</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">DM Automation</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">Comments Automation</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">Conversations</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">Brand Voice</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e1e3e5" }}>
-                <td style={{ padding: "12px" }}>
-                  <s-text variant="strong">Follow-ups</s-text>
-                </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
+                <td className="srTextCenter">25</td>
+                <td className="srTextCenter">500</td>
+                <td className="srTextCenter">50,000</td>
               </tr>
               <tr>
-                <td style={{ padding: "12px" }}>
+                <td>
+                  <s-text variant="strong">DM Automation</s-text>
+                </td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td>
+                  <s-text variant="strong">Comments Automation</s-text>
+                </td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td>
+                  <s-text variant="strong">Conversations</s-text>
+                </td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td>
+                  <s-text variant="strong">Brand Voice</s-text>
+                </td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td>
+                  <s-text variant="strong">Follow-ups</s-text>
+                </td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td>
                   <s-text variant="strong">Priority Support</s-text>
                 </td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>—</td>
-                <td style={{ textAlign: "center", padding: "12px" }}>✓</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
               </tr>
             </tbody>
           </table>

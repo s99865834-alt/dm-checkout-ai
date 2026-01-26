@@ -1,77 +1,85 @@
 # Testing Instructions for Meta App Reviewers
 
-## Overview
-This app automates Instagram Direct Message responses for e-commerce businesses. It uses AI to classify customer messages and sends automated replies with checkout links.
+## Overview (what this app does)
+This app helps e-commerce merchants respond to **Instagram DMs and comments** with **policy-compliant automated replies**. It uses AI to classify inbound customer messages (for example: purchase intent vs product question) and then:
+- Responds with a **product page / checkout link** when there is enough product context, or
+- Asks a **clarifying question** when context is missing (PRO behavior), or
+- Sends **no automated reply** when it would be unsafe to guess the intended product (non‑PRO behavior).
 
-## Important Note About Development Mode
-**This app is currently in Development mode, so real-time webhooks from Instagram are not active.** However, you can test the full functionality using:
-1. The built-in Webhook Demo page (recommended)
-2. Meta App Dashboard's Test Webhook feature
-3. The test webhook API endpoint
+## Important note (Development mode)
+This Meta app is currently in **Development mode**, so **real customer DMs may not trigger real-time webhooks** during review.
 
-## Method 1: Using the Webhook Demo Page (Easiest)
+For review, you can still test the full webhook-processing logic using:
+- **Method 1 (recommended)**: the in-app **Webhook Demo** page
+- **Method 2**: Meta Dashboard **“Test”** webhook (Instagram → messages)
+- **Method 3**: the app’s **test webhook endpoint**
 
-### Step 1: Access the App
-1. Open the Shopify app: [Your App URL]
-2. Log in with a test Shopify store
-3. Navigate to **"Webhook Demo"** in the app navigation
+## URLs (stable)
+- **App base URL (production)**: `https://dm-checkout-ai-production.up.railway.app`
+- **Webhook receiver**: `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
+- **Test webhook endpoint**: `https://dm-checkout-ai-production.up.railway.app/meta/test-webhook`
+- **Privacy policy**: `https://dm-checkout-ai-production.up.railway.app/privacy`
+- **Terms**: `https://dm-checkout-ai-production.up.railway.app/terms`
+- **Data deletion callback**: `https://dm-checkout-ai-production.up.railway.app/meta/data-deletion`
 
-### Step 2: Test Webhook Functionality
-1. On the Webhook Demo page, you'll see several test scenarios:
-   - Purchase Intent: "I want to buy this product"
-   - Product Question: "What colors does this come in?"
-   - Size Inquiry: "Do you have this in a large size?"
-   - Custom Message: Enter your own test message
+## How to access the Shopify embedded app (required)
+This is an **embedded Shopify app**, so you must open it inside Shopify Admin.
 
-2. Select a test scenario (or create a custom message)
+1. Log into the provided Shopify test store Admin:
+   - **Store**: `dmteststore-2.myshopify.com`
+   - **Staff account**: (provided separately in the review submission)
+2. In Shopify Admin, go to **Apps** → open **DM Checkout AI**.
+3. In the app navigation, open **Webhook Demo** (`/app/webhook-demo`).
 
-3. Click **"Send Test Webhook"**
+## Method 1 (recommended): In-app Webhook Demo
 
-4. **Observe the Results**:
-   - You'll see "Webhook processed successfully!" message
-   - The page will show what happened:
-     - ✅ Webhook received and validated
-     - ✅ Message logged to database
-     - ✅ AI classified message intent
-     - ✅ Automated reply sent (if conditions met)
+### Step 1: Choose a test type and scenario
+On **Webhook Demo**, select one:
+- **📩 Direct DM**: simulates a direct message **without product context**
+- **💬 Comment → DM**: simulates a comment event that triggers a DM **with product context** (via post → product mapping)
 
-5. **Check Recent Messages**:
-   - Scroll down to "Recent Messages (Database)" section
-   - You'll see the test message you just sent
-   - It will show:
-     - Message text
-     - AI intent classification
-     - Confidence score
-     - Timestamp
+Then pick a scenario (Purchase Intent / Product Question / Size Inquiry) and click **Send Test Webhook**.
 
-### Step 3: Verify Full Flow
-1. Send multiple test webhooks with different messages
-2. Observe how different message types are classified
-3. Check that messages appear in the database
-4. Verify that automated replies are triggered (check server logs if available)
+### Step 2: Verify webhook processing results (Step 2 on page)
+You should see:
+- ✅ Webhook received and validated
+- ✅ Message logged to the database
+- ✅ AI classified intent (and confidence)
+- ✅ Automation decision (send response vs ask clarifying question vs no response)
 
-## Method 2: Using Meta App Dashboard Test Feature
+### Step 3: Verify database logging (Step 3 on page)
+In **Recent Messages (Database)** you should see the newly created message with:
+- Message text
+- AI intent and confidence
+- Timestamp
+- **AI Response Sent** (if the app actually sent), or **AI Response Preview** (demo-only preview), or **No Response**
 
-### Step 1: Access Meta App Dashboard
-1. Go to Meta App Dashboard → Your App
-2. Navigate to **Webhooks** → **Instagram**
-3. Find the **"messages"** webhook field
+## Expected behavior (key rules the app follows)
 
-### Step 2: Send Test Webhook
-1. Click the **"Test"** button next to the "messages" field
-2. A dialog will show a sample webhook payload
-3. Click **"Send to My Server"**
-4. This will send a test webhook to: `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
+### Rule A: User-initiated only
+The app **only responds to inbound customer messages/comments**. It does not send unsolicited messages.
 
-### Step 3: Verify Processing
-1. Check the Webhook Demo page's "Recent Messages" section
-2. The test message should appear there
-3. Verify it was processed correctly
+### Rule B: Direct DMs often have no product context
+If the user sends a Direct DM like “I want to buy this product”, the app **does not know which product** they mean.
 
-## Method 3: Using the Test Webhook API Endpoint
+Therefore:
+- **PRO behavior**: the app asks a clarifying question (example: “Which product are you interested in?”).
+- **Non‑PRO behavior**: the app sends **no automated response** (to avoid guessing the wrong product).
 
-### Step 1: Send Test Webhook via API
-Use curl or Postman to send a test webhook:
+### Rule C: Comment → DM has product context
+For Comment → DM tests, the app can map the comment’s **Instagram media/post** to a Shopify product and may send a product link.
+
+### Rule D: Confidence threshold
+If AI confidence is below threshold, the app may choose **not** to send an automated reply.
+
+## Method 2: Meta App Dashboard “Test” webhook
+1. Meta App Dashboard → **Webhooks** → **Instagram**
+2. Find **messages** → click **Test**
+3. Click **Send to my server** (delivers to the webhook receiver URL above)
+4. Open the in-app **Webhook Demo** page and confirm the event appears under **Recent Messages (Database)**.
+
+## Method 3: Test webhook endpoint (API)
+You can send a test payload directly:
 
 ```bash
 curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook \
@@ -93,83 +101,15 @@ curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook 
   }'
 ```
 
-### Step 2: Verify Response
-- You should receive: `{"success": true, "message": "Test webhook processed"}`
-- Check the Webhook Demo page to see the message in the database
+## Data use and storage (summary)
+- **What we process**: message text, sender/recipient IDs, timestamps, AI classification results, and generated reply text (for audit/debug).
+- **Why**: to provide automated customer support and conversion flows requested by the merchant.
+- **Deletion**: supported via Meta’s data deletion callback URL above.
 
-## What to Expect
-
-### Successful Test Should Show:
-1. **Webhook Reception**: Webhook is received and validated
-2. **Database Logging**: Message appears in "Recent Messages" section
-3. **AI Classification**: Message is classified with intent (e.g., "purchase", "question")
-4. **Automated Reply**: If conditions are met, automated reply is sent (check server logs)
-
-### Expected Behavior:
-- **Purchase Intent Messages**: Should trigger automated reply with checkout link
-- **Question Messages**: Should be classified but may not trigger automated reply (depends on settings)
-- **All Messages**: Should be logged to database with AI classification
-
-## Testing Different Scenarios
-
-### Test Case 1: Purchase Intent
-- **Message**: "I want to buy this product"
-- **Expected**: 
-  - Intent: "purchase"
-  - High confidence score
-  - Automated reply sent (if automation enabled)
-
-### Test Case 2: Product Question
-- **Message**: "What colors does this come in?"
-- **Expected**:
-  - Intent: "question" or "product_inquiry"
-  - Message logged to database
-  - May or may not trigger automated reply (depends on settings)
-
-### Test Case 3: Size Inquiry
-- **Message**: "Do you have this in a large size?"
-- **Expected**:
-  - Intent: "question" or "product_inquiry"
-  - Message logged
-  - Appropriate response based on settings
-
-## Verification Checklist
-
-- [ ] Can access the Webhook Demo page
-- [ ] Can send test webhooks successfully
-- [ ] Messages appear in "Recent Messages" section
-- [ ] AI classification is working (intent shown)
-- [ ] Database logging is working
-- [ ] Automated replies are being sent (check server logs)
-- [ ] Different message types are classified correctly
-
-## Notes for Reviewers
-
-1. **Development Mode Limitation**: 
-   - Real Instagram DMs won't trigger webhooks until app is approved and in Live mode
-   - This is expected behavior - use test webhooks to verify functionality
-
-2. **Test Webhook vs Real Webhook**:
-   - Test webhooks use the same processing logic as real webhooks
-   - The only difference is the source (test vs Meta's servers)
-   - Once approved, real webhooks will work identically
-
-3. **Server Logs**:
-   - For full verification, check server logs to see automated replies being sent
-   - Logs will show: `[automation] DM sent successfully`
-
-4. **Database Verification**:
-   - All messages should appear in the "Recent Messages" section
-   - This proves webhook → database flow is working
-
-## Questions or Issues?
-
-If you encounter any issues:
-1. Check that the webhook URL is accessible: `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
-2. Verify the Instagram Business account is connected in the app
-3. Check server logs for any error messages
-4. Try the Webhook Demo page method first (easiest)
+## Troubleshooting
+- If you can’t access the embedded app UI, ensure you are opening it inside Shopify Admin (Apps → DM Checkout AI).
+- If events don’t appear, confirm the webhook receiver URL is reachable:
+  - `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
 
 ## Contact
-
-For questions during review, contact: [Your contact email]
+For questions during review, contact: **(provided in the review submission)**

@@ -248,7 +248,7 @@ export default function Index() {
               {plan.name} Plan
             </s-badge>
             {plan.name === "FREE" && shop.usage_count !== undefined && (
-              <s-stack direction="block" gap="tight" style={{ flex: 1 }}>
+              <s-stack direction="block" gap="tight" className="srFlex1">
                 <s-stack direction="inline" gap="base" alignment="center">
                   <s-text variant="subdued">
                     Usage: {shop.usage_count}/{plan.cap} messages this month
@@ -274,20 +274,17 @@ export default function Index() {
                   </s-box>
                 )}
                 {/* Progress bar */}
-                <div style={{ 
-                  width: "100%", 
-                  height: "8px", 
-                  backgroundColor: "#e1e3e5", 
-                  borderRadius: "4px",
-                  overflow: "hidden"
-                }}>
-                  <div style={{
-                    width: `${Math.min((shop.usage_count / plan.cap) * 100, 100)}%`,
-                    height: "100%",
-                    backgroundColor: shop.usage_count >= plan.cap ? "#d72c0d" : shop.usage_count >= plan.cap * 0.8 ? "#f59e0b" : "#008060",
-                    transition: "width 0.3s ease"
-                  }} />
-                </div>
+                <progress
+                  className={`srProgress srProgress--${
+                    shop.usage_count >= plan.cap
+                      ? "critical"
+                      : shop.usage_count >= plan.cap * 0.8
+                        ? "warning"
+                        : "ok"
+                  }`}
+                  value={shop.usage_count}
+                  max={plan.cap}
+                />
               </s-stack>
             )}
           </s-stack>
@@ -386,7 +383,7 @@ export default function Index() {
                               <s-text variant="subdued">
                                 Use this ID in the test webhook payload below.
                               </s-text>
-                              <s-text variant="subdued" style={{ marginTop: "8px", fontFamily: "monospace", fontSize: "11px", whiteSpace: "pre-wrap" }}>
+                              <pre className="srMonoPre">
 {`curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -404,7 +401,7 @@ export default function Index() {
       }]
     }]
   }'`}
-                              </s-text>
+                              </pre>
                             </s-stack>
                           </s-box>
                         )}
@@ -481,12 +478,11 @@ export default function Index() {
                         Automatically process and respond to Instagram Direct Messages
                       </s-text>
                     </s-stack>
-                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                    <label className="srCheckboxLabel">
                       <input
                         type="checkbox"
                         checked={dmAutomationEnabled}
                         onChange={(e) => setDmAutomationEnabled(e.target.checked)}
-                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
                       />
                     </label>
                   </s-stack>
@@ -502,12 +498,11 @@ export default function Index() {
                         Automatically process and respond to Instagram comments
                       </s-text>
                     </s-stack>
-                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                    <label className="srCheckboxLabel">
                       <input
                         type="checkbox"
                         checked={commentAutomationEnabled}
                         onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
-                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
                       />
                     </label>
                   </s-stack>
@@ -523,12 +518,11 @@ export default function Index() {
                         Automatically send follow-up messages 23-24 hours after the last message if no click was recorded
                       </s-text>
                     </s-stack>
-                    <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                    <label className="srCheckboxLabel">
                       <input
                         type="checkbox"
                         checked={followupEnabled}
                         onChange={(e) => setFollowupEnabled(e.target.checked)}
-                        style={{ width: "20px", height: "20px", cursor: "pointer" }}
                       />
                     </label>
                   </s-stack>
@@ -546,12 +540,12 @@ export default function Index() {
                     
                     <s-stack direction="block" gap="tight">
                       <label>
-                        <s-text variant="subdued" style={{ fontSize: "12px" }}>Tone</s-text>
+                        <s-text variant="subdued">Tone</s-text>
                         <select
                           name="brand_voice_tone"
                           value={brandVoiceTone}
                           onChange={(e) => setBrandVoiceTone(e.target.value)}
-                          style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5", width: "100%", marginTop: "4px" }}
+                          className="srSelect"
                         >
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
@@ -560,14 +554,14 @@ export default function Index() {
                       </label>
 
                       <label>
-                        <s-text variant="subdued" style={{ fontSize: "12px" }}>Custom Instruction (Optional)</s-text>
+                        <s-text variant="subdued">Custom Instruction (Optional)</s-text>
                         <textarea
                           name="brand_voice_custom"
                           value={brandVoiceCustom}
                           onChange={(e) => setBrandVoiceCustom(e.target.value)}
                           placeholder="Tell the AI how to sound (e.g., 'Always be enthusiastic and use emojis')"
                           rows={3}
-                          style={{ padding: "8px", borderRadius: "4px", border: "1px solid #e1e3e5", width: "100%", marginTop: "4px", fontFamily: "inherit" }}
+                          className="srTextarea"
                         />
                       </label>
                     </s-stack>

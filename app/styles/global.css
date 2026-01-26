@@ -1,0 +1,300 @@
+/*
+  Global UI spacing
+
+  The app uses Shopify UI web components (s-page / s-section / etc).
+  Many routes render multiple <s-section> siblings back-to-back.
+  Add consistent vertical spacing between adjacent sections without
+  changing the existing border/radius styling inside each section.
+*/
+
+s-page {
+  display: block;
+}
+
+s-page > s-section {
+  display: block;
+}
+
+/* Consistent spacing between adjacent sections */
+s-page > s-section + s-section {
+  margin-top: 16px;
+}
+
+/* Generic helpers (avoid inline styles) */
+.srFlex1 {
+  flex: 1;
+}
+
+.srMonoPre {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  background: #f6f6f7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.srPreWrap {
+  white-space: pre-wrap;
+}
+
+.srItalic {
+  font-style: italic;
+}
+
+/* Form controls used alongside Shopify web components */
+.srTextarea,
+.srSelect {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #e1e3e5;
+  font: inherit;
+}
+
+.srInput {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #e1e3e5;
+  font: inherit;
+}
+
+.srTextarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.srChoiceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.srChoiceRow input {
+  cursor: pointer;
+}
+
+.srCheckboxLabel {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.srCheckboxLabel input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+}
+
+/* Progress (usage) */
+.srProgress {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e1e3e5;
+}
+
+/* WebKit */
+.srProgress::-webkit-progress-bar {
+  background: #e1e3e5;
+  border-radius: 999px;
+}
+.srProgress::-webkit-progress-value {
+  border-radius: 999px;
+}
+
+/* Firefox */
+.srProgress::-moz-progress-bar {
+  border-radius: 999px;
+}
+
+.srProgress--ok::-webkit-progress-value {
+  background: #008060;
+}
+.srProgress--warning::-webkit-progress-value {
+  background: #f59e0b;
+}
+.srProgress--critical::-webkit-progress-value {
+  background: #d72c0d;
+}
+.srProgress--ok::-moz-progress-bar {
+  background: #008060;
+}
+.srProgress--warning::-moz-progress-bar {
+  background: #f59e0b;
+}
+.srProgress--critical::-moz-progress-bar {
+  background: #d72c0d;
+}
+
+/* Instagram feed layout */
+.srMediaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.srMediaImage {
+  width: 100%;
+  border-radius: 8px;
+  display: block;
+}
+
+.srClamp2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Billing page */
+.srPlanGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.srTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.srTable th,
+.srTable td {
+  padding: 12px;
+}
+
+.srTable thead tr,
+.srTable tbody tr {
+  border-bottom: 1px solid #e1e3e5;
+}
+
+.srTable tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.srTextLeft {
+  text-align: left;
+}
+
+.srTextCenter {
+  text-align: center;
+}
+
+.srTh {
+  font-weight: 600;
+}
+
+/* Analytics layout */
+.srKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.srWrapRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.srGridAuto250 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.srGridAuto280 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.srDividerTop {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e1e3e5;
+}
+
+.srFieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Legal pages */
+.srLegal {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  color: #333;
+}
+
+.srLegal h1 {
+  font-size: 32px;
+  margin: 0 0 10px;
+  color: #000;
+}
+
+.srLegal .srLegalMeta {
+  color: #666;
+  margin: 0 0 40px;
+}
+
+.srLegal section {
+  margin: 0 0 30px;
+}
+
+.srLegal h2 {
+  font-size: 24px;
+  margin: 0 0 15px;
+  color: #000;
+}
+
+.srLegal h3 {
+  font-size: 18px;
+  margin: 20px 0 10px;
+  color: #000;
+}
+
+.srLegal ul {
+  margin: 10px 0 0 20px;
+}
+
+/* Public/standalone pages (non-embedded) */
+.srCenteredPage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.srLandingTitle {
+  font-size: 48px;
+  font-weight: 400;
+  color: #333;
+  text-align: center;
+  margin: 0;
+}
+
+.srLandingSubtitle {
+  font-size: 16px;
+  font-weight: 300;
+  color: #666;
+  text-align: center;
+  margin: 8px 0 0;
+}
+

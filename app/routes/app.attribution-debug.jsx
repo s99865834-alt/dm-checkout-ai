@@ -109,12 +109,7 @@ export default function AttributionDebugPage() {
                   <select
                     id="channel"
                     name="channel"
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #ccc",
-                      width: "100%",
-                    }}
+                    className="srSelect"
                     defaultValue={filters.channel || ""}
                   >
                     <option value="">All Channels</option>
@@ -135,12 +130,7 @@ export default function AttributionDebugPage() {
                     name="order_id"
                     placeholder="e.g., 123456789"
                     defaultValue={filters.orderId || ""}
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #ccc",
-                      width: "100%",
-                    }}
+                    className="srInput"
                   />
                 </s-stack>
               </s-box>
@@ -155,12 +145,7 @@ export default function AttributionDebugPage() {
                     id="start_date"
                     name="start_date"
                     defaultValue={filters.startDate || ""}
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #ccc",
-                      width: "100%",
-                    }}
+                    className="srInput"
                   />
                 </s-stack>
               </s-box>
@@ -175,12 +160,7 @@ export default function AttributionDebugPage() {
                     id="end_date"
                     name="end_date"
                     defaultValue={filters.endDate || ""}
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #ccc",
-                      width: "100%",
-                    }}
+                    className="srInput"
                   />
                 </s-stack>
               </s-box>
@@ -197,12 +177,7 @@ export default function AttributionDebugPage() {
                     min="1"
                     max="200"
                     defaultValue={filters.limit || 50}
-                    style={{
-                      padding: "8px",
-                      borderRadius: "4px",
-                      border: "1px solid #ccc",
-                      width: "100%",
-                    }}
+                    className="srInput"
                   />
                 </s-stack>
               </s-box>
@@ -228,42 +203,33 @@ export default function AttributionDebugPage() {
           </s-box>
         ) : (
           <s-box padding="base" border="base" borderRadius="base">
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "14px",
-              }}
-            >
+            <table className="srTable">
               <thead>
-                <tr style={{ borderBottom: "2px solid #e0e0e0" }}>
-                  <th style={{ padding: "12px", textAlign: "left", fontWeight: "600" }}>Order ID</th>
-                  <th style={{ padding: "12px", textAlign: "left", fontWeight: "600" }}>Amount</th>
-                  <th style={{ padding: "12px", textAlign: "left", fontWeight: "600" }}>Channel</th>
-                  <th style={{ padding: "12px", textAlign: "left", fontWeight: "600" }}>Link ID</th>
-                  <th style={{ padding: "12px", textAlign: "left", fontWeight: "600" }}>Created At</th>
+                <tr>
+                  <th className="srTh srTextLeft">Order ID</th>
+                  <th className="srTh srTextLeft">Amount</th>
+                  <th className="srTh srTextLeft">Channel</th>
+                  <th className="srTh srTextLeft">Link ID</th>
+                  <th className="srTh srTextLeft">Created At</th>
                 </tr>
               </thead>
               <tbody>
                 {attributionRecords.map((record) => (
-                  <tr key={record.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td style={{ padding: "12px" }}>
+                  <tr key={record.id}>
+                    <td>
                       <s-text variant="bodyMd">{record.order_id || "—"}</s-text>
                     </td>
-                    <td style={{ padding: "12px" }}>
+                    <td>
                       <s-text variant="bodyMd">{formatCurrency(record.amount, record.currency)}</s-text>
                     </td>
-                    <td style={{ padding: "12px" }}>
+                    <td>
                       <s-badge tone={record.channel === "dm" ? "info" : record.channel === "comment" ? "success" : "subdued"}>
                         {record.channel || "—"}
                       </s-badge>
                     </td>
-                    <td style={{ padding: "12px" }}>
+                    <td>
                       {record.link_id ? (
-                        <s-link
-                          href={`/app/links/${record.link_id}`}
-                          style={{ textDecoration: "none" }}
-                        >
+                        <s-link href={`/app/links/${record.link_id}`}>
                           <s-text variant="bodyMd" tone="info">
                             {record.link_id}
                           </s-text>
@@ -272,7 +238,7 @@ export default function AttributionDebugPage() {
                         <s-text variant="bodyMd" tone="subdued">—</s-text>
                       )}
                     </td>
-                    <td style={{ padding: "12px" }}>
+                    <td>
                       <s-text variant="bodyMd" tone="subdued">
                         {formatDate(record.created_at)}
                       </s-text>

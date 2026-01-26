@@ -47,16 +47,20 @@ export const loader = async ({ request }) => {
         }
 
         // Generate AI response preview for each message (same logic as Step 2)
-        const { getProductMappings } = await import("../lib/db.server");
-        const { buildCheckoutLink, buildProductPageLink } = await import("../lib/automation.server");
-        const { getBrandVoice } = await import("../lib/db.server");
-        const { generateReplyMessage } = await import("../lib/automation.server");
+        const { getProductMappings, getBrandVoice } = await import("../lib/db.server");
+        const {
+          buildCheckoutLink,
+          buildProductPageLink,
+          generateReplyMessage,
+          generateClarifyingQuestion,
+        } = await import("../lib/automation.server");
+        const { getShopifyStoreInfo } = await import("../lib/shopify-data.server");
         
         const productMappings = await getProductMappings(shop.id);
         const brandVoiceData = await getBrandVoice(shop.id);
-                const productSpecificIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
-                const generalIntents = ["store_question"];
-                const eligibleIntents = [...productSpecificIntents, ...generalIntents];
+        const productSpecificIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
+        const generalIntents = ["store_question"];
+        const eligibleIntents = [...productSpecificIntents, ...generalIntents];
 
         // Attach reply text to messages (from links_sent or generate preview)
         recentMessages = await Promise.all(messages.map(async (msg) => {
@@ -72,8 +76,11 @@ export const loader = async ({ request }) => {
           // Otherwise, generate a preview (same as Step 2)
           if (msg.ai_intent && eligibleIntents.includes(msg.ai_intent)) {
             try {
+              const isDirectDm = msg.channel === "dm";
+
               // Handle store_question separately (doesn't need product mapping)
               if (msg.ai_intent === "store_question") {
+                const storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
                 const previewReply = await generateReplyMessage(
                   brandVoiceData,
                   null,
@@ -82,13 +89,44 @@ export const loader = async ({ request }) => {
                   null,
                   null,
                   msg.text,
-                  null
+                  storeInfo,
+                  {
+                    originChannel: msg.channel,
+                    inboundChannel: msg.channel,
+                    triggerChannel: msg.channel,
+                    recentMessages: [{ channel: msg.channel, text: msg.text, created_at: msg.created_at }],
+                  }
                 );
                 
                 return {
                   ...msg,
                   reply_text: previewReply,
                   reply_source: "preview",
+                };
+              }
+
+              // Direct DMs have no product context. For product-specific intents:
+              // - PRO: ask a clarifying question
+              // - non-PRO: no response
+              if (isDirectDm && productSpecificIntents.includes(msg.ai_intent)) {
+                if (plan?.followup === true) {
+                  const clarifyingReply = await generateClarifyingQuestion(
+                    brandVoiceData,
+                    msg.text,
+                    msg.ai_intent,
+                    { originChannel: "dm", inboundChannel: "dm" }
+                  );
+                  return {
+                    ...msg,
+                    reply_text: clarifyingReply,
+                    reply_source: "preview",
+                  };
+                }
+
+                return {
+                  ...msg,
+                  reply_text: null,
+                  reply_source: null,
                 };
               }
               
@@ -137,7 +175,21 @@ export const loader = async ({ request }) => {
                 null,
                 productPageUrl,
                 msg.text,
-                null
+                null,
+                {
+                  originChannel: msg.channel,
+                  inboundChannel: msg.channel,
+                  triggerChannel: msg.channel,
+                  lastProductLink: {
+                    url: (msg.ai_intent === "product_question" || msg.ai_intent === "variant_inquiry") && productPageUrl
+                      ? productPageUrl
+                      : checkoutUrl,
+                    product_id: productMapping.product_id,
+                    variant_id: productMapping.variant_id,
+                    trigger_channel: msg.channel,
+                  },
+                  recentMessages: [{ channel: msg.channel, text: msg.text, created_at: msg.created_at }],
+                }
               );
 
               return {
@@ -320,13 +372,49 @@ export default function WebhookDemo() {
 
   return (
     <s-page heading="Webhook Demo - Meta App Review">
-      <s-section>
-        <s-callout variant="info" title="Demo Mode">
-          <s-paragraph>
-            This page demonstrates the webhook functionality for Meta App Review. 
-            Use this to show how your app processes Instagram messages and sends automated replies.
-          </s-paragraph>
-        </s-callout>
+      <s-section heading="How to use this page (Meta review)">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text variant="strong">What this page is:</s-text>{" "}
+              This page demonstrates the webhook functionality for Meta App Review. Use it to show how your app
+              processes Instagram messages and sends automated replies.
+            </s-paragraph>
+
+            <s-paragraph>
+              <s-text variant="strong">How to demonstrate functionality:</s-text>
+            </s-paragraph>
+            <s-stack direction="block" gap="tight">
+              <s-paragraph>
+                <s-text variant="subdued">
+                  1. Choose a test type (Direct DM or Comment → DM) and a scenario in Step 1
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  2. Click “Send Test Webhook” to simulate an Instagram event
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  3. Review the intent + response decision in Step 2
+                </s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  4. Confirm the message was logged in Step 3 (database)
+                </s-text>
+              </s-paragraph>
+            </s-stack>
+
+            <s-paragraph>
+              <s-text variant="subdued" className="srItalic">
+                Note: Real-time webhooks require the Meta app to be in Live mode. This page demonstrates the same
+                processing using test webhooks for review.
+              </s-text>
+            </s-paragraph>
+          </s-stack>
+        </s-box>
       </s-section>
 
       <s-section heading="Step 1: Send Test Webhook">
@@ -337,35 +425,33 @@ export default function WebhookDemo() {
             </s-paragraph>
             
             <s-stack direction="block" gap="tight">
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+              <label className="srChoiceRow">
                 <input
                   type="radio"
                   name="testType"
                   value="dm"
                   checked={testType === "dm"}
                   onChange={(e) => setTestType(e.target.value)}
-                  style={{ cursor: "pointer" }}
                 />
                 <s-stack direction="block" gap="tight">
                   <s-text variant="strong">📩 Direct DM</s-text>
-                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  <s-text variant="subdued">
                     Tests a direct DM without product context. The AI won't know which product the customer is asking about unless mentioned in the message.
                   </s-text>
                 </s-stack>
               </label>
               
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+              <label className="srChoiceRow">
                 <input
                   type="radio"
                   name="testType"
                   value="comment"
                   checked={testType === "comment"}
                   onChange={(e) => setTestType(e.target.value)}
-                  style={{ cursor: "pointer" }}
                 />
                 <s-stack direction="block" gap="tight">
                   <s-text variant="strong">💬 Comment → DM</s-text>
-                  <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                  <s-text variant="subdued">
                     Tests a comment on an Instagram post that triggers a DM. The AI has product context from the post mapping.
                     {firstProductMapping ? ` Using product mapping for media ID: ${testMediaId}` : " ⚠️ No product mapping found - please map a product first"}
                   </s-text>
@@ -373,28 +459,27 @@ export default function WebhookDemo() {
               </label>
             </s-stack>
             
-            <s-paragraph style={{ marginTop: "16px" }}>
+            <s-paragraph>
               <s-text variant="strong">Select a test scenario:</s-text>
             </s-paragraph>
 
             <s-stack direction="block" gap="tight">
               {Object.entries(examples).map(([key, example]) => (
-                <label key={key} style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <label key={key} className="srChoiceRow">
                   <input
                     type="radio"
                     name="example"
                     value={key}
                     checked={selectedExample === key}
                     onChange={(e) => setSelectedExample(e.target.value)}
-                    style={{ cursor: "pointer" }}
                   />
                   <s-stack direction="block" gap="tight">
                     <s-text variant="strong">{example.name}</s-text>
-                    <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                    <s-text variant="subdued">
                       {example.description}
                     </s-text>
                     {key !== "custom" && (
-                      <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
+                      <s-text variant="subdued" className="srItalic">
                         "{example.message}"
                       </s-text>
                     )}
@@ -405,21 +490,13 @@ export default function WebhookDemo() {
 
             {selectedExample === "custom" && (
               <label>
-                <s-text variant="subdued" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
-                  Custom Message
-                </s-text>
+                <s-text variant="subdued">Custom Message</s-text>
                 <textarea
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
                   placeholder="Enter your test message here..."
                   rows={3}
-                  style={{
-                    padding: "8px",
-                    borderRadius: "4px",
-                    border: "1px solid #e1e3e5",
-                    width: "100%",
-                    fontFamily: "inherit",
-                  }}
+                  className="srTextarea"
                 />
               </label>
             )}
@@ -450,7 +527,7 @@ export default function WebhookDemo() {
                 ) : (
                   <s-text variant="strong" tone="critical">❌ {demoResults.step}</s-text>
                 )}
-                <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                <s-text variant="subdued">
                   {new Date(demoResults.timestamp).toLocaleTimeString()}
                 </s-text>
               </s-stack>
@@ -460,20 +537,20 @@ export default function WebhookDemo() {
               )}
 
               {demoResults.status === "success" && (
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" style={{ marginTop: "16px" }}>
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                   <s-stack direction="block" gap="tight">
                     <s-text variant="strong">What happened:</s-text>
                     <s-stack direction="block" gap="tight">
-                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      <s-text variant="subdued">
                         1. ✅ Webhook received and validated
                       </s-text>
-                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      <s-text variant="subdued">
                         2. ✅ Message logged to database
                       </s-text>
-                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      <s-text variant="subdued">
                         3. ✅ AI classified message intent
                       </s-text>
-                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      <s-text variant="subdued">
                         4. ✅ Automated reply sent (if conditions met)
                       </s-text>
                     </s-stack>
@@ -483,27 +560,27 @@ export default function WebhookDemo() {
 
               {/* AI Preview */}
               {demoResults.aiPreview && (
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued" style={{ marginTop: "16px" }}>
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued">
                   <s-stack direction="block" gap="base">
                     <s-text variant="strong">AI Analysis & Response Preview:</s-text>
                     
                     <s-stack direction="block" gap="tight">
                       {/* Show test type and product context */}
                       {demoResults.aiPreview.hasProductContext !== undefined && (
-                        <s-box padding="tight" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.hasProductContext ? "success-subdued" : "subdued"} style={{ marginBottom: "8px" }}>
+                        <s-box padding="tight" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.hasProductContext ? "success-subdued" : "subdued"}>
                           <s-stack direction="inline" gap="tight" alignment="center">
                             {demoResults.aiPreview.hasProductContext ? (
                               <>
-                                <s-text variant="strong" tone="success" style={{ fontSize: "12px" }}>✅ Comment → DM</s-text>
-                                <s-text variant="subdued" style={{ fontSize: "11px" }}>Has product context from Instagram post</s-text>
+                                <s-text variant="strong" tone="success">✅ Comment → DM</s-text>
+                                <s-text variant="subdued">Has product context from Instagram post</s-text>
                                 {demoResults.aiPreview.mediaId && (
-                                  <s-text variant="subdued" style={{ fontSize: "10px" }}>(Media ID: {demoResults.aiPreview.mediaId})</s-text>
+                                  <s-text variant="subdued">(Media ID: {demoResults.aiPreview.mediaId})</s-text>
                                 )}
                               </>
                             ) : (
                               <>
-                                <s-text variant="strong" style={{ fontSize: "12px" }}>📩 Direct DM</s-text>
-                                <s-text variant="subdued" style={{ fontSize: "11px" }}>No product context (unless mentioned in message)</s-text>
+                                <s-text variant="strong">📩 Direct DM</s-text>
+                                <s-text variant="subdued">No product context (unless mentioned in message)</s-text>
                               </>
                             )}
                           </s-stack>
@@ -511,25 +588,25 @@ export default function WebhookDemo() {
                       )}
                       
                       <s-stack direction="inline" gap="base" alignment="center">
-                        <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                        <s-text variant="subdued">
                           <s-text variant="strong">Intent:</s-text> {demoResults.aiPreview.intent || "none"}
                         </s-text>
                         {demoResults.aiPreview.confidence && (
-                          <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                          <s-text variant="subdued">
                             <s-text variant="strong">Confidence:</s-text> {(demoResults.aiPreview.confidence * 100).toFixed(0)}%
                           </s-text>
                         )}
                         {demoResults.aiPreview.sentiment && (
-                          <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                          <s-text variant="subdued">
                             <s-text variant="strong">Sentiment:</s-text> {demoResults.aiPreview.sentiment}
                           </s-text>
                         )}
                       </s-stack>
 
                           {demoResults.aiPreview.wouldSend && demoResults.aiPreview.responseText ? (
-                            <s-box padding="base" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.isClarifyingQuestion ? "info-subdued" : "base"} style={{ marginTop: "8px" }}>
+                            <s-box padding="base" borderWidth="base" borderRadius="base" background={demoResults.aiPreview.isClarifyingQuestion ? "info-subdued" : "base"}>
                               <s-stack direction="block" gap="tight">
-                                <s-text variant="strong" style={{ fontSize: "13px" }}>
+                                <s-text variant="strong">
                                   {demoResults.aiPreview.isClarifyingQuestion ? (
                                     <>💬 Would Send Clarifying Question (PRO tier):</>
                                   ) : (
@@ -537,27 +614,22 @@ export default function WebhookDemo() {
                                   )}
                                 </s-text>
                                 {demoResults.aiPreview.isClarifyingQuestion && (
-                                  <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
+                                  <s-text variant="subdued" className="srItalic">
                                     PRO tier can ask which product the customer is referring to since follow-up is enabled
                                   </s-text>
                                 )}
-                                <s-text variant="subdued" style={{ 
-                                  fontSize: "13px", 
-                                  whiteSpace: "pre-wrap",
-                                  fontFamily: "inherit",
-                                  lineHeight: "1.5",
-                                }}>
+                                <s-text variant="subdued" className="srPreWrap">
                                   {demoResults.aiPreview.responseText}
                                 </s-text>
                               </s-stack>
                             </s-box>
                           ) : (
-                            <s-box padding="base" borderWidth="base" borderRadius="base" background="base" style={{ marginTop: "8px" }}>
+                            <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
                               <s-stack direction="block" gap="tight">
-                                <s-text variant="strong" style={{ fontSize: "13px" }}>
+                                <s-text variant="strong">
                                   ⚠️ Would NOT Send Automated Response
                                 </s-text>
-                                <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                                <s-text variant="subdued">
                                   {demoResults.aiPreview.reason || "Message does not meet criteria for automation"}
                                 </s-text>
                               </s-stack>
@@ -598,14 +670,14 @@ export default function WebhookDemo() {
                   >
                     <s-stack direction="block" gap="tight">
                       <s-stack direction="inline" gap="base" alignment="space-between">
-                        <s-text variant="strong" style={{ fontSize: "13px" }}>
+                        <s-text variant="strong">
                           {msg.channel === "dm" ? "💬 DM" : "💭 Comment"}
                         </s-text>
-                        <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                        <s-text variant="subdued">
                           {new Date(msg.created_at).toLocaleString()}
                         </s-text>
                       </s-stack>
-                      <s-text variant="subdued" style={{ fontSize: "12px" }}>
+                      <s-text variant="subdued">
                         {msg.text || "(No text)"}
                       </s-text>
                       {msg.ai_intent && (
@@ -624,13 +696,12 @@ export default function WebhookDemo() {
                           borderWidth="base"
                           borderRadius="base"
                           background={msg.reply_source === "sent" ? "success-subdued" : "info-subdued"}
-                          style={{ marginTop: "8px" }}
                         >
                           <s-stack direction="block" gap="tight">
-                            <s-text variant="strong" tone={msg.reply_source === "sent" ? "success" : "info"} style={{ fontSize: "12px" }}>
+                            <s-text variant="strong" tone={msg.reply_source === "sent" ? "success" : "info"}>
                               {msg.reply_source === "sent" ? "✅ AI Response Sent:" : "💡 AI Response Preview:"}
                             </s-text>
-                            <s-text variant="subdued" style={{ fontSize: "11px", whiteSpace: "pre-wrap" }}>
+                            <s-text variant="subdued" className="srPreWrap">
                               {msg.reply_text}
                             </s-text>
                           </s-stack>
@@ -641,13 +712,12 @@ export default function WebhookDemo() {
                           borderWidth="base"
                           borderRadius="base"
                           background="subdued"
-                          style={{ marginTop: "8px" }}
                         >
                           <s-stack direction="block" gap="tight">
-                            <s-text variant="strong" style={{ fontSize: "12px" }}>
+                            <s-text variant="strong">
                               ⚠️ No Response Sent:
                             </s-text>
-                            <s-text variant="subdued" style={{ fontSize: "11px" }}>
+                            <s-text variant="subdued">
                               {(() => {
                                 // Check if message was just created (within last 10 seconds) - might still be processing
                                 const messageAge = (Date.now() - new Date(msg.created_at).getTime()) / 1000;
@@ -662,6 +732,15 @@ export default function WebhookDemo() {
                                 
                                 if (isRecent && msg.ai_intent && allEligibleIntents.includes(msg.ai_intent)) {
                                   return "Processing... (Automation may still be running)";
+                                }
+
+                                // Direct DMs with product-specific intent have no product context.
+                                // PRO can ask for clarification; non-PRO should not respond.
+                                if (msg.channel === "dm" && productSpecificIntents.includes(msg.ai_intent)) {
+                                  if (plan?.followup === true) {
+                                    return "Would ask a clarifying question (PRO tier) to determine which product the customer means.";
+                                  }
+                                  return `Direct DM without product context — no response on ${plan?.name || "current"} plan.`;
                                 }
                                 
                                 // Not recent, so show actual reason
@@ -690,49 +769,6 @@ export default function WebhookDemo() {
               <s-text variant="subdued">No messages yet. Send a test webhook above to see results here.</s-text>
             </s-paragraph>
           )}
-        </s-box>
-      </s-section>
-
-      <s-section heading="Demo Instructions for Meta Reviewers">
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="info-subdued">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              <s-text variant="strong">How to demonstrate functionality:</s-text>
-            </s-paragraph>
-            <s-stack direction="block" gap="tight">
-              <s-paragraph>
-                <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                  1. Select a test scenario above (or create a custom message)
-                </s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                  2. Click "Send Test Webhook" to simulate an Instagram message
-                </s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                  3. Watch the results appear showing webhook processing
-                </s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                  4. Check the "Recent Messages" section to see the message logged in the database
-                </s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued" style={{ fontSize: "12px" }}>
-                  5. The automated reply is sent via Instagram Messaging API (check server logs for confirmation)
-                </s-text>
-              </s-paragraph>
-            </s-stack>
-            <s-paragraph style={{ marginTop: "16px" }}>
-              <s-text variant="subdued" style={{ fontSize: "11px", fontStyle: "italic" }}>
-                Note: Real-time webhooks require the app to be in Live mode. This demo shows the functionality 
-                using test webhooks. Once approved, real Instagram messages will trigger webhooks automatically.
-              </s-text>
-            </s-paragraph>
-          </s-stack>
         </s-box>
       </s-section>
     </s-page>

@@ -9,6 +9,8 @@ import { logLinkSent } from "./db.server";
 import { getMetaAuthWithRefresh, metaGraphAPI } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
+import { getRecentConversationContext } from "./db.server";
+import supabase from "./supabase.server";
 
 /**
  * Generate a unique link_id (UUID format, stored as TEXT)
@@ -320,27 +322,70 @@ export async function handleIncomingDm(message, shop, plan) {
 
     // 3. Check if this is a follow-up (conversation support for Growth/Pro)
     const isFollowUp = await canSendFollowUp(message, shop, plan);
-    
+
     // For FREE plan, only allow first reply (no follow-ups)
     if (plan.name === "FREE" && isFollowUp) {
       console.log(`[automation] Follow-up DMs not available on FREE plan`);
       return { sent: false, reason: "Follow-up DMs not available on FREE plan" };
     }
 
-    // 4. Check AI intent: eligible intents include product-specific and store-general questions
-    // For follow-ups, we can be more lenient
+    // 4. Determine intent + fetch recent thread context (so replies after follow-ups can be contextual)
     // Note: price_request indicates purchase intent, so we should respond with checkout link
     const productSpecificIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
     const generalIntents = ["store_question"];
     const eligibleIntents = [...productSpecificIntents, ...generalIntents];
-    
-    if (!isFollowUp && (!message.ai_intent || !eligibleIntents.includes(message.ai_intent))) {
+
+    let threadContext = null;
+    if (message.from_user_id) {
+      try {
+        threadContext = await getRecentConversationContext(shop.id, message.from_user_id, {
+          windowHours: 72,
+          maxMessages: 25,
+          maxLinks: 25,
+        });
+      } catch (error) {
+        console.error("[automation] Error fetching thread context:", error);
+      }
+    }
+
+    const lastProductLink = threadContext?.lastProductLink || null;
+    const hasPriorProductContext = !!lastProductLink?.product_id;
+    const originChannel = threadContext?.originChannel || "dm";
+
+    // Try to infer intent for low-context follow-up replies when we DO have product context.
+    // This helps the experience when users reply to follow-ups with messages like "yes" or "link?".
+    const inferIntentFromText = (text) => {
+      const t = (text || "").trim().toLowerCase();
+      if (!t) return null;
+
+      if (/(how much|price|\$)/.test(t)) return "price_request";
+      if (/(size|sizes|color|colours|variant|variants|options)/.test(t)) return "variant_inquiry";
+      if (/(buy|purchase|checkout|add to cart|take it|i'll take|ill take|send the link|link\??)/.test(t)) {
+        return "purchase";
+      }
+
+      if (["yes", "yeah", "yep", "ok", "okay", "sure", "please", "pls"].includes(t)) {
+        return "purchase";
+      }
+
+      return null;
+    };
+
+    let intent = message.ai_intent || null;
+    if (!intent || !eligibleIntents.includes(intent)) {
+      // If we have prior product context, try a lightweight inference.
+      if (hasPriorProductContext) {
+        intent = inferIntentFromText(message.text);
+      }
+    }
+
+    if (!intent || !eligibleIntents.includes(intent)) {
       console.log(`[automation] AI intent "${message.ai_intent}" not eligible for automation`);
-      return { sent: false, reason: `AI intent "${message.ai_intent}" not eligible` };
+      return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
     }
 
     // 5. Handle store_question (general store questions) - doesn't need product mapping
-    if (message.ai_intent === "store_question") {
+    if (intent === "store_question") {
       // Get brand voice and generate reply message for store questions
       const brandVoiceData = await getBrandVoice(shop.id);
       
@@ -371,11 +416,28 @@ export async function handleIncomingDm(message, shop, plan) {
         brandVoiceData,
         null,
         null,
-        message.ai_intent,
+        intent,
         null,
         null,
         message.text,
-        storeInfo // Pass store-specific information to AI
+        storeInfo, // Pass store-specific information to AI
+        {
+          originChannel,
+          inboundChannel: "dm",
+          triggerChannel: originChannel,
+          lastProductLink: lastProductLink
+            ? {
+                url: lastProductLink.url,
+                product_id: lastProductLink.product_id,
+                variant_id: lastProductLink.variant_id,
+                trigger_channel: lastProductLink.trigger_channel,
+              }
+            : null,
+          recentMessages: (threadContext?.messages || [])
+            .filter((m) => m.id !== message.id)
+            .slice(0, 8)
+            .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+        }
       );
 
       // Send DM reply
@@ -388,57 +450,150 @@ export async function handleIncomingDm(message, shop, plan) {
       return { sent: true };
     }
 
-    // 6. For product-specific intents, resolve the product using post_product_map or search
-    // CRITICAL: Direct DMs (channel === "dm") don't have product context from Instagram posts
-    // Only comments (channel === "comment") have media_id that links to a product via handleIncomingComment
-    // For Direct DMs, we should NOT use product mappings because we don't know which product they're referring to
-    // unless the message explicitly mentions a product name (would need to search - TODO)
-    
-    // Direct DMs with product-specific intents: PRO tier can ask for clarification, others skip
-    if (message.channel === "dm" && productSpecificIntents.includes(message.ai_intent)) {
-      // PRO tier: Ask which product they're referring to (follow-up capability)
+    // 6. Product-specific intents in DMs:
+    // - If we have prior product context (e.g. started from comment->DM), reuse it.
+    // - Otherwise, PRO can ask a clarifying question; non-PRO should not respond.
+    if (productSpecificIntents.includes(intent)) {
+      if (hasPriorProductContext) {
+        const productMapping = {
+          product_id: lastProductLink.product_id,
+          variant_id: lastProductLink.variant_id || null,
+          product_handle: null,
+        };
+
+        // Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
+        let productPageUrl = null;
+        let checkoutUrl = null;
+        let linkId = null;
+
+        if (intent === "product_question" || intent === "variant_inquiry") {
+          productPageUrl = await buildProductPageLink(
+            shop,
+            productMapping.product_id,
+            productMapping.variant_id,
+            productMapping.product_handle
+          );
+          const checkoutLink = await buildCheckoutLink(
+            shop,
+            productMapping.product_id,
+            productMapping.variant_id,
+            1
+          );
+          checkoutUrl = checkoutLink.url;
+          linkId = checkoutLink.linkId;
+        } else {
+          const checkoutLink = await buildCheckoutLink(
+            shop,
+            productMapping.product_id,
+            productMapping.variant_id,
+            1
+          );
+          checkoutUrl = checkoutLink.url;
+          linkId = checkoutLink.linkId;
+        }
+
+        // Get brand voice and generate reply message
+        const brandVoiceData = await getBrandVoice(shop.id);
+        const productName = null; // TODO: Get product name from Shopify
+        const productPrice = null; // TODO: Get product price from Shopify
+
+        const replyText = await generateReplyMessage(
+          brandVoiceData,
+          productName,
+          checkoutUrl,
+          intent,
+          productPrice,
+          productPageUrl,
+          message.text,
+          null,
+          {
+            originChannel,
+            inboundChannel: "dm",
+            triggerChannel: originChannel,
+            lastProductLink: {
+              url: lastProductLink.url,
+              product_id: lastProductLink.product_id,
+              variant_id: lastProductLink.variant_id,
+              trigger_channel: lastProductLink.trigger_channel,
+            },
+            recentMessages: (threadContext?.messages || [])
+              .filter((m) => m.id !== message.id)
+              .slice(0, 8)
+              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+          }
+        );
+
+        // Send DM reply
+        await sendDmReply(shop.id, message.from_user_id, replyText);
+
+        // Increment usage count
+        await incrementUsage(shop.id, 1);
+
+        // Log the sent link for tracking + context
+        await logLinkSent({
+          shopId: shop.id,
+          messageId: message.id,
+          productId: productMapping.product_id,
+          variantId: productMapping.variant_id,
+          url: (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
+            ? productPageUrl
+            : checkoutUrl,
+          linkId: linkId,
+          replyText: replyText,
+        });
+
+        console.log(
+          `[automation] ✅ Contextual DM reply sent for message ${message.id} (origin=${originChannel})`
+        );
+        return { sent: true };
+      }
+
+      // No prior product context => Direct DM without context
       if (plan.followup === true) {
-        // Meta Compliance: Check for loop prevention - don't ask clarifying question multiple times
-        // Count how many clarifying questions have been sent to this user in the last 24 hours
-        // Clarifying questions are identified by links_sent entries with url = null (no product link)
+        // Meta Compliance: loop prevention - don't ask clarifying question multiple times
         const { data: recentClarifyingQuestions } = await supabase
           .from("links_sent")
           .select("id, created_at, message_id")
           .eq("shop_id", shop.id)
           .is("url", null) // Clarifying questions have no URL
-          .not("reply_text", "is", null) // But they have reply text
+          .not("reply_text", "is", null)
           .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-        
-        // Get the messages associated with these clarifying questions to check if they're from the same user
+
         if (recentClarifyingQuestions && recentClarifyingQuestions.length > 0) {
-          const clarifyingMessageIds = recentClarifyingQuestions.map(q => q.message_id);
+          const clarifyingMessageIds = recentClarifyingQuestions.map((q) => q.message_id);
           const { data: clarifyingMessages } = await supabase
             .from("messages")
             .select("id, from_user_id")
             .in("id", clarifyingMessageIds)
             .eq("from_user_id", message.from_user_id);
-          
-          // Limit to 2 clarifying questions per user per 24-hour window to prevent loops
+
           if (clarifyingMessages && clarifyingMessages.length >= 2) {
-            console.log(`[automation] Loop prevention: Already sent ${clarifyingMessages.length} clarifying questions to user ${message.from_user_id} in last 24 hours, skipping`);
-            return { sent: false, reason: "Loop prevention: Maximum clarifying questions reached. Please contact support for assistance." };
+            console.log(
+              `[automation] Loop prevention: Already sent ${clarifyingMessages.length} clarifying questions to user ${message.from_user_id} in last 24 hours, skipping`
+            );
+            return {
+              sent: false,
+              reason:
+                "Loop prevention: Maximum clarifying questions reached. Please contact support for assistance.",
+            };
           }
         }
-        
-        console.log(`[automation] Direct DM without product context - PRO tier will ask for clarification for intent: ${message.ai_intent}`);
-        
-        // Get brand voice and generate clarifying question
+
+        console.log(
+          `[automation] Direct DM without product context - PRO tier will ask for clarification for intent: ${intent}`
+        );
+
         const brandVoiceData = await getBrandVoice(shop.id);
-        const clarifyingReply = await generateClarifyingQuestion(brandVoiceData, message.text, message.ai_intent);
-        
-        // Send clarifying DM
+        const clarifyingReply = await generateClarifyingQuestion(
+          brandVoiceData,
+          message.text,
+          intent,
+          { originChannel: "dm", inboundChannel: "dm" }
+        );
+
         await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
-        
-        // Increment usage count
         await incrementUsage(shop.id, 1);
-        
-        // Log the clarifying message (no product link sent)
-        // Mark it as a clarifying question for loop prevention tracking
+
         await logLinkSent({
           shopId: shop.id,
           messageId: message.id,
@@ -448,85 +603,23 @@ export async function handleIncomingDm(message, shop, plan) {
           linkId: null,
           replyText: clarifyingReply,
         });
-        
-        // Also mark this message as having received a clarifying question
-        // We'll use a special marker in the reply_text or add a flag
-        // For now, we'll track via the links_sent table with a special marker
-        
+
         console.log(`[automation] ✅ Clarifying question sent for Direct DM ${message.id}`);
         return { sent: true, reason: "PRO tier: Asked customer which product they're referring to" };
-      } else {
-        // Non-PRO tier: Skip (no follow-up capability)
-        console.log(`[automation] Direct DM without product context - skipping product-specific automation for intent: ${message.ai_intent} (follow-up not available on ${plan.name} plan)`);
-        return { sent: false, reason: "Direct DM without product context - cannot determine which product customer is referring to" };
       }
-    }
-    
-    // Note: Comments are handled by handleIncomingComment, not handleIncomingDm
-    // So if we reach here, it means it's a store_question or other non-product-specific intent
-    // Store questions are already handled above, so this code path shouldn't be reached
-    // But keep it for safety/edge cases
 
-    // 5. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
-    let productPageUrl = null;
-    let checkoutUrl = null;
-    let linkId = null;
-    
-    if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-      // For product questions and variant inquiries, use PDP link first (they need to see product details/variants)
-      productPageUrl = await buildProductPageLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        productMapping.product_handle || null // TODO: Store product handle in mapping
+      console.log(
+        `[automation] Direct DM without product context - skipping product-specific automation for intent: ${intent} (follow-up not available on ${plan.name} plan)`
       );
-      // Also generate checkout link for after they see product details
-      const checkoutLink = await buildCheckoutLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        1
-      );
-      checkoutUrl = checkoutLink.url;
-      linkId = checkoutLink.linkId;
-    } else {
-      // For purchase intent, price requests - use checkout link
-      const checkoutLink = await buildCheckoutLink(
-      shop,
-      productMapping.product_id,
-      productMapping.variant_id,
-      1
-    );
-      checkoutUrl = checkoutLink.url;
-      linkId = checkoutLink.linkId;
+      return {
+        sent: false,
+        reason:
+          "Direct DM without product context - cannot determine which product customer is referring to",
+      };
     }
 
-    // 6. Get brand voice and generate reply message
-    const brandVoiceData = await getBrandVoice(shop.id);
-    const productName = null; // TODO: Get product name from Shopify
-    const productPrice = null; // TODO: Get product price from Shopify
-    // Pass the intent, links, and original message so the AI can understand context
-    const replyText = await generateReplyMessage(brandVoiceData, productName, checkoutUrl, message.ai_intent, productPrice, productPageUrl, message.text);
-
-    // 7. Send DM reply
-    await sendDmReply(shop.id, message.from_user_id, replyText);
-
-    // 8. Increment usage count
-    await incrementUsage(shop.id, 1);
-
-    // 9. Log the sent link (use checkout URL for tracking, or PDP URL if product_question)
-    await logLinkSent({
-      shopId: shop.id,
-      messageId: message.id,
-      productId: productMapping.product_id,
-      variantId: productMapping.variant_id,
-      url: message.ai_intent === "product_question" && productPageUrl ? productPageUrl : checkoutUrl,
-      linkId: linkId,
-      replyText: replyText,
-    });
-
-    console.log(`[automation] ✅ Automated DM sent successfully for message ${message.id}`);
-    return { sent: true };
+    // Safety: no other DM intents are currently supported.
+    return { sent: false, reason: `AI intent "${intent}" not supported for DM automation` };
   } catch (error) {
     console.error(`[automation] Error processing DM ${message.id}:`, error);
     return { sent: false, reason: error.message || "Unknown error" };
@@ -651,7 +744,30 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     const productName = null; // TODO: Get product name from Shopify
     const productPrice = null; // TODO: Get product price from Shopify
     // Pass the intent, links, and original message so the AI can understand context
-    const replyText = await generateReplyMessage(brandVoiceData, productName, checkoutUrl, message.ai_intent, productPrice, productPageUrl, message.text);
+    const replyText = await generateReplyMessage(
+      brandVoiceData,
+      productName,
+      checkoutUrl,
+      message.ai_intent,
+      productPrice,
+      productPageUrl,
+      message.text,
+      null,
+      {
+        originChannel: "comment",
+        inboundChannel: "comment",
+        triggerChannel: "comment",
+        lastProductLink: {
+          url: (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") && productPageUrl
+            ? productPageUrl
+            : checkoutUrl,
+          product_id: productMapping.product_id,
+          variant_id: productMapping.variant_id,
+          trigger_channel: "comment",
+        },
+        recentMessages: [{ channel: "comment", text: message.text, created_at: message.created_at }],
+      }
+    );
 
     // 8. Send private DM reply
     await sendDmReply(shop.id, message.from_user_id, replyText);
@@ -686,7 +802,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
  * @param {string} intent - The detected intent (purchase, product_question, etc.)
  * @returns {Promise<string>} - The clarifying question message
  */
-export async function generateClarifyingQuestion(brandVoice, originalMessage, intent) {
+export async function generateClarifyingQuestion(brandVoice, originalMessage, intent, channelContext = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
 
@@ -708,6 +824,7 @@ export async function generateClarifyingQuestion(brandVoice, originalMessage, in
 
 Customer's message: "${originalMessage}"
 Customer intent: ${intentContext}
+${channelContext?.originChannel ? `Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM" : "Direct DM"}` : ""}
 
 Requirements:
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
@@ -790,9 +907,11 @@ async function canSendFollowUp(message, shop, plan) {
  * @param {string} productPageUrl - Product detail page URL (optional, used for product_question intent)
  * @param {string} originalMessage - Original customer message text (optional, used to understand context)
  * @param {Object} storeInfo - Store information object (optional, used for store_question intent)
+ * @param {Object} channelContext - Conversation context (optional). Helps the AI understand whether the thread started
+ * from a comment vs a DM, and provides light recent-message context for follow-up replies.
  * @returns {string} - Generated reply message
  */
-export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null) {
+export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null, channelContext = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
 
@@ -811,7 +930,7 @@ export async function generateReplyMessage(brandVoice, productName = null, check
   // Also use AI generation if user has brand voice configured (Growth/Pro) to ensure tone is properly applied
   // For Growth/Pro users, even without custom instruction, we want to use AI to properly apply the tone
   const hasBrandVoiceConfig = brandVoice && (customInstruction || (tone && tone !== "friendly"));
-  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig) {
+  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext) {
     try {
       // Import OpenAI client from ai.server.js
       const openaiModule = await import("../lib/ai.server.js");
@@ -907,6 +1026,14 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           }
         }
         
+        const recentThreadText = Array.isArray(channelContext?.recentMessages) && channelContext.recentMessages.length > 0
+          ? channelContext.recentMessages
+              .slice(0, 8)
+              .reverse()
+              .map((m) => `- ${m.channel === "comment" ? "Comment" : "DM"}: ${m.text || "(no text)"}`)
+              .join("\n")
+          : null;
+
         const prompt = `${promptBase}
 
 CRITICAL ACCURACY REQUIREMENTS:
@@ -918,6 +1045,10 @@ CRITICAL ACCURACY REQUIREMENTS:
 - Accuracy is more important than being helpful
 
 IMPORTANT CONTEXT:
+${channelContext?.originChannel ? `- Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM (has product context from a post mapping)" : "Direct DM (may not have product context unless explicitly provided)"}` : ""}
+${channelContext?.inboundChannel ? `- Current inbound channel: ${channelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
+${channelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${channelContext.lastProductLink.url}` : ""}
+${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
 - If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!", "So cool!", "Love this product!"), then acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing. Don't assume they're ready to buy immediately.` : ""}

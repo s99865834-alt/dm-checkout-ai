@@ -356,6 +356,97 @@ export async function logLinkSent(params) {
 }
 
 /**
+ * Fetch recent inbound messages and related outbound replies/links for a specific IG user.
+ * Used to provide light "thread context" for conversation replies (e.g. after follow-ups).
+ */
+export async function getRecentConversationContext(shopId, fromUserId, options = {}) {
+  const windowHours = options.windowHours ?? 24;
+  const maxMessages = options.maxMessages ?? 25;
+  const maxLinks = options.maxLinks ?? 25;
+
+  if (!shopId || !fromUserId) {
+    return {
+      windowStartIso: null,
+      messages: [],
+      linksSent: [],
+      lastOutbound: null,
+      lastProductLink: null,
+      originChannel: null,
+    };
+  }
+
+  const windowStartIso = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
+
+  // 1) Recent inbound messages for this user
+  const { data: messages, error: messagesError } = await supabase
+    .from("messages")
+    .select("id, channel, text, created_at, ai_intent, ai_confidence, sentiment")
+    .eq("shop_id", shopId)
+    .eq("from_user_id", fromUserId)
+    .gte("created_at", windowStartIso)
+    .order("created_at", { ascending: false })
+    .limit(maxMessages);
+
+  if (messagesError) {
+    console.error("[context] Error fetching recent messages:", messagesError);
+    return {
+      windowStartIso,
+      messages: [],
+      linksSent: [],
+      lastOutbound: null,
+      lastProductLink: null,
+      originChannel: null,
+    };
+  }
+
+  const messageIds = (messages || []).map((m) => m.id).filter(Boolean);
+  const messageById = new Map((messages || []).map((m) => [m.id, m]));
+
+  // 2) Outbound replies/links associated with those messages
+  let linksSent = [];
+  if (messageIds.length > 0) {
+    const { data: links, error: linksError } = await supabase
+      .from("links_sent")
+      .select("id, message_id, product_id, variant_id, url, link_id, reply_text, created_at")
+      .eq("shop_id", shopId)
+      .in("message_id", messageIds)
+      .order("created_at", { ascending: false })
+      .limit(maxLinks);
+
+    if (linksError) {
+      console.error("[context] Error fetching recent links_sent:", linksError);
+    } else {
+      linksSent = links || [];
+    }
+  }
+
+  // Enrich with the trigger channel (comment vs dm)
+  const enrichedLinks = (linksSent || []).map((l) => ({
+    ...l,
+    trigger_channel: messageById.get(l.message_id)?.channel || null,
+  }));
+
+  // Most recent outbound row (may be a clarifying question with url=null)
+  const lastOutbound = enrichedLinks.length > 0 ? enrichedLinks[0] : null;
+
+  // Most recent outbound row that contains product context (from comment->DM mapping or an earlier contextual reply)
+  const lastProductLink =
+    enrichedLinks.find((l) => l.product_id && (l.url || l.link_id)) || null;
+
+  const originChannel =
+    lastProductLink?.trigger_channel || lastOutbound?.trigger_channel || null;
+
+  return {
+    windowStartIso,
+    messages: messages || [],
+    linksSent: enrichedLinks,
+    lastOutbound,
+    lastProductLink,
+    originChannel,
+  };
+}
+
+/**
  * Record a click on a link_id (string from URL).
  */
 export async function logClick(params) {
