@@ -135,7 +135,41 @@ export const action = async ({ request }) => {
     }
 
     try {
-      await saveProductMapping(shop.id, igMediaId, productId, variantId);
+      // If variant_id is not provided, fetch the first variant from Shopify
+      let finalVariantId = variantId;
+      if (!finalVariantId) {
+        const { admin } = await authenticate.admin(request);
+        try {
+          const response = await admin.graphql(`
+            query getProduct($id: ID!) {
+              product(id: $id) {
+                id
+                variants(first: 1) {
+                  nodes {
+                    id
+                  }
+                }
+              }
+            }
+          `, {
+            variables: { id: productId },
+          });
+
+          const json = await response.json();
+          const variants = json.data?.product?.variants?.nodes || [];
+          if (variants.length > 0) {
+            finalVariantId = variants[0].id;
+            console.log(`[instagram-feed] Auto-selected first variant: ${finalVariantId}`);
+          } else {
+            console.warn(`[instagram-feed] Product ${productId} has no variants`);
+          }
+        } catch (graphqlError) {
+          console.error("[instagram-feed] Error fetching product variants:", graphqlError);
+          // Continue without variant_id - buildCheckoutLink will handle it
+        }
+      }
+
+      await saveProductMapping(shop.id, igMediaId, productId, finalVariantId);
       return { success: true, message: "Product mapping saved successfully" };
     } catch (error) {
       console.error("[instagram-feed] Error saving mapping:", error);

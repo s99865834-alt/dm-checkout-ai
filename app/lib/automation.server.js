@@ -11,6 +11,8 @@ import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import supabase from "./supabase.server";
+import { sessionStorage } from "../shopify.server";
+import shopify from "../shopify.server";
 
 /**
  * Generate a unique link_id (UUID format, stored as TEXT)
@@ -136,23 +138,63 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   // Variant ID format: gid://shopify/ProductVariant/123456789
   const productIdMatch = productId.match(/\/(\d+)$/);
   
+  // If variant_id is null, try to fetch the first variant from Shopify
+  let finalVariantId = variantId;
+  if (!finalVariantId) {
+    try {
+      // Get session from storage using shop domain
+      const sessionId = `${shop.shopify_domain}_${process.env.SHOPIFY_API_KEY}`;
+      const session = await sessionStorage.loadSession(sessionId);
+      
+      if (session && session.accessToken) {
+        // Create GraphQL client using the session
+        const admin = new shopify.clients.Graphql({ session });
+        
+        const response = await admin.graphql(`
+          query getProduct($id: ID!) {
+            product(id: $id) {
+              id
+              variants(first: 1) {
+                nodes {
+                  id
+                }
+              }
+            }
+          }
+        `, {
+          variables: { id: productId },
+        });
+
+        const json = await response.json();
+        const variants = json.data?.product?.variants?.nodes || [];
+        if (variants.length > 0) {
+          finalVariantId = variants[0].id;
+          console.log(`[buildCheckoutLink] Fetched first variant: ${finalVariantId}`);
+        }
+      }
+    } catch (error) {
+      // If we can't fetch the variant, continue without it
+      console.warn(`[buildCheckoutLink] Could not fetch default variant for product ${productId}:`, error.message);
+    }
+  }
+  
   // Validate variant_id is actually a variant ID (not a product ID)
   // Handle both GID format (gid://shopify/ProductVariant/123) and numeric format (123)
   let variantNumericId = null;
-  if (variantId) {
+  if (finalVariantId) {
     // Check if it's a GID format with ProductVariant
-    if (variantId.includes("ProductVariant")) {
-      const variantIdMatch = variantId.match(/\/(\d+)$/);
+    if (finalVariantId.includes("ProductVariant")) {
+      const variantIdMatch = finalVariantId.match(/\/(\d+)$/);
       variantNumericId = variantIdMatch ? variantIdMatch[1] : null;
-    } else if (typeof variantId === "string" && /^\d+$/.test(variantId)) {
+    } else if (typeof finalVariantId === "string" && /^\d+$/.test(finalVariantId)) {
       // If it's just a numeric string, use it directly
-      variantNumericId = variantId;
-    } else if (typeof variantId === "number") {
+      variantNumericId = finalVariantId;
+    } else if (typeof finalVariantId === "number") {
       // If it's a number, convert to string
-      variantNumericId = String(variantId);
+      variantNumericId = String(finalVariantId);
     } else {
       // If variantId doesn't match expected formats, log warning and treat as null
-      console.warn(`[buildCheckoutLink] Invalid variant_id format: ${variantId} (type: ${typeof variantId})`);
+      console.warn(`[buildCheckoutLink] Invalid variant_id format: ${finalVariantId} (type: ${typeof finalVariantId})`);
       variantNumericId = null;
     }
   }
