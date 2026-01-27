@@ -797,11 +797,16 @@ export async function saveProductMapping(shopId, igMediaId, productId, variantId
     .eq("ig_media_id", igMediaId)
     .maybeSingle();
 
+  // Ensure variant_id is never null - log warning if it is
+  if (!variantId) {
+    console.warn(`[saveProductMapping] Warning: variant_id is null for product ${productId}, shop ${shopId}, media ${igMediaId}`);
+  }
+
   const mappingData = {
     shop_id: shopId,
     ig_media_id: igMediaId,
     product_id: productId,
-    variant_id: variantId,
+    variant_id: variantId, // This should never be null - if it is, there's a bug upstream
   };
 
   let data, error;
@@ -854,6 +859,39 @@ export async function deleteProductMapping(shopId, igMediaId) {
   }
 
   return true;
+}
+
+/**
+ * Update product mappings that have null variant_id by fetching the first variant from Shopify
+ * This fixes existing mappings that were created before the auto-fetch logic was added
+ */
+export async function updateNullVariantMappings(shopId, shopDomain) {
+  try {
+    // Get all mappings with null variant_id
+    const { data: mappings, error: fetchError } = await supabase
+      .from("post_product_map")
+      .select("*")
+      .eq("shop_id", shopId)
+      .is("variant_id", null);
+
+    if (fetchError) {
+      console.error("[db] Error fetching null variant mappings:", fetchError);
+      return { updated: 0, error: fetchError };
+    }
+
+    if (!mappings || mappings.length === 0) {
+      return { updated: 0 };
+    }
+
+    console.log(`[db] Found ${mappings.length} mappings with null variant_id, attempting to update...`);
+
+    // Note: This function requires Shopify admin access, which we don't have here
+    // The caller should handle fetching variants and updating
+    return { mappings, updated: 0 };
+  } catch (error) {
+    console.error("[db] Error in updateNullVariantMappings:", error);
+    return { updated: 0, error };
+  }
 }
 
 /**

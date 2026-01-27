@@ -33,6 +33,45 @@ export const loader = async ({ request }) => {
 
         // Fetch product mappings
         productMappings = await getProductMappings(shop.id);
+        
+        // Check for mappings with null variant_id and try to fix them
+        const nullVariantMappings = productMappings.filter(m => !m.variant_id);
+        if (nullVariantMappings.length > 0) {
+          console.log(`[instagram-feed] Found ${nullVariantMappings.length} mappings with null variant_id, attempting to fix...`);
+          
+          // Try to fetch and update variants for mappings with null variant_id
+          for (const mapping of nullVariantMappings) {
+            try {
+              const response = await admin.graphql(`
+                query getProduct($id: ID!) {
+                  product(id: $id) {
+                    id
+                    variants(first: 1) {
+                      nodes {
+                        id
+                      }
+                    }
+                  }
+                }
+              `, {
+                variables: { id: mapping.product_id },
+              });
+
+              const json = await response.json();
+              const variants = json.data?.product?.variants?.nodes || [];
+              
+              if (variants.length > 0) {
+                await saveProductMapping(shop.id, mapping.ig_media_id, mapping.product_id, variants[0].id);
+                console.log(`[instagram-feed] Updated mapping for media ${mapping.ig_media_id} with variant ${variants[0].id}`);
+              }
+            } catch (error) {
+              console.error(`[instagram-feed] Error updating mapping for media ${mapping.ig_media_id}:`, error);
+            }
+          }
+          
+          // Re-fetch mappings after updates
+          productMappings = await getProductMappings(shop.id);
+        }
       } catch (error) {
         console.error("[instagram-feed] Error fetching media:", error);
       }
@@ -135,38 +174,48 @@ export const action = async ({ request }) => {
     }
 
     try {
-      // If variant_id is not provided, fetch the first variant from Shopify
+      const { admin } = await authenticate.admin(request);
+      
+      // Always fetch the first variant from Shopify (even if one was selected)
+      // This ensures we always have a variant_id stored
       let finalVariantId = variantId;
-      if (!finalVariantId) {
-        const { admin } = await authenticate.admin(request);
-        try {
-          const response = await admin.graphql(`
-            query getProduct($id: ID!) {
-              product(id: $id) {
-                id
-                variants(first: 1) {
-                  nodes {
-                    id
-                  }
+      
+      try {
+        const response = await admin.graphql(`
+          query getProduct($id: ID!) {
+            product(id: $id) {
+              id
+              variants(first: 1) {
+                nodes {
+                  id
                 }
               }
             }
-          `, {
-            variables: { id: productId },
-          });
-
-          const json = await response.json();
-          const variants = json.data?.product?.variants?.nodes || [];
-          if (variants.length > 0) {
-            finalVariantId = variants[0].id;
-            console.log(`[instagram-feed] Auto-selected first variant: ${finalVariantId}`);
-          } else {
-            console.warn(`[instagram-feed] Product ${productId} has no variants`);
           }
-        } catch (graphqlError) {
-          console.error("[instagram-feed] Error fetching product variants:", graphqlError);
-          // Continue without variant_id - buildCheckoutLink will handle it
+        `, {
+          variables: { id: productId },
+        });
+
+        const json = await response.json();
+        const variants = json.data?.product?.variants?.nodes || [];
+        
+        if (variants.length > 0) {
+          // Use the selected variant if provided, otherwise use the first variant
+          finalVariantId = variantId || variants[0].id;
+          console.log(`[instagram-feed] Saving mapping with variant: ${finalVariantId} (selected: ${variantId || 'auto'})`);
+        } else {
+          console.warn(`[instagram-feed] Product ${productId} has no variants - this should not happen in Shopify`);
+          // Don't save if there are no variants - this is an error condition
+          return { error: "Product has no variants. Every Shopify product must have at least one variant." };
         }
+      } catch (graphqlError) {
+        console.error("[instagram-feed] Error fetching product variants:", graphqlError);
+        return { error: `Failed to fetch product variants: ${graphqlError.message}` };
+      }
+
+      // Ensure we have a variant_id before saving
+      if (!finalVariantId) {
+        return { error: "Could not determine variant ID for product" };
       }
 
       await saveProductMapping(shop.id, igMediaId, productId, finalVariantId);
