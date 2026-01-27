@@ -148,12 +148,11 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   const variantNumericId = variantIdMatch ? variantIdMatch[1] : null;
 
   // Build the checkout URL
-  // Use /cart/add format which is more reliable and works with query parameters
-  // Format: /cart/add?id={variant_id}&quantity={qty} (variant preferred) or /cart/add?id={product_id}&quantity={qty}
+  // Using cart permalink format: /cart/{variant_id}:{qty} (Shopify's official permalink format)
   let checkoutUrl;
   if (variantNumericId) {
-    // Use variant-specific cart URL (variant ID is more specific than product ID)
-    checkoutUrl = `https://${shop.shopify_domain}/cart/add?id=${variantNumericId}&quantity=${qty}`;
+    // Use variant-specific cart permalink
+    checkoutUrl = `https://${shop.shopify_domain}/cart/${variantNumericId}:${qty}`;
   } else {
     // Use product cart URL (will use default variant)
     checkoutUrl = `https://${shop.shopify_domain}/cart/add?id=${productNumericId}&quantity=${qty}`;
@@ -167,7 +166,7 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     utm_campaign: "dm_to_buy",
   });
 
-  let finalUrl = `${checkoutUrl}&${params.toString()}`;
+  let finalUrl = `${checkoutUrl}?${params.toString()}`;
   
   // Shorten URL if requested
   if (shorten) {
