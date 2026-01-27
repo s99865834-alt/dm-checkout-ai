@@ -315,14 +315,16 @@ export const action = async ({ request }) => {
                           shop,
                           productMapping.product_id,
                           productMapping.variant_id,
-                          productMapping.product_handle || null
+                          productMapping.product_handle || null,
+                          false // Don't shorten for preview
                         );
                         // Also generate checkout link for after they see product details
                         const checkoutLink = await buildCheckoutLink(
                           shop,
                           productMapping.product_id,
                           productMapping.variant_id,
-                          1
+                          1,
+                          false // Don't shorten for preview
                         );
                         checkoutUrl = checkoutLink.url;
                       } else {
@@ -331,7 +333,8 @@ export const action = async ({ request }) => {
                           shop,
                           productMapping.product_id,
                           productMapping.variant_id,
-                          1
+                          1,
+                          false // Don't shorten for preview
                         );
                         checkoutUrl = checkoutLink.url;
                       }

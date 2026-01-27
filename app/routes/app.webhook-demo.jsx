@@ -150,13 +150,15 @@ export const loader = async ({ request }) => {
                   shop,
                   productMapping.product_id,
                   productMapping.variant_id,
-                  productMapping.product_handle || null
+                  productMapping.product_handle || null,
+                  false // Don't shorten for demo preview
                 );
                 const checkoutLink = await buildCheckoutLink(
                   shop,
                   productMapping.product_id,
                   productMapping.variant_id,
-                  1
+                  1,
+                  false // Don't shorten for demo preview
                 );
                 checkoutUrl = checkoutLink.url;
               } else {
@@ -164,7 +166,8 @@ export const loader = async ({ request }) => {
                   shop,
                   productMapping.product_id,
                   productMapping.variant_id,
-                  1
+                  1,
+                  false // Don't shorten for demo preview
                 );
                 checkoutUrl = checkoutLink.url;
               }
