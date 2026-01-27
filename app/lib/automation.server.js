@@ -137,16 +137,22 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   const productIdMatch = productId.match(/\/(\d+)$/);
   
   // Validate variant_id is actually a variant ID (not a product ID)
+  // Handle both GID format (gid://shopify/ProductVariant/123) and numeric format (123)
   let variantNumericId = null;
   if (variantId) {
-    // Check if it's a valid variant ID format
+    // Check if it's a GID format with ProductVariant
     if (variantId.includes("ProductVariant")) {
       const variantIdMatch = variantId.match(/\/(\d+)$/);
       variantNumericId = variantIdMatch ? variantIdMatch[1] : null;
+    } else if (typeof variantId === "string" && /^\d+$/.test(variantId)) {
+      // If it's just a numeric string, use it directly
+      variantNumericId = variantId;
+    } else if (typeof variantId === "number") {
+      // If it's a number, convert to string
+      variantNumericId = String(variantId);
     } else {
-      // If variantId doesn't contain "ProductVariant", it might be incorrectly set
-      // (e.g., it's a product ID). Treat as null and use product cart URL instead.
-      console.warn(`[buildCheckoutLink] Invalid variant_id format (not a ProductVariant): ${variantId}`);
+      // If variantId doesn't match expected formats, log warning and treat as null
+      console.warn(`[buildCheckoutLink] Invalid variant_id format: ${variantId} (type: ${typeof variantId})`);
       variantNumericId = null;
     }
   }

@@ -773,9 +773,23 @@ export async function getProductMappings(shopId) {
 
 /**
  * Save or update product mapping
+ * Ensures only one mapping exists per (shop_id, ig_media_id) combination
  */
 export async function saveProductMapping(shopId, igMediaId, productId, variantId = null) {
-  // Check if mapping exists
+  // First, delete any existing duplicates for this shop_id + ig_media_id combination
+  // This ensures we don't have multiple rows for the same mapping
+  const { error: deleteError } = await supabase
+    .from("post_product_map")
+    .delete()
+    .eq("shop_id", shopId)
+    .eq("ig_media_id", igMediaId);
+
+  if (deleteError) {
+    console.error("[db] Error deleting duplicate mappings:", deleteError);
+    // Continue anyway - we'll try to insert/update
+  }
+
+  // Now check if a mapping exists (should be at most one after cleanup)
   const { data: existing } = await supabase
     .from("post_product_map")
     .select("*")
@@ -825,6 +839,7 @@ export async function saveProductMapping(shopId, igMediaId, productId, variantId
 
 /**
  * Delete product mapping
+ * Deletes ALL mappings for the given shop_id and ig_media_id (handles duplicates)
  */
 export async function deleteProductMapping(shopId, igMediaId) {
   const { error } = await supabase
@@ -839,6 +854,66 @@ export async function deleteProductMapping(shopId, igMediaId) {
   }
 
   return true;
+}
+
+/**
+ * Clean up duplicate product mappings for a shop
+ * Removes all duplicates, keeping only the most recent one for each (shop_id, ig_media_id) combination
+ */
+export async function cleanupDuplicateProductMappings(shopId) {
+  try {
+    // Get all mappings for this shop
+    const { data: allMappings, error: fetchError } = await supabase
+      .from("post_product_map")
+      .select("*")
+      .eq("shop_id", shopId)
+      .order("created_at", { ascending: false });
+
+    if (fetchError) {
+      console.error("[db] Error fetching mappings for cleanup:", fetchError);
+      return { cleaned: 0, error: fetchError };
+    }
+
+    if (!allMappings || allMappings.length === 0) {
+      return { cleaned: 0 };
+    }
+
+    // Group by ig_media_id and keep only the first (most recent) one
+    const seen = new Map();
+    const toDelete = [];
+
+    for (const mapping of allMappings) {
+      const key = mapping.ig_media_id;
+      if (seen.has(key)) {
+        // This is a duplicate - mark for deletion
+        toDelete.push(mapping.id);
+      } else {
+        // First occurrence - keep it
+        seen.set(key, mapping.id);
+      }
+    }
+
+    if (toDelete.length === 0) {
+      return { cleaned: 0 };
+    }
+
+    // Delete duplicates
+    const { error: deleteError } = await supabase
+      .from("post_product_map")
+      .delete()
+      .in("id", toDelete);
+
+    if (deleteError) {
+      console.error("[db] Error deleting duplicates:", deleteError);
+      return { cleaned: 0, error: deleteError };
+    }
+
+    console.log(`[db] Cleaned up ${toDelete.length} duplicate product mapping(s) for shop ${shopId}`);
+    return { cleaned: toDelete.length };
+  } catch (error) {
+    console.error("[db] Error in cleanupDuplicateProductMappings:", error);
+    return { cleaned: 0, error };
+  }
 }
 
 /**

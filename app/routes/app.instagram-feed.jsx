@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { useLoaderData, useFetcher } from "react-router";
+import { useState, useEffect } from "react";
+import { useLoaderData, useFetcher, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramMedia } from "../lib/meta.server";
-import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings } from "../lib/db.server";
+import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings, cleanupDuplicateProductMappings } from "../lib/db.server";
 import { PlanGate } from "../components/PlanGate";
 
 export const loader = async ({ request }) => {
@@ -27,6 +27,9 @@ export const loader = async ({ request }) => {
         // Fetch Instagram media
         const mediaResult = await getInstagramMedia(metaAuth.ig_business_id, shop.id, { limit: 25 });
         mediaData = mediaResult;
+
+        // Clean up any duplicate product mappings before fetching
+        await cleanupDuplicateProductMappings(shop.id);
 
         // Fetch product mappings
         productMappings = await getProductMappings(shop.id);
@@ -158,9 +161,22 @@ export const action = async ({ request }) => {
 export default function InstagramFeedPage() {
   const { shop, plan, metaAuth, mediaData, productMappings, shopifyProducts, settings } = useLoaderData();
   const fetcher = useFetcher();
+  const revalidator = useRevalidator();
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
+
+  // Revalidate data after successful save/delete operations
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data) {
+      if (fetcher.data.success) {
+        // Small delay to ensure database is updated
+        setTimeout(() => {
+          revalidator.revalidate();
+        }, 100);
+      }
+    }
+  }, [fetcher.state, fetcher.data, revalidator]);
 
   // Check plan access directly from loader data
   // Product mapping is available for Growth+ (Growth and PRO tiers)
