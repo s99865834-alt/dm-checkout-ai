@@ -151,14 +151,14 @@ export const loader = async ({ request }) => {
                   productMapping.product_id,
                   productMapping.variant_id,
                   productMapping.product_handle || null,
-                  false // Don't shorten for demo preview
+                  true // Shorten URLs for demo
                 );
                 const checkoutLink = await buildCheckoutLink(
                   shop,
                   productMapping.product_id,
                   productMapping.variant_id,
                   1,
-                  false // Don't shorten for demo preview
+                  true // Shorten URLs for demo
                 );
                 checkoutUrl = checkoutLink.url;
               } else {
@@ -167,7 +167,7 @@ export const loader = async ({ request }) => {
                   productMapping.product_id,
                   productMapping.variant_id,
                   1,
-                  false // Don't shorten for demo preview
+                  true // Shorten URLs for demo
                 );
                 checkoutUrl = checkoutLink.url;
               }

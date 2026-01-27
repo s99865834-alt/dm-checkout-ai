@@ -316,7 +316,7 @@ export const action = async ({ request }) => {
                           productMapping.product_id,
                           productMapping.variant_id,
                           productMapping.product_handle || null,
-                          false // Don't shorten for preview
+                          true // Shorten URLs
                         );
                         // Also generate checkout link for after they see product details
                         const checkoutLink = await buildCheckoutLink(
@@ -324,7 +324,7 @@ export const action = async ({ request }) => {
                           productMapping.product_id,
                           productMapping.variant_id,
                           1,
-                          false // Don't shorten for preview
+                          true // Shorten URLs
                         );
                         checkoutUrl = checkoutLink.url;
                       } else {
@@ -334,7 +334,7 @@ export const action = async ({ request }) => {
                           productMapping.product_id,
                           productMapping.variant_id,
                           1,
-                          false // Don't shorten for preview
+                          true // Shorten URLs
                         );
                         checkoutUrl = checkoutLink.url;
                       }

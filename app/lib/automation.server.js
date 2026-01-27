@@ -131,24 +131,35 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   // Generate unique link_id
   const linkId = generateLinkId();
 
-  // Extract product handle from product ID (gid://shopify/Product/123456789)
-  // For now, we'll use a cart URL format that works with product/variant IDs
-  // Format: https://{shop}.myshopify.com/cart/{variant_id}:{qty}
-  // Or: https://{shop}.myshopify.com/products/{handle}?variant={variant_id}&quantity={qty}
-  
-  // Since we have product/variant IDs in GID format, we need to extract the numeric ID
+  // Extract numeric IDs from GID format
+  // Product ID format: gid://shopify/Product/123456789
+  // Variant ID format: gid://shopify/ProductVariant/123456789
   const productIdMatch = productId.match(/\/(\d+)$/);
-  const variantIdMatch = variantId ? variantId.match(/\/(\d+)$/) : null;
+  
+  // Validate variant_id is actually a variant ID (not a product ID)
+  let variantNumericId = null;
+  if (variantId) {
+    // Check if it's a valid variant ID format
+    if (variantId.includes("ProductVariant")) {
+      const variantIdMatch = variantId.match(/\/(\d+)$/);
+      variantNumericId = variantIdMatch ? variantIdMatch[1] : null;
+    } else {
+      // If variantId doesn't contain "ProductVariant", it might be incorrectly set
+      // (e.g., it's a product ID). Treat as null and use product cart URL instead.
+      console.warn(`[buildCheckoutLink] Invalid variant_id format (not a ProductVariant): ${variantId}`);
+      variantNumericId = null;
+    }
+  }
 
   if (!productIdMatch) {
     throw new Error("Invalid product ID format");
   }
 
   const productNumericId = productIdMatch[1];
-  const variantNumericId = variantIdMatch ? variantIdMatch[1] : null;
 
   // Build the checkout URL
   // Using cart permalink format: /cart/{variant_id}:{qty} (Shopify's official permalink format)
+  // Only use this format if we have a valid variant ID
   let checkoutUrl;
   if (variantNumericId) {
     // Use variant-specific cart permalink
