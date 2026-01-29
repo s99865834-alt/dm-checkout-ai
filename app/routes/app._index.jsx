@@ -27,17 +27,16 @@ export const loader = async ({ request }) => {
     brandVoice = await getBrandVoice(shop.id);
     
     // If connected, fetch Instagram account info (with automatic token refresh)
-    if (metaAuth?.ig_business_id && shop?.id) {
+    if (metaAuth && shop?.id) {
       instagramInfo = await getInstagramAccountInfo(
-        metaAuth.ig_business_id,
+        metaAuth.ig_business_id || "",
         shop.id
       );
-      
-      // Check webhook subscription status (Facebook Login only; Instagram Login uses dashboard)
+      // Webhook status: Instagram Login uses dashboard; Facebook Login uses Page subscribe (kept in code for future use)
       if (metaAuth.page_id && metaAuth.auth_type !== "instagram") {
         webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
       } else if (metaAuth.auth_type === "instagram") {
-        webhookStatus = { subscribed: null, note: "Instagram Login: configure webhooks in Meta App Dashboard" };
+        webhookStatus = { subscribed: null, note: "Configure webhooks in Meta App Dashboard (Instagram product)." };
       }
     }
   }
@@ -352,32 +351,34 @@ export default function Index() {
               </s-paragraph>
               {instagramInfo?.username && (
                 <s-paragraph>
-                  <s-text variant="strong">Instagram Username: </s-text>
+                  <s-text variant="strong">Username: </s-text>
                   <s-text>@{instagramInfo.username}</s-text>
                 </s-paragraph>
               )}
               {instagramInfo?.mediaCount !== undefined && (
                 <s-paragraph>
-                  <s-text variant="strong">Number of Posts: </s-text>
+                  <s-text variant="strong">Number of posts: </s-text>
                   <s-text>{instagramInfo.mediaCount}</s-text>
                 </s-paragraph>
               )}
-              <s-paragraph>
-                <s-text variant="subdued">
-                  Instagram Business Account ID: {metaAuth.ig_business_id}
-                </s-text>
-              </s-paragraph>
-        <s-paragraph>
-                <s-text variant="subdued">
-                  Facebook Page ID: {metaAuth.page_id}
-                </s-text>
-        </s-paragraph>
+              {(instagramInfo?.id || metaAuth?.ig_business_id) && (
+                <s-paragraph>
+                  <s-text variant="strong">Account ID: </s-text>
+                  <s-text variant="subdued">{instagramInfo?.id || metaAuth.ig_business_id}</s-text>
+                </s-paragraph>
+              )}
+              {instagramInfo?.accountType && (
+                <s-paragraph>
+                  <s-text variant="strong">Account type: </s-text>
+                  <s-text>{instagramInfo.accountType}</s-text>
+                </s-paragraph>
+              )}
               {metaAuth.token_expires_at && (
-        <s-paragraph>
+                <s-paragraph>
                   <s-text variant="subdued">
                     Token expires: {new Date(metaAuth.token_expires_at).toLocaleDateString()}
                   </s-text>
-        </s-paragraph>
+                </s-paragraph>
               )}
               
               {/* Webhook Status */}
@@ -402,7 +403,7 @@ export default function Index() {
                             <s-stack direction="block" gap="tight">
                               <s-text variant="strong">Test with Your Test Account:</s-text>
                               <s-text variant="subdued">
-                                Your Instagram Business ID: <code>{metaAuth.ig_business_id}</code>
+                                Your Instagram Account ID: <code>{metaAuth.ig_business_id}</code>
                               </s-text>
                               <s-text variant="subdued">
                                 Use this ID in the test webhook payload below.
@@ -449,39 +450,20 @@ export default function Index() {
           ) : (
             <s-stack direction="block" gap="base">
               <s-paragraph>
-                Connect your Instagram Business account to enable automation features.
+                Connect your Instagram professional account (Business or Creator) to enable automation features.
               </s-paragraph>
-              <s-banner tone="info">
-                <s-text variant="strong">Two ways to connect</s-text>
-                <s-text>
-                  <strong>Instagram Login</strong> – No Facebook Page required. Sign in with your Instagram professional account.
-                  <br />
-                  <strong>Facebook Login</strong> – Uses a Facebook Page linked to your Instagram Business account.
-                </s-text>
-              </s-banner>
-              <s-stack direction="inline" gap="base">
-                <s-button
-                  variant="primary"
-                  onClick={() => {
-                    fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
-                  }}
-                  disabled={fetcher.state === "submitting"}
-                >
-                  {fetcher.state === "submitting" ? "Connecting..." : "Connect with Instagram Login"}
-                </s-button>
-                <s-button
-                  variant="secondary"
-                  onClick={() => {
-                    fetcher.submit({}, { method: "post" });
-                  }}
-                  disabled={fetcher.state === "submitting"}
-                >
-                  Connect with Facebook (Page)
-                </s-button>
-              </s-stack>
+              <s-button
+                variant="primary"
+                onClick={() => {
+                  fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
+                }}
+                disabled={fetcher.state === "submitting"}
+              >
+                {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram"}
+              </s-button>
               <s-paragraph>
                 <s-text variant="subdued">
-                  Instagram Login: any Instagram professional (Business/Creator) account. Facebook: requires a Page linked to your IG Business account.
+                  Sign in with your Instagram professional (Business or Creator) account.
                 </s-text>
               </s-paragraph>
             </s-stack>

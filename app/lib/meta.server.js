@@ -694,31 +694,42 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
 }
 
 /**
- * Get Instagram account information (username, media count, etc.)
- * Uses automatic token refresh
+ * Get Instagram account information (username, media count, id, etc.)
+ * For Instagram Login uses GET /me; for Facebook Login uses GET /{ig_business_id}
  */
 export async function getInstagramAccountInfo(igBusinessId, shopId) {
-  if (!igBusinessId || !shopId) {
+  if (!shopId) {
     return null;
   }
 
   try {
-    // Use the refresh-enabled API call
-    const accountInfo = await metaGraphAPIWithRefresh(
-      shopId,
-      `/${igBusinessId}`,
-      "page",
-      {
-        params: {
-          fields: "username,media_count,profile_picture_url",
-        },
-      }
+    const auth = await getMetaAuthWithRefresh(shopId);
+    if (!auth || !auth.page_access_token) {
+      return null;
+    }
+
+    const isInstagramLogin = auth.auth_type === "instagram";
+    const endpoint = isInstagramLogin ? "/me" : `/${igBusinessId}`;
+    const fields = isInstagramLogin
+      ? "user_id,username,media_count,profile_picture_url,account_type"
+      : "username,media_count,profile_picture_url";
+
+    const accountInfo = await (isInstagramLogin ? metaGraphAPIInstagram : metaGraphAPI)(
+      endpoint,
+      auth.page_access_token,
+      { params: { fields } }
     );
 
+    // Instagram Login /me can return { data: [ { ... } ] } or { user_id, username, ... }
+    const payload = accountInfo.data && accountInfo.data[0] ? accountInfo.data[0] : accountInfo;
+    const userId = payload.user_id || payload.id || igBusinessId;
+
     return {
-      username: accountInfo.username || null,
-      mediaCount: accountInfo.media_count || 0,
-      profilePictureUrl: accountInfo.profile_picture_url || null,
+      id: userId,
+      username: payload.username || null,
+      mediaCount: payload.media_count ?? 0,
+      profilePictureUrl: payload.profile_picture_url || null,
+      accountType: payload.account_type || null,
     };
   } catch (error) {
     console.error("[meta] Error fetching Instagram account info:", error);

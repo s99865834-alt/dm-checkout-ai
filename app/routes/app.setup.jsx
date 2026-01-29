@@ -129,14 +129,7 @@ export default function SetupPage() {
               {instagramInfo && (
                 <s-paragraph>
                   <s-text variant="subdued">
-                    Connected to: @{instagramInfo.username || "Instagram Business Account"}
-                  </s-text>
-                </s-paragraph>
-              )}
-              {metaAuth?.page_id && (
-                <s-paragraph>
-                  <s-text variant="subdued">
-                    Facebook Page ID: {metaAuth.page_id}
+                    Connected to: @{instagramInfo.username || "Instagram professional account"}
                   </s-text>
                 </s-paragraph>
               )}
@@ -381,7 +374,7 @@ export const action = async ({ request }) => {
         return { success: true, refresh: true, message: "Instagram Login: configure webhooks in Meta App Dashboard (Instagram product)." };
       }
       if (!metaAuth.page_id) {
-        return { error: "No Facebook Page linked. Use Facebook Login to connect, or configure webhooks in Meta App Dashboard." };
+        return { error: "Configure webhooks in Meta App Dashboard (Instagram product)." };
       }
 
       console.log("[setup] Subscribing to webhooks for shop:", shop.id, "page_id:", metaAuth.page_id);
