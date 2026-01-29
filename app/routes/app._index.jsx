@@ -136,8 +136,14 @@ export const action = async ({ request }) => {
     }
 
     // Instagram Login (Business Login) – no Facebook Page required
+    // Must use the Instagram App ID from Meta Dashboard (Business login settings), not the main Facebook App ID.
     if (connectType === "instagram-login") {
-      const instagramAppId = process.env.META_INSTAGRAM_APP_ID || META_APP_ID;
+      const instagramAppId = process.env.META_INSTAGRAM_APP_ID;
+      if (!instagramAppId) {
+        return {
+          error: "Instagram Login is not configured. Set META_INSTAGRAM_APP_ID (and META_INSTAGRAM_APP_SECRET) from Meta App Dashboard → Instagram → API setup with Instagram login → Set up Instagram business login → Business login settings → Instagram App ID. The main Facebook App ID cannot be used for Instagram Login.",
+        };
+      }
       const redirectUri = `${finalAppUrl}/meta/instagram-login/callback`;
       const scopes = [
         "instagram_business_basic",
