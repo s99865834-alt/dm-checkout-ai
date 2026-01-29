@@ -10,7 +10,6 @@
  * GET /meta/test-comments-api (lists posts and their comments)
  */
 
-import { json } from "react-router";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
 import { authenticate } from "../shopify.server";
@@ -21,7 +20,13 @@ export const loader = async ({ request }) => {
     await authenticate.admin(request);
 
     if (!shop?.id) {
-      return json({ error: "Shop not found" }, { status: 401 });
+      return new Response(
+        JSON.stringify({ error: "Shop not found" }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     const url = new URL(request.url);
@@ -30,11 +35,23 @@ export const loader = async ({ request }) => {
 
     const auth = await getMetaAuthWithRefresh(shop.id);
     if (!auth || !auth.ig_business_id) {
-      return json({ error: "Instagram not connected" }, { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "Instagram not connected" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     if (!auth.page_access_token) {
-      return json({ error: "No access token available" }, { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "No access token available" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     const results = {
@@ -136,7 +153,13 @@ export const loader = async ({ request }) => {
         };
       }
 
-      return json(results);
+      return new Response(
+        JSON.stringify(results),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Test 2: Get comments for a specific media ID
@@ -152,19 +175,25 @@ export const loader = async ({ request }) => {
           }
         );
 
-        return json({
-          ...results,
-          test_getComments: {
-            success: true,
-            endpoint: `GET /${mediaId}/comments`,
-            mediaId: mediaId,
-            data: commentsResponse.data || [],
-            message: `Successfully fetched ${commentsResponse.data?.length || 0} comments`,
-          },
-        });
-      } catch (error) {
-        return json(
+        return new Response(
+          JSON.stringify({
+            ...results,
+            test_getComments: {
+              success: true,
+              endpoint: `GET /${mediaId}/comments`,
+              mediaId: mediaId,
+              data: commentsResponse.data || [],
+              message: `Successfully fetched ${commentsResponse.data?.length || 0} comments`,
+            },
+          }),
           {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      } catch (error) {
+        return new Response(
+          JSON.stringify({
             ...results,
             test_getComments: {
               success: false,
@@ -172,8 +201,11 @@ export const loader = async ({ request }) => {
               error: error.message,
               message: `Failed to get comments: ${error.message}`,
             },
-          },
-          { status: 400 }
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
         );
       }
     }
@@ -191,19 +223,25 @@ export const loader = async ({ request }) => {
           }
         );
 
-        return json({
-          ...results,
-          test_getCommentDetails: {
-            success: true,
-            endpoint: `GET /${commentId}`,
-            commentId: commentId,
-            data: commentResponse,
-            message: `Successfully fetched comment details`,
-          },
-        });
-      } catch (error) {
-        return json(
+        return new Response(
+          JSON.stringify({
+            ...results,
+            test_getCommentDetails: {
+              success: true,
+              endpoint: `GET /${commentId}`,
+              commentId: commentId,
+              data: commentResponse,
+              message: `Successfully fetched comment details`,
+            },
+          }),
           {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      } catch (error) {
+        return new Response(
+          JSON.stringify({
             ...results,
             test_getCommentDetails: {
               success: false,
@@ -211,8 +249,11 @@ export const loader = async ({ request }) => {
               error: error.message,
               message: `Failed to get comment details: ${error.message}`,
             },
-          },
-          { status: 400 }
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
         );
       }
     }
@@ -220,12 +261,15 @@ export const loader = async ({ request }) => {
     return json(results);
   } catch (error) {
     console.error("[test-comments-api] Error:", error);
-    return json(
-      {
+    return new Response(
+      JSON.stringify({
         error: error.message || "Unknown error",
         timestamp: new Date().toISOString(),
-      },
-      { status: 500 }
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 };
