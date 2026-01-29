@@ -61,28 +61,32 @@ export const loader = async ({ request }) => {
       timestamp: new Date().toISOString(),
     };
 
-    // Test: Get Instagram account info (demonstrates we can access the account)
+    // Test: Get Instagram account info (Instagram Login uses /me, Facebook Login uses /{ig_business_id})
+    const accountEndpoint = auth.auth_type === "instagram" ? "/me" : `/${auth.ig_business_id}`;
+    const accountFields = auth.auth_type === "instagram"
+      ? "user_id,username,media_count,profile_picture_url"
+      : "username,media_count,profile_picture_url";
     try {
       const accountInfo = await api(
-        `/${auth.ig_business_id}`,
+        accountEndpoint,
         token,
         {
           params: {
-            fields: "username,media_count,profile_picture_url",
+            fields: accountFields,
           },
         }
       );
 
       results.test1_getAccountInfo = {
         success: true,
-        endpoint: `GET /${auth.ig_business_id}`,
+        endpoint: `GET ${accountEndpoint}`,
         data: accountInfo,
         message: "Successfully fetched Instagram Business account info",
       };
     } catch (error) {
       results.test1_getAccountInfo = {
         success: false,
-        endpoint: `GET /${auth.ig_business_id}`,
+        endpoint: `GET ${accountEndpoint}`,
         error: error.message,
         message: `Failed to get account info: ${error.message}`,
       };

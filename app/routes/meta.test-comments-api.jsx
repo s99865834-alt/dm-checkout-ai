@@ -63,11 +63,12 @@ export const loader = async ({ request }) => {
       timestamp: new Date().toISOString(),
     };
 
-    // Test 1: Get Instagram posts (media)
+    // Test 1: Get Instagram posts (Instagram Login uses /me/media, Facebook Login uses /{ig_business_id}/media)
+    const mediaEndpoint = auth.auth_type === "instagram" ? "/me/media" : `/${auth.ig_business_id}/media`;
     if (!mediaId && !commentId) {
       try {
         const mediaResponse = await api(
-          `/${auth.ig_business_id}/media`,
+          mediaEndpoint,
           token,
           {
             params: {
@@ -79,7 +80,7 @@ export const loader = async ({ request }) => {
 
         results.test1_getMedia = {
           success: true,
-          endpoint: `GET /${auth.ig_business_id}/media`,
+          endpoint: `GET ${mediaEndpoint}`,
           data: mediaResponse.data || [],
           message: `Successfully fetched ${mediaResponse.data?.length || 0} Instagram posts`,
         };
@@ -150,7 +151,7 @@ export const loader = async ({ request }) => {
       } catch (error) {
         results.test1_getMedia = {
           success: false,
-          endpoint: `GET /${auth.ig_business_id}/media`,
+          endpoint: `GET ${mediaEndpoint}`,
           error: error.message,
           message: `Failed to get Instagram posts: ${error.message}`,
         };
