@@ -96,13 +96,24 @@ export async function loader({ request }) {
       throw new Error("Invalid long-lived token response");
     }
 
-    // 3. Resolve shop and save auth
+    // 3. Resolve Instagram professional account ID (IG_ID) via GET /me – required for media/comments APIs
+    const meUrl = `${INSTAGRAM_GRAPH_BASE}/me?fields=user_id,username,id&access_token=${encodeURIComponent(longLivedToken)}`;
+    const meRes = await fetch(meUrl);
+    const meData = await meRes.json();
+    if (meData.error) {
+      throw new Error(meData.error.message || "Failed to get Instagram account info");
+    }
+    const payload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
+    const igUserId = payload.user_id || payload.id || userId;
+    const finalIgUserId = String(igUserId);
+
+    // 4. Resolve shop and save auth (use IG_ID from /me for feed and product mapping)
     const shopData = await getShopByDomain(targetShop);
     if (!shopData) {
       return redirect(`/app?error=${encodeURIComponent("Shop not found")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
-    await saveMetaAuthForInstagram(shopData.id, String(userId), longLivedToken, tokenExpiresAt);
+    await saveMetaAuthForInstagram(shopData.id, finalIgUserId, longLivedToken, tokenExpiresAt);
 
     const shopName = targetShop.replace(".myshopify.com", "");
     const appClientId = process.env.SHOPIFY_API_KEY || "";

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramMedia } from "../lib/meta.server";
+import { getMetaAuth, getMetaAuthWithRefresh, getInstagramMedia } from "../lib/meta.server";
 import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings, cleanupDuplicateProductMappings } from "../lib/db.server";
 import { PlanGate } from "../components/PlanGate";
 
@@ -21,11 +21,14 @@ export const loader = async ({ request }) => {
     settings = await getSettings(shop.id);
     
     metaAuth = await getMetaAuth(shop.id);
+    // Use refreshed auth so token is valid (important for Instagram Login 60-day tokens)
+    const authRefreshed = metaAuth ? await getMetaAuthWithRefresh(shop.id) : null;
+    const effectiveAuth = authRefreshed || metaAuth;
 
-    if (metaAuth?.ig_business_id) {
+    if (effectiveAuth?.ig_business_id || effectiveAuth?.auth_type === "instagram") {
       try {
-        // Fetch Instagram media
-        const mediaResult = await getInstagramMedia(metaAuth.ig_business_id, shop.id, { limit: 25 });
+        // Fetch Instagram media (uses /me/media for Instagram Login, /{id}/media for Facebook Login)
+        const mediaResult = await getInstagramMedia(effectiveAuth.ig_business_id || "", shop.id, { limit: 25 });
         mediaData = mediaResult;
 
         // Clean up any duplicate product mappings before fetching

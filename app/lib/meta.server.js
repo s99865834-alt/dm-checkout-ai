@@ -846,13 +846,19 @@ export async function deleteMetaAuth(shopId) {
 
 /**
  * Fetch Instagram media (posts) for a business account
- * @param {string} igBusinessId - Instagram Business Account ID
+ * For Instagram Login uses /me/media (token identifies user); for Facebook Login uses /{igBusinessId}/media
+ * @param {string} igBusinessId - Instagram Business Account ID (or user ID from token for Instagram Login)
  * @param {string} shopId - Shop ID for token refresh
  * @param {Object} options - Options (limit, after cursor, etc.)
  * @returns {Promise<Object>} - Media data with pagination
  */
 export async function getInstagramMedia(igBusinessId, shopId, options = {}) {
   try {
+    const auth = await getMetaAuthWithRefresh(shopId);
+    if (!auth || !auth.page_access_token) {
+      throw new Error("No Instagram access token available");
+    }
+
     const limit = options.limit || 25;
     const after = options.after || null;
     const params = {
@@ -861,12 +867,9 @@ export async function getInstagramMedia(igBusinessId, shopId, options = {}) {
     };
     if (after) params.after = after;
 
-    const mediaData = await metaGraphAPIWithRefresh(
-      shopId,
-      `/${igBusinessId}/media`,
-      "page",
-      { params }
-    );
+    // Instagram Login: graph.instagram.com uses /me/media for current user's media
+    const mediaEndpoint = auth.auth_type === "instagram" ? "/me/media" : `/${igBusinessId}/media`;
+    const mediaData = await metaGraphAPIWithRefresh(shopId, mediaEndpoint, "page", { params });
 
     return {
       data: mediaData.data || [],
