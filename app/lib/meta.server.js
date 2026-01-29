@@ -6,6 +6,13 @@ const META_APP_SECRET = process.env.META_APP_SECRET;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
+// Instagram Login (Business Login) - separate product; uses different App ID/Secret if set
+export const META_INSTAGRAM_APP_ID = process.env.META_INSTAGRAM_APP_ID || process.env.META_APP_ID;
+export const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
+const INSTAGRAM_OAUTH_AUTHORIZE = "https://www.instagram.com/oauth/authorize";
+export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
+const INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com";
+
 /**
  * Save Meta authentication data for a shop
  */
@@ -80,6 +87,7 @@ export async function saveMetaAuth(
 
 /**
  * Get Meta authentication data for a shop
+ * Returns auth_type: 'facebook' | 'instagram' (Instagram Login = no Facebook Page)
  */
 export async function getMetaAuth(shopId) {
   const { data, error } = await supabase
@@ -95,30 +103,89 @@ export async function getMetaAuth(shopId) {
     return null;
   }
 
-  // Decrypt tokens (only if they exist)
-  // Note: Column names are user_token_enc, page_token_enc, ig_token_enc
-  if (!data.user_token_enc || !data.page_token_enc) {
-    // This is expected if OAuth hasn't completed yet - don't log as error
-    // Only log if we have a record but it's incomplete (partial save)
-    if (data.id) {
-      console.warn("[meta] Meta auth record exists but is missing required tokens. OAuth may not have completed.");
+  const authType = data.auth_type || "facebook";
+
+  // Instagram Login: only page_token_enc required (we store the IG user token there)
+  // Facebook Login: both user_token_enc and page_token_enc required
+  if (authType === "instagram") {
+    if (!data.page_token_enc) {
+      if (data.id) {
+        console.warn("[meta] Meta auth (Instagram Login) record is missing token.");
+      }
+      return null;
     }
-    return null;
+  } else {
+    if (!data.user_token_enc || !data.page_token_enc) {
+      if (data.id) {
+        console.warn("[meta] Meta auth record exists but is missing required tokens. OAuth may not have completed.");
+      }
+      return null;
+    }
   }
 
   return {
     ...data,
-    // Map to expected property names for backward compatibility
-    user_access_token: decryptToken(data.user_token_enc),
+    auth_type: authType,
+    user_access_token: data.user_token_enc ? decryptToken(data.user_token_enc) : null,
     page_access_token: decryptToken(data.page_token_enc),
     ig_access_token: data.ig_token_enc
       ? decryptToken(data.ig_token_enc)
-      : null,
+      : decryptToken(data.page_token_enc),
   };
 }
 
 /**
- * Refresh Meta access token
+ * Save Meta authentication for Instagram Login (Business Login) - no Facebook Page
+ * Uses graph.instagram.com and Instagram user access token.
+ * Requires meta_auth.auth_type column (run migration if needed).
+ */
+export async function saveMetaAuthForInstagram(shopId, igUserId, accessToken, tokenExpiresAt) {
+  console.log(`[meta] Saving Instagram Login auth for shop_id: ${shopId}, ig_user_id: ${igUserId}`);
+
+  const { data: existing } = await supabase
+    .from("meta_auth")
+    .select("id")
+    .eq("shop_id", shopId)
+    .maybeSingle();
+
+  const recordData = {
+    shop_id: shopId,
+    page_id: null,
+    ig_business_id: igUserId,
+    user_token_enc: encryptToken(accessToken),
+    page_token_enc: encryptToken(accessToken),
+    ig_token_enc: encryptToken(accessToken),
+    token_expires_at: tokenExpiresAt,
+    updated_at: new Date().toISOString(),
+    auth_type: "instagram",
+  };
+
+  let result;
+  if (existing) {
+    result = await supabase
+      .from("meta_auth")
+      .update(recordData)
+      .eq("id", existing.id)
+      .select()
+      .single();
+  } else {
+    result = await supabase
+      .from("meta_auth")
+      .insert(recordData)
+      .select()
+      .single();
+  }
+
+  if (result.error) {
+    console.error("[meta] Error saving Instagram Login auth:", result.error);
+    throw result.error;
+  }
+  console.log("[meta] Instagram Login auth saved successfully");
+  return result.data;
+}
+
+/**
+ * Refresh Meta access token (Facebook or Instagram Login)
  */
 export async function refreshMetaToken(shopId) {
   const auth = await getMetaAuth(shopId);
@@ -126,9 +193,12 @@ export async function refreshMetaToken(shopId) {
     throw new Error("No Meta auth found for shop");
   }
 
+  if (auth.auth_type === "instagram") {
+    return refreshInstagramLoginToken(shopId, auth);
+  }
+
   // Check if token needs refresh (expiring in < 7 days or already expired)
   if (!auth.token_expires_at) {
-    // No expiration date, assume it needs refresh
     console.log("[meta] Token has no expiration date, attempting refresh");
   } else {
     const expiresAt = new Date(auth.token_expires_at);
@@ -137,17 +207,15 @@ export async function refreshMetaToken(shopId) {
 
     if (daysUntilExpiry > 7) {
       console.log(`[meta] Token still valid for ${daysUntilExpiry.toFixed(1)} days`);
-      return auth; // Token is still valid
+      return auth;
     }
-    
     if (expiresAt < now) {
       console.log("[meta] Token has expired, refreshing immediately");
     }
   }
 
-  console.log("[meta] Refreshing Meta access token");
+  console.log("[meta] Refreshing Meta (Facebook) access token");
 
-  // Refresh token using Meta's endpoint
   const response = await fetch(
     `${META_API_BASE}/oauth/access_token?` +
       `grant_type=fb_exchange_token&` +
@@ -163,7 +231,6 @@ export async function refreshMetaToken(shopId) {
     throw new Error(`Token refresh failed: ${data.error.message}`);
   }
 
-  // Update stored token
   const newExpiresAt = data.expires_in
     ? new Date(Date.now() + data.expires_in * 1000).toISOString()
     : null;
@@ -183,33 +250,89 @@ export async function refreshMetaToken(shopId) {
 }
 
 /**
+ * Refresh Instagram Login (Business Login) long-lived token via graph.instagram.com
+ */
+async function refreshInstagramLoginToken(shopId, auth) {
+  if (auth.token_expires_at) {
+    const expiresAt = new Date(auth.token_expires_at);
+    const now = new Date();
+    const daysUntilExpiry = (expiresAt - now) / (1000 * 60 * 60 * 24);
+    if (daysUntilExpiry > 7 && expiresAt > now) {
+      return auth;
+    }
+  }
+
+  console.log("[meta] Refreshing Instagram Login access token");
+  const url = `${INSTAGRAM_GRAPH_BASE}/refresh_access_token?` +
+    `grant_type=ig_refresh_token&` +
+    `access_token=${auth.page_access_token}`;
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.error) {
+    console.error("[meta] Instagram Login token refresh failed:", data.error);
+    throw new Error(`Token refresh failed: ${data.error.message || "Unknown error"}`);
+  }
+
+  const newExpiresAt = data.expires_in
+    ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+    : null;
+
+  await saveMetaAuthForInstagram(shopId, auth.ig_business_id, data.access_token, newExpiresAt);
+  return await getMetaAuth(shopId);
+}
+
+/**
+ * Make authenticated request to Instagram Graph API (graph.instagram.com)
+ * Use for Instagram Login (Business Login) flow only.
+ */
+export async function metaGraphAPIInstagram(endpoint, accessToken, options = {}) {
+  const [baseEndpoint, existingParams] = endpoint.split("?");
+  const url = `${INSTAGRAM_GRAPH_BASE}${baseEndpoint.startsWith("/") ? baseEndpoint : `/${baseEndpoint}`}`;
+  const params = new URLSearchParams({ access_token: accessToken });
+  if (existingParams) {
+    for (const [k, v] of new URLSearchParams(existingParams).entries()) {
+      params.append(k, v);
+    }
+  }
+  if (options.params) {
+    for (const [k, v] of Object.entries(options.params)) {
+      params.append(k, v);
+    }
+  }
+  const fullUrl = `${url}?${params.toString()}`;
+  const res = await fetch(fullUrl, {
+    method: options.method || "GET",
+    headers: { "Content-Type": "application/json", ...options.headers },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await res.json();
+  if (data.error) {
+    throw new Error(`Instagram API error: ${data.error.message} (Code: ${data.error.code})`);
+  }
+  return data;
+}
+
+/**
  * Make authenticated request to Meta Graph API with automatic token refresh
- * This ensures tokens are fresh before making API calls
+ * Uses graph.facebook.com (Facebook Login) or graph.instagram.com (Instagram Login) based on auth_type.
  */
 export async function metaGraphAPIWithRefresh(shopId, endpoint, tokenType = "page", options = {}) {
-  // Get fresh auth (will refresh if needed)
   const auth = await getMetaAuthWithRefresh(shopId);
   if (!auth) {
     throw new Error("No Meta auth found for shop");
   }
 
-  // Select the appropriate token based on tokenType
-  let accessToken;
-  if (tokenType === "user") {
-    accessToken = auth.user_access_token;
-  } else if (tokenType === "page") {
-    accessToken = auth.page_access_token;
-  } else if (tokenType === "ig") {
-    accessToken = auth.ig_access_token || auth.page_access_token; // Fallback to page token if IG token not available
-  } else {
-    throw new Error(`Invalid token type: ${tokenType}`);
-  }
-
+  const accessToken = tokenType === "user"
+    ? auth.user_access_token
+    : (auth.ig_access_token || auth.page_access_token);
   if (!accessToken) {
     throw new Error(`No ${tokenType} access token available`);
   }
 
-  // Make the API call
+  if (auth.auth_type === "instagram") {
+    return metaGraphAPIInstagram(endpoint, accessToken, options);
+  }
   return metaGraphAPI(endpoint, accessToken, options);
 }
 
@@ -730,26 +853,18 @@ export async function deleteMetaAuth(shopId) {
  */
 export async function getInstagramMedia(igBusinessId, shopId, options = {}) {
   try {
-    const auth = await getMetaAuthWithRefresh(shopId);
-    if (!auth || !auth.page_access_token) {
-      throw new Error("No page access token available");
-    }
-
     const limit = options.limit || 25;
     const after = options.after || null;
-
     const params = {
       fields: "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count",
       limit,
     };
+    if (after) params.after = after;
 
-    if (after) {
-      params.after = after;
-    }
-
-    const mediaData = await metaGraphAPI(
+    const mediaData = await metaGraphAPIWithRefresh(
+      shopId,
       `/${igBusinessId}/media`,
-      auth.page_access_token,
+      "page",
       { params }
     );
 

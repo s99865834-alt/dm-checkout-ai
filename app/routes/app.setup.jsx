@@ -3,7 +3,7 @@ import { useLoaderData, useFetcher, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
+import { getMetaAuth, getMetaAuthWithRefresh, metaGraphAPI, getInstagramAccountInfo } from "../lib/meta.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
@@ -16,77 +16,68 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
 
-    if (metaAuth?.page_id && metaAuth?.ig_business_id) {
-      // Check webhook subscription status
-      try {
-        const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
-        if (authWithRefresh?.page_access_token) {
-          // Check if Page is subscribed to webhooks
-          try {
-            const subscriptionData = await metaGraphAPI(
-              `/${metaAuth.page_id}/subscribed_apps`,
-              authWithRefresh.page_access_token
-            );
-
-            // Meta API returns data in format: { data: [{ id: "app_id", subscribed_fields: [...] }] }
-            if (subscriptionData?.data && Array.isArray(subscriptionData.data) && subscriptionData.data.length > 0) {
-              const appId = process.env.META_APP_ID;
-              const appSubscription = subscriptionData.data.find(
-                (sub) => sub.id === appId
+    if (metaAuth?.ig_business_id) {
+      // Instagram Login: no Page, webhooks configured in Meta App Dashboard
+      if (metaAuth.auth_type === "instagram") {
+        webhookStatus = {
+          subscribed: null,
+          note: "Instagram Login: configure webhooks in Meta App Dashboard (Instagram product).",
+        };
+        try {
+          instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
+        } catch (e) {
+          console.error("[setup] Error fetching Instagram info (Instagram Login):", e);
+        }
+      } else if (metaAuth?.page_id) {
+        // Facebook Login: check Page webhook subscription
+        try {
+          const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
+          if (authWithRefresh?.page_access_token) {
+            try {
+              const subscriptionData = await metaGraphAPI(
+                `/${metaAuth.page_id}/subscribed_apps`,
+                authWithRefresh.page_access_token
               );
-              
-              if (appSubscription) {
-                const fields = appSubscription.subscribed_fields || [];
-                webhookStatus = {
-                  subscribed: true,
-                  fields: fields,
-                  hasMessages: fields.includes("messages"),
-                  hasComments: fields.includes("comments"),
-                };
+              if (subscriptionData?.data && Array.isArray(subscriptionData.data) && subscriptionData.data.length > 0) {
+                const appId = process.env.META_APP_ID;
+                const appSubscription = subscriptionData.data.find((sub) => sub.id === appId);
+                if (appSubscription) {
+                  const fields = appSubscription.subscribed_fields || [];
+                  webhookStatus = {
+                    subscribed: true,
+                    fields: fields,
+                    hasMessages: fields.includes("messages"),
+                    hasComments: fields.includes("comments"),
+                  };
+                } else {
+                  webhookStatus = {
+                    subscribed: false,
+                    message: "App not found in webhook subscriptions. Please enable 'Allow access to messages' in Instagram app.",
+                  };
+                }
               } else {
                 webhookStatus = {
                   subscribed: false,
-                  message: "App not found in webhook subscriptions. Please enable 'Allow access to messages' in Instagram app.",
+                  message: "No webhook subscriptions found. Please enable 'Allow access to messages' in Instagram app.",
                 };
               }
-            } else {
+            } catch (apiError) {
+              console.error("[setup] Error checking webhook subscription:", apiError);
               webhookStatus = {
                 subscribed: false,
-                message: "No webhook subscriptions found. Please enable 'Allow access to messages' in Instagram app.",
+                error: "Could not verify webhook status. Please ensure 'Allow access to messages' is enabled in Instagram app.",
               };
             }
-          } catch (apiError) {
-            console.error("[setup] Error checking webhook subscription:", apiError);
-            // If API call fails, assume webhooks aren't working
-            webhookStatus = {
-              subscribed: false,
-              error: "Could not verify webhook status. Please ensure 'Allow access to messages' is enabled in Instagram app.",
-            };
+            try {
+              instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
+            } catch (error) {
+              console.error("[setup] Error fetching Instagram info:", error);
+            }
           }
+        } catch (error) {
+          console.error("[setup] Error checking webhook status:", error);
+          webhookStatus = { subscribed: false, error: error.message || "Failed to check webhook status" };
         }
-
-        // Get Instagram account info
-        if (metaAuth.ig_business_id) {
-          try {
-            instagramInfo = await metaGraphAPI(
-              `/${metaAuth.ig_business_id}`,
-              authWithRefresh.page_access_token,
-              {
-                params: {
-                  fields: "username,media_count,profile_picture_url",
-                },
-              }
-            );
-          } catch (error) {
-            console.error("[setup] Error fetching Instagram info:", error);
-          }
-        }
-      } catch (error) {
-        console.error("[setup] Error checking webhook status:", error);
-        webhookStatus = {
-          subscribed: false,
-          error: error.message || "Failed to check webhook status",
-        };
       }
     }
   }
@@ -383,19 +374,23 @@ export const action = async ({ request }) => {
       }
 
       const metaAuth = await getMetaAuth(shop.id);
-      if (!metaAuth || !metaAuth.page_id || !metaAuth.ig_business_id) {
+      if (!metaAuth || !metaAuth.ig_business_id) {
         return { error: "Instagram account not connected. Please connect your Instagram account first." };
+      }
+      if (metaAuth.auth_type === "instagram") {
+        return { success: true, refresh: true, message: "Instagram Login: configure webhooks in Meta App Dashboard (Instagram product)." };
+      }
+      if (!metaAuth.page_id) {
+        return { error: "No Facebook Page linked. Use Facebook Login to connect, or configure webhooks in Meta App Dashboard." };
       }
 
       console.log("[setup] Subscribing to webhooks for shop:", shop.id, "page_id:", metaAuth.page_id);
-      
-      // Get fresh auth with token refresh
+
       const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
       if (!authWithRefresh || !authWithRefresh.page_access_token) {
         return { error: "No page access token available. Please reconnect your Instagram account." };
       }
 
-      // Import subscribeToWebhooks dynamically to avoid client-side import
       const { subscribeToWebhooks } = await import("../lib/meta.server");
       const subscribed = await subscribeToWebhooks(shop.id, metaAuth.page_id, metaAuth.ig_business_id);
       

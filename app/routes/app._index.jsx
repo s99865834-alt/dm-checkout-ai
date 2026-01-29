@@ -33,9 +33,11 @@ export const loader = async ({ request }) => {
         shop.id
       );
       
-      // Check webhook subscription status
-      if (metaAuth.page_id) {
+      // Check webhook subscription status (Facebook Login only; Instagram Login uses dashboard)
+      if (metaAuth.page_id && metaAuth.auth_type !== "instagram") {
         webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
+      } else if (metaAuth.auth_type === "instagram") {
+        webhookStatus = { subscribed: null, note: "Instagram Login: configure webhooks in Meta App Dashboard" };
       }
     }
   }
@@ -120,21 +122,39 @@ export const action = async ({ request }) => {
       }
     }
     
-    // Handle connect action (OAuth flow)
+    // Handle connect action (OAuth flow) – Facebook Login or Instagram Login
     const shopDomain = session.shop;
-    
-    // ALWAYS use production HTTPS URL for OAuth redirect (Facebook requires HTTPS)
+    const connectType = formData.get("connectType") || "facebook";
+
     const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
     const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL || PRODUCTION_URL;
-    const finalAppUrl = APP_URL.includes('railway.app') ? APP_URL : PRODUCTION_URL;
-    
-    if (!finalAppUrl || !finalAppUrl.startsWith('https://')) {
+    const finalAppUrl = APP_URL.includes("railway.app") ? APP_URL : PRODUCTION_URL;
+
+    if (!finalAppUrl || !finalAppUrl.startsWith("https://")) {
       console.error("[oauth] Invalid APP_URL configuration");
       return { error: "Server configuration error. Please contact support." };
     }
-    
+
+    // Instagram Login (Business Login) – no Facebook Page required
+    if (connectType === "instagram-login") {
+      const instagramAppId = process.env.META_INSTAGRAM_APP_ID || META_APP_ID;
+      const redirectUri = `${finalAppUrl}/meta/instagram-login/callback`;
+      const scopes = [
+        "instagram_business_basic",
+        "instagram_business_manage_messages",
+        "instagram_business_manage_comments",
+      ].join(",");
+      const authUrl = `https://www.instagram.com/oauth/authorize?` +
+        `client_id=${instagramAppId}&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `response_type=code&` +
+        `scope=${encodeURIComponent(scopes)}&` +
+        `state=${encodeURIComponent(shopDomain)}`;
+      return { oauthUrl: authUrl };
+    }
+
+    // Facebook Login (default) – requires Facebook Page linked to IG Business
     const redirectUri = `${finalAppUrl}/meta/instagram/callback`;
-    
     const scopes = [
       "instagram_basic",
       "pages_show_list",
@@ -143,7 +163,6 @@ export const action = async ({ request }) => {
       "instagram_manage_comments",
       "instagram_manage_messages",
     ].join(",");
-
     const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?` +
       `client_id=${META_APP_ID}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
@@ -151,7 +170,6 @@ export const action = async ({ request }) => {
       `response_type=code&` +
       `auth_type=rerequest&` +
       `state=${encodeURIComponent(shopDomain)}`;
-
     return { oauthUrl: authUrl };
   } catch (error) {
     console.error("[oauth] Error generating OAuth URL:", error);
@@ -428,27 +446,38 @@ export default function Index() {
                 Connect your Instagram Business account to enable automation features.
               </s-paragraph>
               <s-banner tone="info">
-                <s-text variant="strong">Why Facebook Page access?</s-text>
+                <s-text variant="strong">Two ways to connect</s-text>
                 <s-text>
-                  Meta requires Instagram Business accounts to be linked to a Facebook Page. 
-                  When you connect, you'll be asked to grant access to your Facebook Page - 
-                  this is just a technical requirement. We only use it to access your Instagram Business account.
+                  <strong>Instagram Login</strong> – No Facebook Page required. Sign in with your Instagram professional account.
+                  <br />
+                  <strong>Facebook Login</strong> – Uses a Facebook Page linked to your Instagram Business account.
                 </s-text>
               </s-banner>
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  variant="primary"
+                  onClick={() => {
+                    fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
+                  }}
+                  disabled={fetcher.state === "submitting"}
+                >
+                  {fetcher.state === "submitting" ? "Connecting..." : "Connect with Instagram Login"}
+                </s-button>
+                <s-button
+                  variant="secondary"
+                  onClick={() => {
+                    fetcher.submit({}, { method: "post" });
+                  }}
+                  disabled={fetcher.state === "submitting"}
+                >
+                  Connect with Facebook (Page)
+                </s-button>
+              </s-stack>
               <s-paragraph>
                 <s-text variant="subdued">
-                  Requirements: You need a Facebook Page with a linked Instagram Business account.
+                  Instagram Login: any Instagram professional (Business/Creator) account. Facebook: requires a Page linked to your IG Business account.
                 </s-text>
               </s-paragraph>
-            <s-button
-                variant="primary"
-                onClick={() => {
-                  fetcher.submit({}, { method: "post" });
-                }}
-                disabled={fetcher.state === "submitting"}
-              >
-                {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram Business Account"}
-            </s-button>
             </s-stack>
           )}
         </s-stack>

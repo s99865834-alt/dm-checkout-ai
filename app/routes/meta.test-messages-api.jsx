@@ -12,7 +12,7 @@
  */
 
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
+import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "../lib/meta.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
@@ -51,17 +51,21 @@ export const loader = async ({ request }) => {
       );
     }
 
+    const api = auth.auth_type === "instagram" ? metaGraphAPIInstagram : metaGraphAPI;
+    const token = auth.page_access_token;
+
     const results = {
       shopId: shop.id,
       igBusinessId: auth.ig_business_id,
+      authType: auth.auth_type || "facebook",
       timestamp: new Date().toISOString(),
     };
 
     // Test: Get Instagram account info (demonstrates we can access the account)
     try {
-      const accountInfo = await metaGraphAPI(
+      const accountInfo = await api(
         `/${auth.ig_business_id}`,
-        auth.page_access_token,
+        token,
         {
           params: {
             fields: "username,media_count,profile_picture_url",

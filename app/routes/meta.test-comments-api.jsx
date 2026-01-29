@@ -11,7 +11,7 @@
  */
 
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
+import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "../lib/meta.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
@@ -54,6 +54,9 @@ export const loader = async ({ request }) => {
       );
     }
 
+    const api = auth.auth_type === "instagram" ? metaGraphAPIInstagram : metaGraphAPI;
+    const token = auth.page_access_token;
+
     const results = {
       shopId: shop.id,
       igBusinessId: auth.ig_business_id,
@@ -63,9 +66,9 @@ export const loader = async ({ request }) => {
     // Test 1: Get Instagram posts (media)
     if (!mediaId && !commentId) {
       try {
-        const mediaResponse = await metaGraphAPI(
+        const mediaResponse = await api(
           `/${auth.ig_business_id}/media`,
-          auth.page_access_token,
+          token,
           {
             params: {
               fields: "id,caption,media_type,permalink,comments_count",
@@ -85,9 +88,9 @@ export const loader = async ({ request }) => {
         if (mediaResponse.data && mediaResponse.data.length > 0) {
           const firstPost = mediaResponse.data[0];
           try {
-            const commentsResponse = await metaGraphAPI(
+            const commentsResponse = await api(
               `/${firstPost.id}/comments`,
-              auth.page_access_token,
+              token,
               {
                 params: {
                   fields: "id,text,timestamp,from",
@@ -107,9 +110,9 @@ export const loader = async ({ request }) => {
             if (commentsResponse.data && commentsResponse.data.length > 0) {
               const firstComment = commentsResponse.data[0];
               try {
-                const commentDetailsResponse = await metaGraphAPI(
+                const commentDetailsResponse = await api(
                   `/${firstComment.id}`,
-                  auth.page_access_token,
+                  token,
                   {
                     params: {
                       fields: "id,text,timestamp,from",
@@ -165,9 +168,9 @@ export const loader = async ({ request }) => {
     // Test 2: Get comments for a specific media ID
     if (mediaId) {
       try {
-        const commentsResponse = await metaGraphAPI(
+        const commentsResponse = await api(
           `/${mediaId}/comments`,
-          auth.page_access_token,
+          token,
           {
             params: {
               fields: "id,text,timestamp,from",
@@ -213,9 +216,9 @@ export const loader = async ({ request }) => {
     // Test 3: Get details for a specific comment ID
     if (commentId) {
       try {
-        const commentResponse = await metaGraphAPI(
+        const commentResponse = await api(
           `/${commentId}`,
-          auth.page_access_token,
+          token,
           {
             params: {
               fields: "id,text,timestamp,from",

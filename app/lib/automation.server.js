@@ -6,7 +6,7 @@
 import { randomUUID } from "crypto";
 import { getShopPlanAndUsage, incrementUsage } from "./db.server";
 import { logLinkSent } from "./db.server";
-import { getMetaAuthWithRefresh, metaGraphAPI } from "./meta.server";
+import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -267,51 +267,35 @@ export async function sendDmReply(shopId, igUserId, text) {
   // For now, we'll rely on Meta's API rate limits
 
   // Send DM via Instagram Messaging API
-  // Endpoint: POST /{ig-user-id}/messages
+  // Endpoint: POST /{ig-user-id}/messages (graph.facebook.com or graph.instagram.com)
   const endpoint = `/${metaAuth.ig_business_id}/messages`;
-  
   const messageData = {
-    recipient: {
-      id: igUserId,
-    },
-    message: {
-      text: text,
-    },
+    recipient: { id: igUserId },
+    message: { text: text },
   };
+  const apiCall = metaAuth.auth_type === "instagram"
+    ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
+    : () => metaGraphAPI(endpoint, accessToken, { method: "POST", body: messageData });
 
   try {
-    const response = await metaGraphAPI(endpoint, accessToken, {
-      method: "POST",
-      body: messageData,
-    });
-
+    const response = await apiCall();
     console.log(`[automation] DM sent successfully to ${igUserId}`);
     return response;
   } catch (error) {
     console.error(`[automation] Error sending DM:`, error);
-    
-    // Handle expired token error (Code: 190, error_subcode: 463) - retry with refreshed token
+
     if (error.message?.includes("Code: 190") || error.message?.includes("Session has expired")) {
       console.log(`[automation] Token expired, refreshing and retrying...`);
       try {
-        // Refresh token and retry
         const { refreshMetaToken } = await import("./meta.server");
         await refreshMetaToken(shopId);
-        
-        // Get fresh auth after refresh
         const freshAuth = await getMetaAuthWithRefresh(shopId);
         const freshToken = freshAuth.ig_access_token || freshAuth.page_access_token;
-        
-        if (!freshToken) {
-          throw new Error("No Instagram access token available after refresh");
-        }
-        
-        // Retry the API call with fresh token
-        const retryResponse = await metaGraphAPI(endpoint, freshToken, {
-          method: "POST",
-          body: messageData,
-        });
-        
+        if (!freshToken) throw new Error("No Instagram access token available after refresh");
+        const retryCall = freshAuth.auth_type === "instagram"
+          ? () => metaGraphAPIInstagram(endpoint, freshToken, { method: "POST", body: messageData })
+          : () => metaGraphAPI(endpoint, freshToken, { method: "POST", body: messageData });
+        const retryResponse = await retryCall();
         console.log(`[automation] DM sent successfully to ${igUserId} after token refresh`);
         return retryResponse;
       } catch (refreshError) {
