@@ -800,6 +800,47 @@ export default function WebhookDemo() {
           )}
         </s-box>
       </s-section>
+
+      <s-section heading="Test Instagram Comments API (For Meta Review)">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            <s-text>
+              Use this section to test Instagram Comments API calls required for Meta app review.
+              This demonstrates that your app can read comments using the <s-text variant="strong">instagram_business_manage_comments</s-text> permission.
+            </s-text>
+          </s-paragraph>
+
+          <s-stack direction="block" gap="tight">
+            <s-button
+              variant="primary"
+              onClick={async () => {
+                try {
+                  const response = await fetch("/meta/test-comments-api");
+                  const data = await response.json();
+                  alert(JSON.stringify(data, null, 2));
+                  console.log("Comments API Test Results:", data);
+                } catch (error) {
+                  alert(`Error: ${error.message}`);
+                  console.error("Comments API Test Error:", error);
+                }
+              }}
+            >
+              Test Comments API (Get Posts & Comments)
+            </s-button>
+
+            <s-paragraph>
+              <s-text variant="subdued">
+                This will test three API calls:
+                <br />1. GET /{igBusinessId}/media - Get Instagram posts
+                <br />2. GET /{media-id}/comments - Read comments on a post
+                <br />3. GET /{comment-id} - Get comment details
+                <br />
+                <br />Results will be displayed in an alert and logged to the console.
+              </s-text>
+            </s-paragraph>
+          </s-stack>
+        </s-stack>
+      </s-section>
     </s-page>
   );
 }
