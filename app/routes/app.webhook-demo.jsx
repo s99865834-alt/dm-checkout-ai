@@ -855,7 +855,7 @@ export default function WebhookDemo() {
                   2. {"POST /{ig-business-id}/messages"} – Send DM (demonstrated via webhook automation above)
                   <br />
                   <br />
-                  Note: Actual message sending happens when you use the "Send Test Webhook" button above with a Direct DM or Comment → DM scenario. That triggers the POST /{ig-business-id}/messages API call.
+                  Note: Actual message sending happens when you use the "Send Test Webhook" button above with a Direct DM or Comment → DM scenario. That triggers the {"POST /{ig-business-id}/messages"} API call.
                 </s-text>
               </s-paragraph>
               <s-button
