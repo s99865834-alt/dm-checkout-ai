@@ -11,7 +11,7 @@ export const META_INSTAGRAM_APP_ID = process.env.META_INSTAGRAM_APP_ID || proces
 export const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
 const INSTAGRAM_OAUTH_AUTHORIZE = "https://www.instagram.com/oauth/authorize";
 export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
-const INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com";
+export const INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com";
 
 /**
  * Save Meta authentication data for a shop
