@@ -831,11 +831,15 @@ export default function WebhookDemo() {
             <s-paragraph>
               <s-text variant="subdued">
                 This will test three API calls:
-                <br />1. GET /{igBusinessId}/media - Get Instagram posts
-                <br />2. GET /{media-id}/comments - Read comments on a post
-                <br />3. GET /{comment-id} - Get comment details
                 <br />
-                <br />Results will be displayed in an alert and logged to the console.
+                1. {"GET /{ig-business-id}/media"} – Get Instagram posts
+                <br />
+                2. {"GET /{media-id}/comments"} – Read comments on a post
+                <br />
+                3. {"GET /{comment-id}"} – Get comment details
+                <br />
+                <br />
+                Results will be displayed in an alert and logged to the console.
               </s-text>
             </s-paragraph>
           </s-stack>
