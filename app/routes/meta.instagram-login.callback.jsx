@@ -103,8 +103,8 @@ export async function loader({ request }) {
     if (meData.error) {
       throw new Error(meData.error.message || "Failed to get Instagram account info");
     }
-    const payload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
-    const igUserId = payload.user_id || payload.id || userId;
+    const mePayload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
+    const igUserId = mePayload.user_id || mePayload.id || userId;
     const finalIgUserId = String(igUserId);
 
     // 4. Resolve shop and save auth (use IG_ID from /me for feed and product mapping)
