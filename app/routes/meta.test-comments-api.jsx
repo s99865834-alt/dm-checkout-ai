@@ -16,18 +16,18 @@ import { getMetaAuthWithRefresh, metaGraphAPI } from "../lib/meta.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  const { shop } = await getShopWithPlan(request);
-  await authenticate.admin(request);
-
-  if (!shop?.id) {
-    return json({ error: "Shop not found" }, { status: 401 });
-  }
-
-  const url = new URL(request.url);
-  const mediaId = url.searchParams.get("mediaId");
-  const commentId = url.searchParams.get("commentId");
-
   try {
+    const { shop } = await getShopWithPlan(request);
+    await authenticate.admin(request);
+
+    if (!shop?.id) {
+      return json({ error: "Shop not found" }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const mediaId = url.searchParams.get("mediaId");
+    const commentId = url.searchParams.get("commentId");
+
     const auth = await getMetaAuthWithRefresh(shop.id);
     if (!auth || !auth.ig_business_id) {
       return json({ error: "Instagram not connected" }, { status: 400 });
