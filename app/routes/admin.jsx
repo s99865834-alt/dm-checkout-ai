@@ -157,7 +157,7 @@ export default function Admin() {
                 <td colSpan={4} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
-              )}
+              </tr>
             )}
           </tbody>
         </table>
