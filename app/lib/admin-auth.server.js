@@ -89,3 +89,16 @@ export function clearAdminSessionCookie(response) {
 export function isAdminAuthConfigured() {
   return !!getSecret();
 }
+
+/**
+ * Debug info for 503 responses (no secret values).
+ */
+export function getAdminAuthDebug() {
+  const raw = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "";
+  return {
+    ADMIN_PASSWORD_present: !!process.env.ADMIN_PASSWORD,
+    ADMIN_SECRET_present: !!process.env.ADMIN_SECRET,
+    length: raw.length,
+    lengthOk: raw.length >= 16,
+  };
+}

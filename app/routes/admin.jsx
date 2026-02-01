@@ -5,15 +5,26 @@ import {
   setAdminSessionCookie,
   clearAdminSessionCookie,
   isAdminAuthConfigured,
+  getAdminAuthDebug,
 } from "../lib/admin-auth.server";
 import { getAdminDashboardStores } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
-    return new Response(
-      "Admin login is not configured. In Railway: set ADMIN_PASSWORD (exactly that name, 16+ characters). Then redeploy so the app picks up the variable.",
-      { status: 503, headers: { "Content-Type": "text/plain" } }
-    );
+    const debug = getAdminAuthDebug();
+    const body = [
+      "Admin login is not configured. In Railway: set ADMIN_PASSWORD (exactly that name, 16+ characters). Then redeploy.",
+      "",
+      "Debug (what this server sees):",
+      `  ADMIN_PASSWORD present: ${debug.ADMIN_PASSWORD_present}`,
+      `  ADMIN_SECRET present: ${debug.ADMIN_SECRET_present}`,
+      `  value length: ${debug.length} (need 16+)`,
+      `  lengthOk: ${debug.lengthOk}`,
+    ].join("\n");
+    return new Response(body, {
+      status: 503,
+      headers: { "Content-Type": "text/plain" },
+    });
   }
 
   if (!getAdminSession(request)) {
