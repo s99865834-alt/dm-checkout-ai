@@ -1466,3 +1466,74 @@ export async function getProAnalytics(shopId, options = {}) {
   return proAnalytics;
 }
 
+/**
+ * Get all stores with aggregates for admin dashboard.
+ * Returns: [{ shop_id, shopify_domain, created_at, active, messages_sent, revenue }]
+ */
+export async function getAdminDashboardStores() {
+  const { data: shops, error: shopsError } = await supabase
+    .from("shops")
+    .select("id, shopify_domain, active, created_at")
+    .order("id", { ascending: true });
+
+  if (shopsError) {
+    // If created_at column doesn't exist, retry without it
+    if (shopsError.code === "42703" || shopsError.message?.includes("created_at")) {
+      const { data: shopsFallback, error: fallbackError } = await supabase
+        .from("shops")
+        .select("id, shopify_domain, active")
+        .order("id", { ascending: true });
+      if (fallbackError) {
+        console.error("getAdminDashboardStores shops error", fallbackError);
+        throw fallbackError;
+      }
+      const withCreatedAt = (shopsFallback || []).map((s) => ({ ...s, created_at: null }));
+      return buildAdminStoresResult(withCreatedAt);
+    }
+    console.error("getAdminDashboardStores shops error", shopsError);
+    throw shopsError;
+  }
+
+  return buildAdminStoresResult(shops || []);
+}
+
+async function buildAdminStoresResult(shops) {
+  const { data: linksRows, error: linksError } = await supabase
+    .from("links_sent")
+    .select("shop_id");
+
+  if (linksError) {
+    console.error("getAdminDashboardStores links_sent error", linksError);
+  }
+
+  const { data: attributionRows, error: attrError } = await supabase
+    .from("attribution")
+    .select("shop_id, amount");
+
+  if (attrError) {
+    console.error("getAdminDashboardStores attribution error", attrError);
+  }
+
+  const messagesByShop = new Map();
+  (linksRows || []).forEach((row) => {
+    const id = row.shop_id;
+    messagesByShop.set(id, (messagesByShop.get(id) || 0) + 1);
+  });
+
+  const revenueByShop = new Map();
+  (attributionRows || []).forEach((row) => {
+    const id = row.shop_id;
+    const amount = parseFloat(row.amount || 0);
+    revenueByShop.set(id, (revenueByShop.get(id) || 0) + amount);
+  });
+
+  return shops.map((s) => ({
+    shop_id: s.id,
+    shopify_domain: s.shopify_domain,
+    created_at: s.created_at,
+    active: s.active,
+    messages_sent: messagesByShop.get(s.id) || 0,
+    revenue: revenueByShop.get(s.id) || 0,
+  }));
+}
+
