@@ -12,6 +12,7 @@ import { getAdminDashboardStores } from "../lib/db.server";
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
     const debug = getAdminAuthDebug();
+    console.error("[admin] 503 - env check:", JSON.stringify(debug));
     const body = [
       "Admin login is not configured. In Railway: set ADMIN_PASSWORD (exactly that name, 16+ characters). Then redeploy.",
       "",
@@ -42,7 +43,17 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
-    return new Response("Not configured", { status: 503 });
+    const debug = getAdminAuthDebug();
+    console.error("[admin] action 503 - env check:", JSON.stringify(debug));
+    return {
+      error: "Not configured",
+      debug: {
+        ADMIN_PASSWORD_present: debug.ADMIN_PASSWORD_present,
+        ADMIN_SECRET_present: debug.ADMIN_SECRET_present,
+        value_length: debug.length,
+        lengthOk: debug.lengthOk,
+      },
+    };
   }
 
   const formData = await request.formData();
@@ -113,7 +124,14 @@ export default function Admin() {
               />
             </label>
             {actionData?.error && (
-              <p style={styles.error}>{actionData.error}</p>
+              <>
+                <p style={styles.error}>{actionData.error}</p>
+                {actionData.debug && (
+                  <pre style={styles.debug}>
+                    {JSON.stringify(actionData.debug, null, 2)}
+                  </pre>
+                )}
+              </>
             )}
             <button type="submit" style={styles.button}>
               Log in
@@ -226,6 +244,15 @@ const styles = {
     margin: 0,
     fontSize: "0.875rem",
     color: "#f87171",
+  },
+  debug: {
+    margin: "0.5rem 0 0 0",
+    padding: "0.5rem",
+    fontSize: "0.75rem",
+    backgroundColor: "#0f172a",
+    borderRadius: "4px",
+    color: "#94a3b8",
+    overflow: "auto",
   },
   button: {
     padding: "0.5rem 1rem",
