@@ -453,8 +453,8 @@ export default function WebhookDemo() {
               <s-text variant="strong">Select test type:</s-text>
             </s-paragraph>
             
-            <s-stack direction="block" gap="tight">
-              <label className="srChoiceRow">
+            <s-stack direction="block" gap="none" className="srWebhookStep1Choices">
+              <label className="srChoiceRow srWebhookStep1Option">
                 <input
                   type="radio"
                   name="testType"
@@ -469,8 +469,7 @@ export default function WebhookDemo() {
                   </s-text>
                 </s-stack>
               </label>
-              
-              <label className="srChoiceRow">
+              <label className="srChoiceRow srWebhookStep1Option">
                 <input
                   type="radio"
                   name="testType"
@@ -492,9 +491,9 @@ export default function WebhookDemo() {
               <s-text variant="strong">Select a test scenario:</s-text>
             </s-paragraph>
 
-            <s-stack direction="block" gap="tight">
+            <s-stack direction="block" gap="none" className="srWebhookStep1Choices">
               {Object.entries(examples).map(([key, example]) => (
-                <label key={key} className="srChoiceRow">
+                <label key={key} className="srChoiceRow srWebhookStep1Option">
                   <input
                     type="radio"
                     name="example"

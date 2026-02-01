@@ -77,6 +77,11 @@ s-page > s-section + s-section {
   cursor: pointer;
 }
 
+/* 10px margin between each option in Webhook Demo Step 1 (test type and test scenario) */
+.srWebhookStep1Option + .srWebhookStep1Option {
+  margin-top: 10px;
+}
+
 .srChoiceRow input {
   cursor: pointer;
 }
