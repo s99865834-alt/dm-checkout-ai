@@ -11,7 +11,7 @@ import { getAdminDashboardStores } from "../lib/db.server";
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
     return new Response(
-      "Admin login is not configured. Set ADMIN_PASSWORD (16+ characters) in your environment.",
+      "Admin login is not configured. In Railway: set ADMIN_PASSWORD (exactly that name, 16+ characters). Then redeploy so the app picks up the variable.",
       { status: 503, headers: { "Content-Type": "text/plain" } }
     );
   }
