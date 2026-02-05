@@ -266,17 +266,21 @@ export async function sendDmReply(shopId, igUserId, text) {
   // TODO: Implement proper rate limiting (in-memory or Redis)
   // For now, we'll rely on Meta's API rate limits
 
-  // Send DM: POST /{IG_ID}/messages with recipient.id = customer IGSID, message.text = body
+  // Send DM: Instagram Login uses /me/messages (token identifies account); Page uses /{page_id}/messages
   // Meta: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
-  const endpoint = `/${metaAuth.ig_business_id}/messages`;
+  const endpoint =
+    metaAuth.auth_type === "instagram"
+      ? "/me/messages"
+      : `/${metaAuth.ig_business_id}/messages`;
   const messageData = {
     recipient: { id: igUserId },
     message: { text: text },
   };
-  console.log(`[automation] Sending DM shopId=${shopId} ig_business_id=${metaAuth.ig_business_id} recipient=${igUserId}`);
-  const apiCall = metaAuth.auth_type === "instagram"
-    ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
-    : () => metaGraphAPI(endpoint, accessToken, { method: "POST", body: messageData });
+  console.log(`[automation] Sending DM shopId=${shopId} endpoint=${endpoint} recipient=${igUserId}`);
+  const apiCall =
+    metaAuth.auth_type === "instagram"
+      ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
+      : () => metaGraphAPI(endpoint, accessToken, { method: "POST", body: messageData });
 
   try {
     const response = await apiCall();
@@ -602,11 +606,11 @@ export async function handleIncomingDm(message, shop, plan) {
         // Meta Compliance: loop prevention - don't ask clarifying question multiple times
         const { data: recentClarifyingQuestions } = await supabase
           .from("links_sent")
-          .select("id, created_at, message_id")
+          .select("id, sent_at, message_id")
           .eq("shop_id", shop.id)
           .is("url", null) // Clarifying questions have no URL
           .not("reply_text", "is", null)
-          .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+          .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
         if (recentClarifyingQuestions && recentClarifyingQuestions.length > 0) {
           const clarifyingMessageIds = recentClarifyingQuestions.map((q) => q.message_id);
