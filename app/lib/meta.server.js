@@ -337,8 +337,26 @@ export async function metaGraphAPIWithRefresh(shopId, endpoint, tokenType = "pag
 }
 
 /**
- * Get Meta auth with automatic token refresh if needed
+ * Fetch message content by message ID (mid) for Instagram/Facebook.
+ * Used when webhook sends message_edit without text so we can still log and reply.
+ * Graph API: GET /{message-id}?fields=message,from,created_time
  */
+export async function getInstagramMessageByMid(shopId, mid) {
+  if (!shopId || !mid) return null;
+  try {
+    const endpoint = `/${encodeURIComponent(mid)}`;
+    const data = await metaGraphAPIWithRefresh(shopId, endpoint, "page", {
+      params: { fields: "message,from,created_time" },
+    });
+    const text = data.message ?? null;
+    const fromId = data.from?.id ?? null;
+    const createdTime = data.created_time ?? null;
+    return text != null ? { text, fromId, createdTime } : null;
+  } catch (e) {
+    console.warn("[meta] getInstagramMessageByMid failed:", e?.message);
+    return null;
+  }
+}
 export async function getMetaAuthWithRefresh(shopId) {
   const auth = await getMetaAuth(shopId);
   if (!auth) {
