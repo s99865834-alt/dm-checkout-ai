@@ -563,11 +563,14 @@ export async function getSettings(shopId) {
     throw error;
   }
 
-  // Enforce plan restrictions - only PRO can use automation
-  if (plan !== "PRO") {
-    data.dm_automation_enabled = false;
+  // Enforce plan restrictions: FREE/GROWTH can use DM automation (with cap); only PRO gets comments + followup
+  if (plan === "FREE") {
     data.comment_automation_enabled = false;
+    data.followup_enabled = false;
+  } else if (plan === "GROWTH") {
+    data.followup_enabled = false;
   }
+  // dm_automation_enabled: allow for FREE and GROWTH so they get replies within their plan cap
 
   return data;
 }
@@ -591,17 +594,18 @@ export async function updateSettings(shopId, settings) {
   const plan = shop?.plan || "FREE";
   const planConfig = getPlanConfig(plan);
 
-  // Enforce plan restrictions - only PRO can use automation
+  // Enforce plan restrictions: FREE/GROWTH can use DM automation; only PRO gets comments + followup
   let dmAutomationEnabled = settings.dm_automation_enabled;
   let commentAutomationEnabled = settings.comment_automation_enabled;
   let followupEnabled = settings.followup_enabled;
-  
-  if (plan !== "PRO") {
-    // FREE and GROWTH: automation not available
-    dmAutomationEnabled = false;
+
+  if (plan === "FREE") {
     commentAutomationEnabled = false;
     followupEnabled = false;
+  } else if (plan === "GROWTH") {
+    followupEnabled = false;
   }
+  // dm_automation_enabled: allow for FREE and GROWTH (saved as-is)
 
   const { data, error } = await supabase
     .from("settings")
