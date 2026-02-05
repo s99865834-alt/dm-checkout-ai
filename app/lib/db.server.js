@@ -316,6 +316,48 @@ export async function updateMessageAI(
 /**
  * Record a sent link.
  */
+/**
+ * Returns true if we have already sent an automated reply for this message (one reply per message for Meta compliance).
+ */
+export async function alreadyRepliedToMessage(messageId) {
+  if (!messageId) return false;
+  const { data, error } = await supabase
+    .from("links_sent")
+    .select("id")
+    .eq("message_id", messageId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[db] alreadyRepliedToMessage error:", error.message);
+    return false;
+  }
+  return !!data;
+}
+
+/**
+ * Claim the right to send the one automated reply for this message (atomic). Returns true if we claimed, false if already claimed.
+ * Uses link_id = dm_reply_${messageId} so duplicate webhook processing only one wins.
+ */
+export async function claimMessageReply(shopId, messageId, replyText) {
+  if (!shopId || !messageId) return false;
+  const linkId = `dm_reply_${messageId}`;
+  const { error } = await supabase.from("links_sent").insert({
+    shop_id: shopId,
+    message_id: messageId,
+    product_id: null,
+    variant_id: null,
+    url: null,
+    link_id: linkId,
+    reply_text: replyText || null,
+  });
+  if (error) {
+    if (error.code === "23505") return false; // unique violation, already claimed
+    console.warn("[db] claimMessageReply error:", error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function logLinkSent(params) {
   const { shopId, messageId, productId, variantId, url, linkId, replyText } = params;
 
