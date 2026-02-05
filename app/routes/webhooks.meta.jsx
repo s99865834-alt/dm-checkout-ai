@@ -24,6 +24,7 @@ import supabase from "../lib/supabase.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
+const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET;
 
 /**
  * GET handler for webhook verification
@@ -208,17 +209,15 @@ export const action = async ({ request }) => {
     const bodyText = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
 
-    // Verify HMAC signature if app secret is configured
-    if (META_APP_SECRET && signature) {
-      const expectedSignature = `sha256=${crypto
-        .createHmac("sha256", META_APP_SECRET)
-        .update(bodyText)
-        .digest("hex")}`;
-
-      if (signature !== expectedSignature) {
-        console.error(`[webhook] Invalid HMAC signature`);
-        console.error(`[webhook] Expected: ${expectedSignature.substring(0, 20)}...`);
-        console.error(`[webhook] Received: ${signature?.substring(0, 20)}...`);
+    // Verify HMAC signature: Meta signs with the app that owns the webhook (main or Instagram app)
+    const secrets = [META_APP_SECRET, META_INSTAGRAM_APP_SECRET].filter(Boolean);
+    if (signature && secrets.length > 0) {
+      const expectedSignatures = secrets.map((secret) =>
+        `sha256=${crypto.createHmac("sha256", secret).update(bodyText).digest("hex")}`
+      );
+      const valid = expectedSignatures.some((expected) => signature === expected);
+      if (!valid) {
+        console.error(`[webhook] Invalid HMAC signature (tried ${secrets.length} secret(s))`);
         return new Response("Invalid signature", { status: 403 });
       }
       console.log(`[webhook] HMAC signature verified`);
