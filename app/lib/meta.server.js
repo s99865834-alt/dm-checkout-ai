@@ -11,7 +11,8 @@ export const META_INSTAGRAM_APP_ID = process.env.META_INSTAGRAM_APP_ID || proces
 export const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
 const INSTAGRAM_OAUTH_AUTHORIZE = "https://www.instagram.com/oauth/authorize";
 export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
-export const INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com";
+const INSTAGRAM_GRAPH_VERSION = process.env.META_INSTAGRAM_API_VERSION || "v24.0";
+export const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
 
 /**
  * Save Meta authentication data for a shop
@@ -283,13 +284,14 @@ async function refreshInstagramLoginToken(shopId, auth) {
 }
 
 /**
- * Make authenticated request to Instagram Graph API (graph.instagram.com)
- * Use for Instagram Login (Business Login) flow only.
+ * Make authenticated request to Instagram Graph API (graph.instagram.com).
+ * Per Meta docs (Instagram API with Instagram Login): use Bearer token and /v24.0/ in path.
+ * @see https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
  */
 export async function metaGraphAPIInstagram(endpoint, accessToken, options = {}) {
   const [baseEndpoint, existingParams] = endpoint.split("?");
-  const url = `${INSTAGRAM_GRAPH_BASE}${baseEndpoint.startsWith("/") ? baseEndpoint : `/${baseEndpoint}`}`;
-  const params = new URLSearchParams({ access_token: accessToken });
+  const path = baseEndpoint.startsWith("/") ? baseEndpoint : `/${baseEndpoint}`;
+  const params = new URLSearchParams();
   if (existingParams) {
     for (const [k, v] of new URLSearchParams(existingParams).entries()) {
       params.append(k, v);
@@ -300,10 +302,16 @@ export async function metaGraphAPIInstagram(endpoint, accessToken, options = {})
       params.append(k, v);
     }
   }
-  const fullUrl = `${url}?${params.toString()}`;
+  const query = params.toString();
+  const fullUrl = query ? `${INSTAGRAM_GRAPH_BASE}${path}?${query}` : `${INSTAGRAM_GRAPH_BASE}${path}`;
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+    ...options.headers,
+  };
   const res = await fetch(fullUrl, {
     method: options.method || "GET",
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await res.json();
