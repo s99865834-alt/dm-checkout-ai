@@ -239,12 +239,12 @@ export const action = async ({ request }) => {
           console.log(`[webhook] Entry ID: ${entry.id}`);
           console.log(`[webhook] Entry keys: ${Object.keys(entry).join(", ")}`);
           
-          // For Instagram webhooks, entry.id is the Instagram Business Account ID
-          // We need to resolve shop using this ID
-          const shopId = await resolveShopFromEvent(null, entry.id);
+          // For Instagram webhooks, entry.id is the Instagram Business Account ID (may be number or string)
+          const igBusinessId = entry.id != null ? String(entry.id) : null;
+          const shopId = await resolveShopFromEvent(null, igBusinessId);
           
           if (!shopId) {
-            console.warn(`[webhook] Could not resolve shop for Instagram Business Account ${entry.id}, skipping`);
+            console.warn(`[webhook] Could not resolve shop for Instagram Business Account ${igBusinessId}, skipping (check meta_auth.ig_business_id matches)`);
             console.warn(`[webhook] Available entry fields:`, Object.keys(entry));
             continue;
           }
@@ -265,9 +265,20 @@ export const action = async ({ request }) => {
             // Continue processing - default to enabled if settings can't be fetched
           }
           
-          // Handle messaging events (DMs)
-          // Instagram messaging can be in entry.messaging array
+          // Build list of message events: entry.messaging (Messenger format) or entry.changes (Graph API "messages" format)
+          let messagingEvents = [];
           if (entry.messaging && Array.isArray(entry.messaging)) {
+            messagingEvents = entry.messaging;
+          } else if (entry.changes && Array.isArray(entry.changes)) {
+            for (const change of entry.changes) {
+              if (change.field === "messages" && change.value) {
+                messagingEvents.push(change.value);
+              }
+            }
+          }
+
+          // Handle messaging events (DMs)
+          if (messagingEvents.length > 0) {
             // Check if DM automation is enabled
             if (settings?.dm_automation_enabled === false) {
               console.log(`[webhook] DM automation is disabled for shop ${shopId}, skipping DM processing`);
@@ -275,8 +286,12 @@ export const action = async ({ request }) => {
               // Pro plan: check channel preference
               console.log(`[webhook] Channel preference is "comment only", skipping DM processing`);
             } else {
-            console.log(`[webhook] Found ${entry.messaging.length} messaging event(s)`);
-            for (const message of entry.messaging) {
+            console.log(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
+            for (const message of messagingEvents) {
+              if (message.is_echo) {
+                console.log(`[webhook] Skipping is_echo (outbound) message`);
+                continue;
+              }
               console.log(`[webhook] Instagram message event:`, JSON.stringify(message, null, 2));
               
               const parsed = parseMessageEvent(message);
