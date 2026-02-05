@@ -273,6 +273,7 @@ export async function sendDmReply(shopId, igUserId, text) {
     recipient: { id: igUserId },
     message: { text: text },
   };
+  console.log(`[automation] Sending DM shopId=${shopId} ig_business_id=${metaAuth.ig_business_id} recipient=${igUserId}`);
   const apiCall = metaAuth.auth_type === "instagram"
     ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
     : () => metaGraphAPI(endpoint, accessToken, { method: "POST", body: messageData });
@@ -282,7 +283,9 @@ export async function sendDmReply(shopId, igUserId, text) {
     console.log(`[automation] DM sent successfully to ${igUserId}`);
     return response;
   } catch (error) {
-    console.error(`[automation] Error sending DM:`, error);
+    const errMsg = error?.message ?? String(error);
+    const errCode = error?.code ?? error?.body?.error?.code ?? error?.response?.error?.code;
+    console.error(`[automation] Error sending DM: message=${errMsg} code=${errCode ?? "n/a"} full=`, error);
 
     if (error.message?.includes("Code: 190") || error.message?.includes("Session has expired")) {
       console.log(`[automation] Token expired, refreshing and retrying...`);

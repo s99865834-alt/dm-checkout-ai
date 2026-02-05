@@ -106,6 +106,16 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
           const { data: shop } = await supabase.from("shops").select("id, active").eq("id", shopId).single();
           if (shop?.active) {
             console.log(`[webhook] Using single Instagram shop fallback: shop_id=${shopId}`);
+            // Self-correct stored ig_business_id so sendDmReply uses the webhook's ID (required for API)
+            const { error: updateErr } = await supabase
+              .from("meta_auth")
+              .update({ ig_business_id: igBusinessId })
+              .eq("shop_id", shopId);
+            if (updateErr) {
+              console.error(`[webhook] Failed to update meta_auth.ig_business_id for shop ${shopId}:`, updateErr);
+            } else {
+              console.log(`[webhook] Updated meta_auth.ig_business_id to ${igBusinessId} for shop ${shopId}`);
+            }
             return shopId;
           }
         }
@@ -242,6 +252,9 @@ export const action = async ({ request }) => {
 
     // Parse JSON body
     const body = JSON.parse(bodyText);
+    const entryCount = body.entry?.length ?? 0;
+    const firstEntryKeys = body.entry?.[0] ? Object.keys(body.entry[0]).join(", ") : "";
+    console.log(`[webhook] POST object=${body.object} entry_count=${entryCount} first_entry_keys=[${firstEntryKeys}]`);
     console.log(`[webhook] Meta webhook event:`, JSON.stringify(body, null, 2));
 
     // Handle different webhook event types
@@ -280,16 +293,26 @@ export const action = async ({ request }) => {
             // Continue processing - default to enabled if settings can't be fetched
           }
           
-          // Build list of message events: entry.messaging (Messenger format) or entry.changes (Graph API "messages" format)
+          // Build list of message events: entry.messaging, entry.standby, or entry.changes (Graph API "messages" format)
           let messagingEvents = [];
           if (entry.messaging && Array.isArray(entry.messaging)) {
             messagingEvents = entry.messaging;
-          } else if (entry.changes && Array.isArray(entry.changes)) {
+          }
+          if (entry.standby && Array.isArray(entry.standby)) {
+            console.log(`[webhook] Including ${entry.standby.length} event(s) from entry.standby (app was not thread owner)`);
+            messagingEvents = messagingEvents.concat(entry.standby);
+          }
+          if (entry.changes && Array.isArray(entry.changes)) {
             for (const change of entry.changes) {
               if (change.field === "messages" && change.value) {
                 messagingEvents.push(change.value);
               }
             }
+          }
+
+          if (messagingEvents.length === 0) {
+            const changeFields = entry.changes?.map((c) => c.field).join(", ") || "(none)";
+            console.log(`[webhook] No messaging events in this entry. entry keys=[${Object.keys(entry).join(", ")}] changes.fields=[${changeFields}]`);
           }
 
           // Handle messaging events (DMs)
