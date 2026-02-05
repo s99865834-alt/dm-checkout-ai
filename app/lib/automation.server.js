@@ -4,8 +4,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { getShopPlanAndUsage, incrementUsage } from "./db.server";
-import { logLinkSent } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, claimMessageReply } from "./db.server";
 import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
@@ -266,17 +265,14 @@ export async function sendDmReply(shopId, igUserId, text) {
   // TODO: Implement proper rate limiting (in-memory or Redis)
   // For now, we'll rely on Meta's API rate limits
 
-  // Send DM: Instagram Login uses /me/messages (token identifies account); Page uses /{page_id}/messages
+  // Send DM: POST /{IG_ID}/messages with recipient.id = IGSID (string). Doc allows /me/messages or /{IG_ID}/messages.
   // Meta: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
-  const endpoint =
-    metaAuth.auth_type === "instagram"
-      ? "/me/messages"
-      : `/${metaAuth.ig_business_id}/messages`;
+  const endpoint = `/${metaAuth.ig_business_id}/messages`;
   const messageData = {
-    recipient: { id: igUserId },
+    recipient: { id: String(igUserId) },
     message: { text: text },
   };
-  console.log(`[automation] Sending DM shopId=${shopId} endpoint=${endpoint} recipient=${igUserId}`);
+  console.log(`[automation] Sending DM shopId=${shopId} ig_id=${metaAuth.ig_business_id} recipient=${igUserId}`);
   const apiCall =
     metaAuth.auth_type === "instagram"
       ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
@@ -318,6 +314,9 @@ export async function sendDmReply(shopId, igUserId, text) {
       throw new Error("Instagram token expired. Please reconnect your account.");
     } else if (error.message?.includes("user blocked")) {
       throw new Error("User has blocked this account.");
+    } else if (error.message?.includes("Code: 100") || error.message?.includes("cannot be found") || error.message?.includes("does not exist")) {
+      console.warn("[automation] Code 100: In Development/Standard Access, the recipient may need to be added as a Tester in Meta App Dashboard, or request Advanced Access for instagram_manage_messages.");
+      throw new Error("Instagram could not deliver (recipient not found or permission denied). If in Development mode, add the recipient as an app Tester or request Advanced Access.");
     }
     
     throw error;
@@ -333,6 +332,12 @@ export async function sendDmReply(shopId, igUserId, text) {
  */
 export async function handleIncomingDm(message, shop, plan) {
   try {
+    // 0. Meta compliance: only one automated reply per incoming message
+    if (await alreadyRepliedToMessage(message.id)) {
+      console.log(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
+      return { sent: false, reason: "Already replied to this message" };
+    }
+
     // 1. Check publish mode: if dm_automation_enabled = false, skip automation
     const settings = await getSettings(shop.id);
     if (settings?.dm_automation_enabled === false) {
@@ -493,10 +498,12 @@ export async function handleIncomingDm(message, shop, plan) {
         }
       );
 
-      // Send DM reply
+      // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
+      if (!(await claimMessageReply(shop.id, message.id, replyText))) {
+        console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+        return { sent: false, reason: "Already replied to this message" };
+      }
       await sendDmReply(shop.id, message.from_user_id, replyText);
-
-      // Increment usage count
       await incrementUsage(shop.id, 1);
 
       console.log(`[automation] ✅ Automated DM sent for store question ${message.id}`);
@@ -576,13 +583,13 @@ export async function handleIncomingDm(message, shop, plan) {
           }
         );
 
-        // Send DM reply
+        if (!(await claimMessageReply(shop.id, message.id, replyText))) {
+          console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+          return { sent: false, reason: "Already replied to this message" };
+        }
         await sendDmReply(shop.id, message.from_user_id, replyText);
-
-        // Increment usage count
         await incrementUsage(shop.id, 1);
 
-        // Log the sent link for tracking + context
         await logLinkSent({
           shopId: shop.id,
           messageId: message.id,
@@ -644,6 +651,10 @@ export async function handleIncomingDm(message, shop, plan) {
           { originChannel: "dm", inboundChannel: "dm" }
         );
 
+        if (!(await claimMessageReply(shop.id, message.id, clarifyingReply))) {
+          console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+          return { sent: false, reason: "Already replied to this message" };
+        }
         await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
         await incrementUsage(shop.id, 1);
 
@@ -824,6 +835,10 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       }
     );
 
+    if (!(await claimMessageReply(shop.id, message.id, replyText))) {
+      console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+      return { sent: false, reason: "Already replied to this message" };
+    }
     // 8. Send private DM reply
     await sendDmReply(shop.id, message.from_user_id, replyText);
 
