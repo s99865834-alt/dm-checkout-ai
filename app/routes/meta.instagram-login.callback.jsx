@@ -104,16 +104,16 @@ export async function loader({ request }) {
       throw new Error(meData.error.message || "Failed to get Instagram account info");
     }
     const mePayload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
-    const igUserId = mePayload.user_id || mePayload.id || userId;
-    const finalIgUserId = String(igUserId);
+    // Prefer "id" (Instagram Professional Account ID) so it matches webhook entry.id; fallback to user_id/userId
+    const igBusinessId = mePayload.id != null ? String(mePayload.id) : (mePayload.user_id != null ? String(mePayload.user_id) : String(userId));
 
-    // 4. Resolve shop and save auth (use IG_ID from /me for feed and product mapping)
+    // 4. Resolve shop and save auth (use IG business ID from /me for webhooks and API)
     const shopData = await getShopByDomain(targetShop);
     if (!shopData) {
       return redirect(`/app?error=${encodeURIComponent("Shop not found")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
-    await saveMetaAuthForInstagram(shopData.id, finalIgUserId, longLivedToken, tokenExpiresAt);
+    await saveMetaAuthForInstagram(shopData.id, igBusinessId, longLivedToken, tokenExpiresAt);
 
     const shopName = targetShop.replace(".myshopify.com", "");
     const appClientId = process.env.SHOPIFY_API_KEY || "";
