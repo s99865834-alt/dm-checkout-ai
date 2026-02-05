@@ -407,10 +407,10 @@ export async function getRecentConversationContext(shopId, fromUserId, options =
   if (messageIds.length > 0) {
     const { data: links, error: linksError } = await supabase
       .from("links_sent")
-      .select("id, message_id, product_id, variant_id, url, link_id, reply_text, created_at")
+      .select("id, message_id, product_id, variant_id, url, link_id, reply_text, sent_at")
       .eq("shop_id", shopId)
       .in("message_id", messageIds)
-      .order("created_at", { ascending: false })
+      .order("sent_at", { ascending: false })
       .limit(maxLinks);
 
     if (linksError) {
