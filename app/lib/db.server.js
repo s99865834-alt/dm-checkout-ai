@@ -358,6 +358,31 @@ export async function claimMessageReply(shopId, messageId, replyText) {
   return true;
 }
 
+/**
+ * Claim the right to send the one automated DM reply for this Instagram comment (atomic).
+ * Uses link_id = dm_reply_comment_${commentExternalId} so only one reply is sent per comment
+ * even if the webhook is delivered multiple times or multiple message rows exist for the same comment.
+ */
+export async function claimCommentReply(shopId, commentExternalId, replyText, messageId) {
+  if (!shopId || !commentExternalId) return false;
+  const linkId = `dm_reply_comment_${commentExternalId}`;
+  const { error } = await supabase.from("links_sent").insert({
+    shop_id: shopId,
+    message_id: messageId || null,
+    product_id: null,
+    variant_id: null,
+    url: null,
+    link_id: linkId,
+    reply_text: replyText || null,
+  });
+  if (error) {
+    if (error.code === "23505") return false; // unique violation, already claimed
+    console.warn("[db] claimCommentReply error:", error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function logLinkSent(params) {
   const { shopId, messageId, productId, variantId, url, linkId, replyText } = params;
 

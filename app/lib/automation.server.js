@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, claimMessageReply } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, claimMessageReply, claimCommentReply } from "./db.server";
 import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
@@ -693,19 +693,17 @@ export async function handleIncomingDm(message, shop, plan) {
 }
 
 /**
- * Check if a comment has already received an automated DM reply
- * @param {string} commentId - Instagram comment ID
- * @param {string} shopId - Shop UUID
- * @returns {Promise<boolean>} - True if already replied
+ * Check if a comment has already received an automated DM reply.
+ * We key by link_id = dm_reply_comment_${commentId} so one reply per Instagram comment regardless of message row.
  */
 async function hasCommentBeenReplied(commentId, shopId) {
-  // Check if we've sent a link for this comment
-  // We can track this by checking if there's a link_sent record with the comment's external_id
+  if (!commentId || !shopId) return false;
+  const linkId = `dm_reply_comment_${commentId}`;
   const { data } = await supabase
     .from("links_sent")
     .select("id")
     .eq("shop_id", shopId)
-    .eq("message_id", commentId)
+    .eq("link_id", linkId)
     .limit(1);
 
   return (data && data.length > 0);
@@ -835,9 +833,9 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       }
     );
 
-    if (!(await claimMessageReply(shop.id, message.id, replyText))) {
-      console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
-      return { sent: false, reason: "Already replied to this message" };
+    if (!(await claimCommentReply(shop.id, message.external_id, replyText, message.id))) {
+      console.log(`[automation] Reply already claimed for comment ${message.external_id}, skipping send`);
+      return { sent: false, reason: "Already replied to this comment" };
     }
     // 8. Send private DM reply
     await sendDmReply(shop.id, message.from_user_id, replyText);
@@ -845,7 +843,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     // 9. Increment usage count
     await incrementUsage(shop.id, 1);
 
-    // 10. Log the sent link (this also tracks that we replied to the comment)
+    // 10. Log the sent link (comment claim already recorded via claimCommentReply)
     await logLinkSent({
       shopId: shop.id,
       messageId: message.id, // Link this to the comment message
