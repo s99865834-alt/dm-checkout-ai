@@ -177,8 +177,6 @@ function parseCommentEvent(comment) {
  */
 function parseMessageEvent(message) {
   try {
-    console.log(`[webhook] Parsing message event:`, JSON.stringify(message, null, 2));
-    
     // Instagram messaging events structure; message_edit has mid, text, num_edit
     const sender = message.sender || message.from;
     const messageData = message.message || message;
@@ -202,15 +200,12 @@ function parseMessageEvent(message) {
         : new Date(timestamp).toISOString();
     }
     
-    const parsed = {
+    return {
       messageId,
       messageText,
       igUserId,
       timestamp,
     };
-    
-    console.log(`[webhook] Parsed message:`, parsed);
-    return parsed;
   } catch (error) {
     console.error(`[webhook] Error parsing message event:`, error);
     return null;
@@ -219,9 +214,11 @@ function parseMessageEvent(message) {
 
 /**
  * POST handler for webhook events
- * Meta sends POST requests with actual webhook events
- * 
- * Week 8: Processes comments and DMs, stores them in messages table
+ * Meta sends POST requests with actual webhook events.
+ *
+ * Why two webhooks for one customer message? Meta often sends (1) an inbound
+ * "message" or "message_edit" for the customer's message, and (2) an "echo"
+ * when your business account sends a reply. Each is a separate POST.
  */
 export const action = async ({ request }) => {
   console.log(`[webhook] Meta webhook event received`);
@@ -256,41 +253,28 @@ export const action = async ({ request }) => {
     const body = JSON.parse(bodyText);
     const entryCount = body.entry?.length ?? 0;
     const firstEntryKeys = body.entry?.[0] ? Object.keys(body.entry[0]).join(", ") : "";
-    console.log(`[webhook] POST object=${body.object} entry_count=${entryCount} first_entry_keys=[${firstEntryKeys}]`);
-    // If no [webhook] POST appears when someone DMs: Meta did not call this URL. Check App Dashboard → Webhooks → Instagram "messages" subscribed; receiving account must be the one connected to this app.
-    console.log(`[webhook] Meta webhook event:`, JSON.stringify(body, null, 2));
+    console.log(`[webhook] POST object=${body.object} entries=${entryCount} keys=[${firstEntryKeys}]`);
 
     // Handle different webhook event types
     if (body.object === "instagram") {
-      console.log(`[webhook] Instagram webhook event`);
-      
       if (body.entry) {
         for (const entry of body.entry) {
-          console.log(`[webhook] Processing entry:`, JSON.stringify(entry, null, 2));
-          console.log(`[webhook] Entry ID: ${entry.id}`);
-          console.log(`[webhook] Entry keys: ${Object.keys(entry).join(", ")}`);
-          
-          // For Instagram webhooks, entry.id is the Instagram Business Account ID (may be number or string)
           const igBusinessId = entry.id != null ? String(entry.id) : null;
+          const nMessaging = entry.messaging?.length ?? 0;
+          const nStandby = entry.standby?.length ?? 0;
+          const nChangeMsg = entry.changes?.filter((c) => c.field === "messages").length ?? 0;
+          console.log(`[webhook] entry id=${igBusinessId} messaging=${nMessaging} standby=${nStandby} change_messages=${nChangeMsg}`);
+
           const shopId = await resolveShopFromEvent(null, igBusinessId);
-          
           if (!shopId) {
-            console.warn(`[webhook] Could not resolve shop for Instagram Business Account ${igBusinessId}, skipping (check meta_auth.ig_business_id matches)`);
-            console.warn(`[webhook] Available entry fields:`, Object.keys(entry));
+            console.warn(`[webhook] No shop for ig_business_id=${igBusinessId}, skipping`);
             continue;
           }
-          
-          console.log(`[webhook] Resolved shop_id: ${shopId}`);
-          
-          // Get shop settings to check publish mode
+          console.log(`[webhook] shop_id=${shopId}`);
+
           let settings = null;
           try {
             settings = await getSettings(shopId);
-            console.log(`[webhook] Shop settings:`, {
-              dm_automation_enabled: settings?.dm_automation_enabled,
-              comment_automation_enabled: settings?.comment_automation_enabled,
-              enabled_post_ids_count: settings?.enabled_post_ids?.length || 0,
-            });
           } catch (error) {
             console.error(`[webhook] Error fetching settings:`, error);
             // Continue processing - default to enabled if settings can't be fetched
@@ -329,7 +313,10 @@ export const action = async ({ request }) => {
             } else {
             console.log(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
             for (const message of messagingEvents) {
+              const senderId = message.sender?.id ?? message.from?.id ?? "?";
               const isEcho = message.is_echo === true || message.message?.is_echo === true;
+              const hasEditMid = !!message.message_edit?.mid;
+              console.log(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
               if (isEcho) {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
@@ -341,7 +328,7 @@ export const action = async ({ request }) => {
 
               if (!hasMessageText && !hasMessageEditText && message.message_edit?.mid) {
                 // message_edit without text: fetch content via Graph API so we can log and reply
-                console.log(`[webhook] message_edit has no text; fetching message content for mid=${message.message_edit.mid}`);
+                console.log(`[webhook] message_edit (no text in payload): fetching message by mid from Graph API...`);
                 const fetched = await getInstagramMessageByMid(shopId, message.message_edit.mid);
                 if (fetched?.text) {
                   messageToProcess = {
@@ -362,20 +349,19 @@ export const action = async ({ request }) => {
                 }
               } else if (!hasMessageText && !hasMessageEditText) {
                 if (message.message_edit) {
-                  console.log(`[webhook] Skipping message_edit (no text in payload; cannot run automation)`);
+                  console.log(`[webhook] Skip: message_edit (no text in payload)`);
                 } else {
-                  console.log(`[webhook] Skipping non-message event (e.g. reaction, read)`);
+                  console.log(`[webhook] Skip: non-message event (reaction/read)`);
                 }
                 continue;
               }
-              console.log(`[webhook] Instagram message event:`, JSON.stringify(messageToProcess, null, 2));
-              
+
               const parsed = parseMessageEvent(messageToProcess);
               if (!parsed || !parsed.messageId) {
-                console.warn(`[webhook] Failed to parse message event, skipping`);
-                console.warn(`[webhook] Parsed result:`, parsed);
+                console.warn(`[webhook] Skip: parse failed mid=${messageToProcess.message?.mid ?? messageToProcess.message_edit?.mid ?? "?"}`);
                 continue;
               }
+              console.log(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
               
               try {
                 const result = await logMessage({
@@ -389,8 +375,7 @@ export const action = async ({ request }) => {
                   sentiment: null,
                   lastUserMessageAt: parsed.timestamp,
                 });
-                console.log(`[webhook] ✅ DM logged successfully: ${parsed.messageId}`);
-                console.log(`[webhook] Logged message ID: ${result?.id}`);
+                console.log(`[webhook] DM logged db_id=${result?.id}`);
                 
                 // Classify message and process automation asynchronously (don't block webhook response)
                 if (result?.id && parsed.messageText) {
@@ -463,8 +448,7 @@ export const action = async ({ request }) => {
             }
             }
           } else {
-            console.log(`[webhook] No messaging events found in entry`);
-            console.log(`[webhook] Entry structure:`, JSON.stringify(entry, null, 2));
+            console.log(`[webhook] No messaging events in entry (keys: ${Object.keys(entry).join(", ")})`);
           }
           
           // Handle comment events (from entry.changes)

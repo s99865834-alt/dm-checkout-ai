@@ -266,8 +266,8 @@ export async function sendDmReply(shopId, igUserId, text) {
   // TODO: Implement proper rate limiting (in-memory or Redis)
   // For now, we'll rely on Meta's API rate limits
 
-  // Send DM via Instagram Messaging API
-  // Endpoint: POST /{ig-user-id}/messages (graph.facebook.com or graph.instagram.com)
+  // Send DM: POST /{IG_ID}/messages with recipient.id = customer IGSID, message.text = body
+  // Meta: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
   const endpoint = `/${metaAuth.ig_business_id}/messages`;
   const messageData = {
     recipient: { id: igUserId },
