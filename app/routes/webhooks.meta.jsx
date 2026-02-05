@@ -91,10 +91,25 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
       return null;
     }
     
-    const { data, error } = await query.maybeSingle();
+    let { data, error } = await query.maybeSingle();
     
     if (error || !data) {
       console.log(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+      // Fallback: if one Instagram-connected shop exists, use it (webhook entry.id can differ from stored id for same account)
+      if (igBusinessId) {
+        const { data: fallbackRows } = await supabase
+          .from("meta_auth")
+          .select("shop_id")
+          .not("ig_business_id", "is", null);
+        if (fallbackRows && fallbackRows.length === 1) {
+          const shopId = fallbackRows[0].shop_id;
+          const { data: shop } = await supabase.from("shops").select("id, active").eq("id", shopId).single();
+          if (shop?.active) {
+            console.log(`[webhook] Using single Instagram shop fallback: shop_id=${shopId}`);
+            return shopId;
+          }
+        }
+      }
       return null;
     }
     
