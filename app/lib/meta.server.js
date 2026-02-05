@@ -345,19 +345,16 @@ export async function metaGraphAPIWithRefresh(shopId, endpoint, tokenType = "pag
 }
 
 /**
- * Fetch message content by message ID (mid) for Instagram/Facebook.
+ * Fetch message content by message ID (mid).
  * Used when webhook sends message_edit without text so we can still log and reply.
- * Message API lives on graph.facebook.com (see Graph API Message reference).
+ * Uses the same host as the shop's auth: Instagram token → graph.instagram.com; Page token → graph.facebook.com.
+ * (Instagram tokens are not valid on graph.facebook.com and cause "Cannot parse access token".)
  */
 export async function getInstagramMessageByMid(shopId, mid) {
   if (!shopId || !mid) return null;
   try {
-    const auth = await getMetaAuthWithRefresh(shopId);
-    if (!auth) return null;
-    const token = auth.ig_access_token || auth.page_access_token;
-    if (!token) return null;
     const endpoint = `/${encodeURIComponent(mid)}`;
-    const data = await metaGraphAPI(endpoint, token, {
+    const data = await metaGraphAPIWithRefresh(shopId, endpoint, "page", {
       params: { fields: "message,from,created_time" },
     });
     const text = data.message ?? null;
