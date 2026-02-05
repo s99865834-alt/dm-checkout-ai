@@ -303,7 +303,8 @@ export const action = async ({ request }) => {
             } else {
             console.log(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
             for (const message of messagingEvents) {
-              if (message.is_echo) {
+              const isEcho = message.is_echo === true || message.message?.is_echo === true;
+              if (isEcho) {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
