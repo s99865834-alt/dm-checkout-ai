@@ -104,8 +104,11 @@ export async function loader({ request }) {
       throw new Error(meData.error.message || "Failed to get Instagram account info");
     }
     const mePayload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
-    // Prefer "id" (Instagram Professional Account ID) so it matches webhook entry.id; fallback to user_id/userId
-    const igBusinessId = mePayload.id != null ? String(mePayload.id) : (mePayload.user_id != null ? String(mePayload.user_id) : String(userId));
+    // Prefer "id" (matches webhook entry.id); check both mePayload and top-level meData; fallback to user_id/userId
+    const rawId = mePayload.id ?? meData.id;
+    const rawUserId = mePayload.user_id ?? meData.user_id;
+    const igBusinessId = rawId != null ? String(rawId) : (rawUserId != null ? String(rawUserId) : String(userId));
+    console.log("[instagram-login] GET /me ids:", { rawId, rawUserId, fromToken: userId, saved: igBusinessId });
 
     // 4. Resolve shop and save auth (use IG business ID from /me for webhooks and API)
     const shopData = await getShopByDomain(targetShop);
