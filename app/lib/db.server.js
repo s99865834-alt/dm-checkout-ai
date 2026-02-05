@@ -1536,4 +1536,3 @@ async function buildAdminStoresResult(shops) {
     revenue: revenueByShop.get(s.id) || 0,
   }));
 }
-
