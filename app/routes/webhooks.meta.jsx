@@ -308,6 +308,11 @@ export const action = async ({ request }) => {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
+              // Only process real incoming messages (with message.text); skip message_edit, message_reaction, etc.
+              if (!message.message?.text && !message.message?.attachments?.length) {
+                console.log(`[webhook] Skipping non-message event (e.g. message_edit, reaction)`);
+                continue;
+              }
               console.log(`[webhook] Instagram message event:`, JSON.stringify(message, null, 2));
               
               const parsed = parseMessageEvent(message);
