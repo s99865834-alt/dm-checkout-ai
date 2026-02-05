@@ -19,6 +19,7 @@ if (typeof global.crypto === "undefined") {
 import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
+import { getInstagramMessageByMid } from "../lib/meta.server";
 import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
 
@@ -178,15 +179,16 @@ function parseMessageEvent(message) {
   try {
     console.log(`[webhook] Parsing message event:`, JSON.stringify(message, null, 2));
     
-    // Instagram messaging events structure
+    // Instagram messaging events structure; message_edit has mid, text, num_edit
     const sender = message.sender || message.from;
     const messageData = message.message || message;
+    const messageEdit = message.message_edit;
     
-    // Extract message ID - try multiple possible fields
-    const messageId = messageData?.mid || messageData?.id || message.id || message.message_id || message.mid;
+    // Extract message ID - message_edit.mid or message.mid
+    const messageId = messageEdit?.mid || messageData?.mid || messageData?.id || message.id || message.message_id || message.mid;
     
-    // Extract message text
-    const messageText = messageData?.text || messageData?.body || message.text || message.body || null;
+    // Extract message text (message_edit can include edited text)
+    const messageText = messageEdit?.text || messageData?.text || messageData?.body || message.text || message.body || null;
     
     // Extract sender ID
     const igUserId = sender?.id || message.from?.id || message.sender_id || null;
@@ -255,6 +257,7 @@ export const action = async ({ request }) => {
     const entryCount = body.entry?.length ?? 0;
     const firstEntryKeys = body.entry?.[0] ? Object.keys(body.entry[0]).join(", ") : "";
     console.log(`[webhook] POST object=${body.object} entry_count=${entryCount} first_entry_keys=[${firstEntryKeys}]`);
+    // If no [webhook] POST appears when someone DMs: Meta did not call this URL. Check App Dashboard → Webhooks → Instagram "messages" subscribed; receiving account must be the one connected to this app.
     console.log(`[webhook] Meta webhook event:`, JSON.stringify(body, null, 2));
 
     // Handle different webhook event types
@@ -331,14 +334,43 @@ export const action = async ({ request }) => {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
-              // Only process real incoming messages (with message.text); skip message_edit, message_reaction, etc.
-              if (!message.message?.text && !message.message?.attachments?.length) {
-                console.log(`[webhook] Skipping non-message event (e.g. message_edit, reaction)`);
+              // Process: message with text/attachments, or message_edit with text (edited message content)
+              let messageToProcess = message;
+              let hasMessageText = message.message?.text || message.message?.attachments?.length;
+              let hasMessageEditText = message.message_edit?.text;
+
+              if (!hasMessageText && !hasMessageEditText && message.message_edit?.mid) {
+                // message_edit without text: fetch content via Graph API so we can log and reply
+                console.log(`[webhook] message_edit has no text; fetching message content for mid=${message.message_edit.mid}`);
+                const fetched = await getInstagramMessageByMid(shopId, message.message_edit.mid);
+                if (fetched?.text) {
+                  messageToProcess = {
+                    sender: message.sender || { id: fetched.fromId },
+                    recipient: message.recipient,
+                    timestamp: message.timestamp,
+                    message: {
+                      mid: message.message_edit.mid,
+                      text: fetched.text,
+                      timestamp: message.timestamp,
+                    },
+                  };
+                  hasMessageText = true;
+                  console.log(`[webhook] Fetched message text (${fetched.text.length} chars), will log and run automation`);
+                } else {
+                  console.log(`[webhook] Skipping message_edit (fetch returned no text)`);
+                  continue;
+                }
+              } else if (!hasMessageText && !hasMessageEditText) {
+                if (message.message_edit) {
+                  console.log(`[webhook] Skipping message_edit (no text in payload; cannot run automation)`);
+                } else {
+                  console.log(`[webhook] Skipping non-message event (e.g. reaction, read)`);
+                }
                 continue;
               }
-              console.log(`[webhook] Instagram message event:`, JSON.stringify(message, null, 2));
+              console.log(`[webhook] Instagram message event:`, JSON.stringify(messageToProcess, null, 2));
               
-              const parsed = parseMessageEvent(message);
+              const parsed = parseMessageEvent(messageToProcess);
               if (!parsed || !parsed.messageId) {
                 console.warn(`[webhook] Failed to parse message event, skipping`);
                 console.warn(`[webhook] Parsed result:`, parsed);
