@@ -270,6 +270,8 @@ export const action = async ({ request }) => {
     // Handle different webhook event types
     if (body.object === "instagram") {
       if (body.entry) {
+        const processedDmExternalIds = new Set();
+        const processedCommentExternalIds = new Set();
         for (const entry of body.entry) {
           const igBusinessId = entry.id != null ? String(entry.id) : null;
           const nMessaging = entry.messaging?.length ?? 0;
@@ -386,6 +388,11 @@ export const action = async ({ request }) => {
                 console.warn(`[webhook] Skip: parse failed mid=${messageToProcess.message?.mid ?? messageToProcess.message_edit?.mid ?? "?"}`);
                 continue;
               }
+              if (processedDmExternalIds.has(parsed.messageId)) {
+                console.log(`[webhook] Skip: duplicate message mid ${parsed.messageId}`);
+                continue;
+              }
+              processedDmExternalIds.add(parsed.messageId);
               if (igBusinessId && String(parsed.igUserId) === String(igBusinessId)) {
                 console.log(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
                 continue;
@@ -506,6 +513,11 @@ export const action = async ({ request }) => {
                   console.warn(`[webhook] Failed to parse comment event, skipping`);
                   continue;
                 }
+                if (processedCommentExternalIds.has(parsed.commentId)) {
+                  console.log(`[webhook] Skip: duplicate comment id ${parsed.commentId}`);
+                  continue;
+                }
+                processedCommentExternalIds.add(parsed.commentId);
                 if (!parsed.mediaId) {
                   console.warn(`[webhook] Comment missing media ID, skipping`);
                   continue;

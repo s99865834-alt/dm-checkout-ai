@@ -335,6 +335,27 @@ export async function alreadyRepliedToMessage(messageId) {
 }
 
 /**
+ * Returns true if we have already sent an automated reply for this external message ID.
+ * Uses link_id = dm_reply_ext_{externalId} to dedupe across duplicate message rows.
+ */
+export async function alreadyRepliedToExternalMessage(shopId, externalId) {
+  if (!shopId || !externalId) return false;
+  const linkId = `dm_reply_ext_${externalId}`;
+  const { data, error } = await supabase
+    .from("links_sent")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[db] alreadyRepliedToExternalMessage error:", error.message);
+    return false;
+  }
+  return !!data;
+}
+
+/**
  * Returns true if we have already sent an automated DM reply for this Instagram comment (by external_id).
  * Used by webhook to skip classification + automation when we already replied (stops API loop).
  */
@@ -359,9 +380,10 @@ export async function alreadyRepliedToComment(shopId, commentExternalId) {
  * Claim the right to send the one automated reply for this message (atomic). Returns true if we claimed, false if already claimed.
  * Uses link_id = dm_reply_${messageId} so duplicate webhook processing only one wins.
  */
-export async function claimMessageReply(shopId, messageId, replyText) {
+export async function claimMessageReply(shopId, messageId, replyText, externalId = null) {
   if (!shopId || !messageId) return false;
-  const linkId = `dm_reply_${messageId}`;
+  const stableId = externalId || messageId;
+  const linkId = `dm_reply_ext_${stableId}`;
   const { error } = await supabase.from("links_sent").insert({
     shop_id: shopId,
     message_id: messageId,
