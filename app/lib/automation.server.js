@@ -754,9 +754,13 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       return { sent: false, reason: "Comment older than 7 days" };
     }
 
-    const alreadyReplied = await hasCommentBeenReplied(message.external_id, shop.id);
+    // Support both Supabase snake_case (external_id) and camelCase
+    const commentExternalId = message.external_id ?? message.externalId;
+    const alreadyReplied = commentExternalId
+      ? await hasCommentBeenReplied(commentExternalId, shop.id)
+      : await alreadyRepliedToMessage(message.id);
     if (alreadyReplied) {
-      console.log(`[automation] Already replied to comment ${message.external_id}`);
+      console.log(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
       return { sent: false, reason: "Already replied to this comment" };
     }
 
@@ -833,8 +837,11 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       }
     );
 
-    if (!(await claimCommentReply(shop.id, message.external_id, replyText, message.id))) {
-      console.log(`[automation] Reply already claimed for comment ${message.external_id}, skipping send`);
+    const claimed = commentExternalId
+      ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
+      : await claimMessageReply(shop.id, message.id, replyText);
+    if (!claimed) {
+      console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
     }
     // 8. Send private DM reply
