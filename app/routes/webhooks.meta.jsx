@@ -150,10 +150,22 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
 function parseCommentEvent(comment) {
   try {
     return {
-      commentId: comment.id || comment.comment_id,
+      commentId:
+        comment.id ||
+        comment.comment_id ||
+        comment.commentId ||
+        comment?.comment?.id ||
+        comment?.value?.id ||
+        comment?.value?.comment_id,
       commentText: comment.text || comment.message || null,
       igUserId: comment.from?.id || comment.from?.username || null,
-      mediaId: comment.media?.id || comment.media_id || null,
+      mediaId:
+        comment.media?.id ||
+        comment.media_id ||
+        comment.mediaId ||
+        comment?.value?.media_id ||
+        comment?.value?.media?.id ||
+        null,
       createdTime: comment.timestamp || comment.created_time || new Date().toISOString(),
     };
   } catch (error) {
@@ -317,6 +329,10 @@ export const action = async ({ request }) => {
               const isEcho = message.is_echo === true || message.message?.is_echo === true;
               const hasEditMid = !!message.message_edit?.mid;
               console.log(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
+              if (igBusinessId && String(senderId) === String(igBusinessId)) {
+                console.log(`[webhook] Skipping outbound message from IG business ID ${igBusinessId}`);
+                continue;
+              }
               if (isEcho) {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;

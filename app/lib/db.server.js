@@ -641,7 +641,7 @@ export async function getSettings(shopId) {
       // Return default settings if none exist, based on plan
       return {
         shop_id: shopId,
-        dm_automation_enabled: plan === "PRO" ? true : false,
+        dm_automation_enabled: true,
         comment_automation_enabled: plan === "PRO" ? true : false,
         followup_enabled: false, // Only PRO can enable, defaults to false
         enabled_post_ids: null,
