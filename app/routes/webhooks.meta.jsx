@@ -326,11 +326,20 @@ export const action = async ({ request }) => {
             console.log(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
             for (const message of messagingEvents) {
               const senderId = message.sender?.id ?? message.from?.id ?? "?";
+              const recipientId = message.recipient?.id ?? message.to?.id ?? null;
               const isEcho = message.is_echo === true || message.message?.is_echo === true;
               const hasEditMid = !!message.message_edit?.mid;
               console.log(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
+              if (igBusinessId && recipientId && String(recipientId) !== String(igBusinessId)) {
+                console.log(`[webhook] Skipping message not addressed to this IG business id: recipient=${recipientId}`);
+                continue;
+              }
               if (igBusinessId && String(senderId) === String(igBusinessId)) {
                 console.log(`[webhook] Skipping outbound message from IG business ID ${igBusinessId}`);
+                continue;
+              }
+              if (recipientId && String(senderId) === String(recipientId)) {
+                console.log(`[webhook] Skipping message where sender equals recipient (${senderId})`);
                 continue;
               }
               if (isEcho) {
@@ -375,6 +384,10 @@ export const action = async ({ request }) => {
               const parsed = parseMessageEvent(messageToProcess);
               if (!parsed || !parsed.messageId) {
                 console.warn(`[webhook] Skip: parse failed mid=${messageToProcess.message?.mid ?? messageToProcess.message_edit?.mid ?? "?"}`);
+                continue;
+              }
+              if (igBusinessId && String(parsed.igUserId) === String(igBusinessId)) {
+                console.log(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
                 continue;
               }
               console.log(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
@@ -491,6 +504,10 @@ export const action = async ({ request }) => {
                 const parsed = parseCommentEvent(comment);
                 if (!parsed || !parsed.commentId) {
                   console.warn(`[webhook] Failed to parse comment event, skipping`);
+                  continue;
+                }
+                if (!parsed.mediaId) {
+                  console.warn(`[webhook] Comment missing media ID, skipping`);
                   continue;
                 }
                 
