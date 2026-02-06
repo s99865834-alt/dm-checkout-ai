@@ -993,6 +993,34 @@ async function canSendFollowUp(message, shop, plan) {
 export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null, channelContext = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
+  const safeChannelContext = intent === "store_question"
+    ? { ...(channelContext || {}), lastProductLink: null }
+    : channelContext;
+
+  const sanitizeStoreQuestionReply = (text) => {
+    if (!text) return text;
+    const allowedUrls = [
+      storeInfo?.refundPolicy?.url,
+      storeInfo?.shippingPolicy?.url,
+      storeInfo?.privacyPolicy?.url,
+      storeInfo?.termsOfService?.url,
+    ].filter(Boolean);
+    const allowedSet = new Set(allowedUrls);
+    const urlRegex = /https?:\/\/[^\s)]+/g;
+    let removed = false;
+    let cleaned = text.replace(urlRegex, (url) => {
+      if (allowedSet.has(url)) return url;
+      removed = true;
+      return "";
+    });
+    cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+    if (removed && allowedUrls.length === 0) {
+      cleaned = cleaned
+        ? `${cleaned} I don't have a policy link on hand.`
+        : "I don't have a policy link on hand.";
+    }
+    return cleaned;
+  };
 
   // Base message templates by tone (not used for product_question - AI generates those)
   const toneTemplates = {
@@ -1087,6 +1115,22 @@ export async function generateReplyMessage(brandVoice, productName = null, check
                 promptBase += ` Return Policy URL: ${storeInfo.refundPolicy.url}`;
               }
             }
+            if (storeInfo.privacyPolicy) {
+              const privacyBody = storeInfo.privacyPolicy.body || '';
+              promptBase += ` Privacy Policy Title: ${storeInfo.privacyPolicy.title || 'Privacy Policy'}`;
+              promptBase += ` Privacy Policy Content: ${privacyBody.substring(0, 2000)}${privacyBody.length > 2000 ? '...' : ''}`;
+              if (storeInfo.privacyPolicy.url) {
+                promptBase += ` Privacy Policy URL: ${storeInfo.privacyPolicy.url}`;
+              }
+            }
+            if (storeInfo.termsOfService) {
+              const termsBody = storeInfo.termsOfService.body || '';
+              promptBase += ` Terms of Service Title: ${storeInfo.termsOfService.title || 'Terms of Service'}`;
+              promptBase += ` Terms of Service Content: ${termsBody.substring(0, 2000)}${termsBody.length > 2000 ? '...' : ''}`;
+              if (storeInfo.termsOfService.url) {
+                promptBase += ` Terms of Service URL: ${storeInfo.termsOfService.url}`;
+              }
+            }
             if (storeInfo.shippingPolicy) {
               const shippingBody = storeInfo.shippingPolicy.body || '';
               promptBase += ` Shipping Policy Title: ${storeInfo.shippingPolicy.title || 'Shipping Policy'}`;
@@ -1105,8 +1149,8 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           }
         }
         
-        const recentThreadText = Array.isArray(channelContext?.recentMessages) && channelContext.recentMessages.length > 0
-          ? channelContext.recentMessages
+        const recentThreadText = Array.isArray(safeChannelContext?.recentMessages) && safeChannelContext.recentMessages.length > 0
+          ? safeChannelContext.recentMessages
               .slice(0, 8)
               .reverse()
               .map((m) => `- ${m.channel === "comment" ? "Comment" : "DM"}: ${m.text || "(no text)"}`)
@@ -1124,9 +1168,9 @@ CRITICAL ACCURACY REQUIREMENTS:
 - Accuracy is more important than being helpful
 
 IMPORTANT CONTEXT:
-${channelContext?.originChannel ? `- Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM (has product context from a post mapping)" : "Direct DM (may not have product context unless explicitly provided)"}` : ""}
-${channelContext?.inboundChannel ? `- Current inbound channel: ${channelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
-${channelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${channelContext.lastProductLink.url}` : ""}
+${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelContext.originChannel === "comment" ? "Instagram comment → DM (has product context from a post mapping)" : "Direct DM (may not have product context unless explicitly provided)"}` : ""}
+${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
+${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
@@ -1161,6 +1205,8 @@ ${intent === "store_question" ? `- Answer their question directly using ONLY the
 - If information is missing, say "I don't have that information" rather than making something up
 - NEVER create generic placeholders like "support@store.com" or fake URLs` : ""}
 ${intent === "store_question" && storeInfo?.refundPolicy?.url ? `- If mentioning the return policy, you can include the policy URL: ${storeInfo.refundPolicy.url}` : ""}
+${intent === "store_question" && storeInfo?.privacyPolicy?.url ? `- If mentioning the privacy policy, you can include the policy URL: ${storeInfo.privacyPolicy.url}` : ""}
+${intent === "store_question" && storeInfo?.termsOfService?.url ? `- If mentioning the terms of service, you can include the policy URL: ${storeInfo.termsOfService.url}` : ""}
 ${intent === "store_question" && storeInfo?.shippingPolicy?.url ? `- If mentioning shipping, you can include the shipping policy URL: ${storeInfo.shippingPolicy.url}` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
@@ -1200,6 +1246,9 @@ Write the response:`;
 
         if (response?.choices?.[0]?.message?.content) {
           message = response.choices[0].message.content.trim();
+          if (intent === "store_question") {
+            message = sanitizeStoreQuestionReply(message);
+          }
         }
       }
     } catch (error) {
