@@ -19,7 +19,6 @@ if (typeof global.crypto === "undefined") {
 import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
-import { getInstagramMessageByMid } from "../lib/meta.server";
 import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
 
@@ -348,32 +347,18 @@ export const action = async ({ request }) => {
                 console.log(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
+              if (message.message_edit?.mid) {
+                console.log(`[webhook] Skipping message_edit event to prevent duplicate automation`);
+                continue;
+              }
               // Process: message with text/attachments, or message_edit with text (edited message content)
               let messageToProcess = message;
               let hasMessageText = message.message?.text || message.message?.attachments?.length;
               let hasMessageEditText = message.message_edit?.text;
 
               if (!hasMessageText && !hasMessageEditText && message.message_edit?.mid) {
-                // message_edit without text: fetch content via Graph API so we can log and reply
-                console.log(`[webhook] message_edit (no text in payload): fetching message by mid from Graph API...`);
-                const fetched = await getInstagramMessageByMid(shopId, message.message_edit.mid);
-                if (fetched?.text) {
-                  messageToProcess = {
-                    sender: message.sender || { id: fetched.fromId },
-                    recipient: message.recipient,
-                    timestamp: message.timestamp,
-                    message: {
-                      mid: message.message_edit.mid,
-                      text: fetched.text,
-                      timestamp: message.timestamp,
-                    },
-                  };
-                  hasMessageText = true;
-                  console.log(`[webhook] Fetched message text (${fetched.text.length} chars), will log and run automation`);
-                } else {
-                  console.log(`[webhook] Skipping message_edit (fetch returned no text)`);
-                  continue;
-                }
+                console.log(`[webhook] Skipping message_edit (no text in payload)`);
+                continue;
               } else if (!hasMessageText && !hasMessageEditText) {
                 if (message.message_edit) {
                   console.log(`[webhook] Skip: message_edit (no text in payload)`);
