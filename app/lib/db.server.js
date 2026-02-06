@@ -335,6 +335,27 @@ export async function alreadyRepliedToMessage(messageId) {
 }
 
 /**
+ * Returns true if we have already sent an automated DM reply for this Instagram comment (by external_id).
+ * Used by webhook to skip classification + automation when we already replied (stops API loop).
+ */
+export async function alreadyRepliedToComment(shopId, commentExternalId) {
+  if (!shopId || !commentExternalId) return false;
+  const linkId = `dm_reply_comment_${commentExternalId}`;
+  const { data, error } = await supabase
+    .from("links_sent")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[db] alreadyRepliedToComment error:", error.message);
+    return false;
+  }
+  return !!data;
+}
+
+/**
  * Claim the right to send the one automated reply for this message (atomic). Returns true if we claimed, false if already claimed.
  * Uses link_id = dm_reply_${messageId} so duplicate webhook processing only one wins.
  */

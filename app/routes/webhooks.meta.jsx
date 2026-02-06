@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import { getInstagramMessageByMid } from "../lib/meta.server";
@@ -377,8 +377,10 @@ export const action = async ({ request }) => {
                 });
                 console.log(`[webhook] DM logged db_id=${result?.id}`);
                 
-                // Classify message and process automation asynchronously (don't block webhook response)
-                if (result?.id && parsed.messageText) {
+                // Skip classification + automation if we already replied (stops API loop on duplicate webhooks)
+                if (result?.id && (await alreadyRepliedToMessage(result.id))) {
+                  console.log(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
+                } else if (result?.id && parsed.messageText) {
                   classifyMessage(parsed.messageText, { shopId })
                     .then(async (classification) => {
                       if (classification.intent !== null && !classification.error) {
@@ -498,8 +500,10 @@ export const action = async ({ request }) => {
                 });
                 console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
                 
-                // Classify message and process automation asynchronously (don't block webhook response)
-                if (result?.id && parsed.commentText) {
+                // Skip classification + automation if we already replied to this comment (stops API loop on duplicate webhooks)
+                if (result?.id && (await alreadyRepliedToComment(shopId, parsed.commentId))) {
+                  console.log(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
+                } else if (result?.id && parsed.commentText) {
                   classifyMessage(parsed.commentText, { shopId })
                     .then(async (classification) => {
                       if (classification.intent !== null && !classification.error) {
