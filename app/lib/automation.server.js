@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, claimMessageReply, claimCommentReply } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply } from "./db.server";
 import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
@@ -333,6 +333,10 @@ export async function sendDmReply(shopId, igUserId, text) {
 export async function handleIncomingDm(message, shop, plan) {
   try {
     // 0. Meta compliance: only one automated reply per incoming message
+    if (message.external_id && (await alreadyRepliedToExternalMessage(shop.id, message.external_id))) {
+      console.log(`[automation] Already replied to external message ${message.external_id}, skipping`);
+      return { sent: false, reason: "Already replied to this external message" };
+    }
     if (await alreadyRepliedToMessage(message.id)) {
       console.log(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
       return { sent: false, reason: "Already replied to this message" };
@@ -499,7 +503,7 @@ export async function handleIncomingDm(message, shop, plan) {
       );
 
       // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
-      if (!(await claimMessageReply(shop.id, message.id, replyText))) {
+      if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
         console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
         return { sent: false, reason: "Already replied to this message" };
       }
@@ -583,7 +587,7 @@ export async function handleIncomingDm(message, shop, plan) {
           }
         );
 
-        if (!(await claimMessageReply(shop.id, message.id, replyText))) {
+        if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
@@ -651,7 +655,7 @@ export async function handleIncomingDm(message, shop, plan) {
           { originChannel: "dm", inboundChannel: "dm" }
         );
 
-        if (!(await claimMessageReply(shop.id, message.id, clarifyingReply))) {
+        if (!(await claimMessageReply(shop.id, message.id, clarifyingReply, message.external_id))) {
           console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
@@ -839,7 +843,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
 
     const claimed = commentExternalId
       ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
-      : await claimMessageReply(shop.id, message.id, replyText);
+      : await claimMessageReply(shop.id, message.id, replyText, message.external_id);
     if (!claimed) {
       console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
