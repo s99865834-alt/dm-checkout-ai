@@ -4,6 +4,7 @@
  */
 
 import supabase from "./supabase.server";
+import nodemailer from "nodemailer";
 
 /**
  * Error types
@@ -33,8 +34,7 @@ export async function logError(errorType, error, context = {}) {
     error_stack: errorStack,
     shop_id: context.shopId || null,
     message_id: context.messageId || null,
-    context: JSON.stringify(context),
-    timestamp: new Date().toISOString(),
+    context,
   };
 
   // Log to console
@@ -49,12 +49,9 @@ export async function logError(errorType, error, context = {}) {
     console.error(`[error-handler] Context:`, context);
   }
 
-  // Try to log to database (if error_logs table exists)
-  // For now, we'll just log to console
-  // TODO: Create error_logs table in Supabase if needed
+  // Log to database
   try {
-    // Uncomment when error_logs table is created:
-    // await supabase.from("error_logs").insert(logData);
+    await supabase.from("error_logs").insert(logData);
   } catch (dbError) {
     // If database logging fails, just continue
     console.error("[error-handler] Failed to log error to database:", dbError);
@@ -85,7 +82,42 @@ export async function handleCriticalError(errorType, error, context = {}) {
 
   if (isCritical) {
     console.error(`[error-handler] ⚠️ CRITICAL ERROR: ${errorMessage}`);
-    // TODO: Send notification (email, Slack, etc.) for critical errors
+    try {
+      const toEmail = process.env.TO_EMAIL;
+      const gmailUser = process.env.GMAIL_USER;
+      const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+      if (toEmail && gmailUser && gmailAppPassword) {
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: gmailUser,
+            pass: gmailAppPassword,
+          },
+        });
+
+        await transporter.sendMail({
+          from: gmailUser,
+          to: toEmail,
+          subject: `CRITICAL ERROR (${errorType})`,
+          text: `${errorMessage}\n\nContext:\n${JSON.stringify(context, null, 2)}`,
+        });
+      } else {
+        const webhookUrl = process.env.ALERTS_WEBHOOK_URL;
+        if (webhookUrl) {
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: `CRITICAL ERROR (${errorType}): ${errorMessage}`,
+              context,
+            }),
+          });
+        }
+      }
+    } catch (notifyError) {
+      console.error("[error-handler] Failed to send alert:", notifyError);
+    }
   }
 }
 
