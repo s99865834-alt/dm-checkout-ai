@@ -83,6 +83,9 @@ export async function handleCriticalError(errorType, error, context = {}) {
   if (isCritical) {
     console.error(`[error-handler] ⚠️ CRITICAL ERROR: ${errorMessage}`);
     try {
+      if (process.env.ALERTS_ENABLED !== "true") {
+        return;
+      }
       const toEmail = process.env.TO_EMAIL;
       const gmailUser = process.env.GMAIL_USER;
       const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
