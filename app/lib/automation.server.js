@@ -8,6 +8,7 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessa
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
+import { getShopifyProductInfo } from "./shopify-data.server";
 import supabase from "./supabase.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
@@ -498,8 +499,17 @@ export async function handleIncomingDm(message, shop, plan) {
 
         // Get brand voice and generate reply message
         const brandVoiceData = await getBrandVoice(shop.id);
-        const productName = null; // TODO: Get product name from Shopify
-        const productPrice = null; // TODO: Get product price from Shopify
+        let productName = null;
+        let productPrice = null;
+        if (shop.shopify_domain && productMapping.product_id) {
+          const info = await getShopifyProductInfo(
+            shop.shopify_domain,
+            productMapping.product_id,
+            productMapping.variant_id || null
+          );
+          productName = info.productName;
+          productPrice = info.productPrice;
+        }
 
         const replyText = await generateReplyMessage(
           brandVoiceData,
@@ -753,8 +763,17 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
 
     // 7. Get brand voice and generate reply message (private DM)
     const brandVoiceData = await getBrandVoice(shop.id);
-    const productName = null; // TODO: Get product name from Shopify
-    const productPrice = null; // TODO: Get product price from Shopify
+    let productName = null;
+    let productPrice = null;
+    if (shop.shopify_domain && productMapping.product_id) {
+      const info = await getShopifyProductInfo(
+        shop.shopify_domain,
+        productMapping.product_id,
+        productMapping.variant_id || null
+      );
+      productName = info.productName;
+      productPrice = info.productPrice;
+    }
     // Pass the intent, links, and original message so the AI can understand context
     const replyText = await generateReplyMessage(
       brandVoiceData,
