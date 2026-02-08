@@ -584,13 +584,13 @@ export const action = async ({ request }) => {
                                 const shop = shopData;
                                 const plan = getPlanConfig(shop.plan || "FREE");
 
-                                // Process comment-to-DM automation (Growth/Pro only)
+                                // Process comment private reply automation (Growth/Pro only)
                                 handleIncomingComment(updatedMessage, parsed.mediaId, shop, plan)
                                   .then((automationResult) => {
                                     if (automationResult.sent) {
-                                      console.log(`[webhook] ✅ Comment-to-DM sent for comment ${result.id}`);
+                                      console.log(`[webhook] ✅ Comment private reply sent for comment ${result.id}`);
                                     } else {
-                                      console.log(`[webhook] Comment-to-DM skipped for comment ${result.id}: ${automationResult.reason}`);
+                                      console.log(`[webhook] Comment private reply skipped for comment ${result.id}: ${automationResult.reason}`);
                                     }
                                   })
                                   .catch((error) => {

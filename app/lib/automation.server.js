@@ -9,6 +9,7 @@ import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo } from "./shopify-data.server";
+import { sendInstagramPrivateReply } from "./meta.server";
 import supabase from "./supabase.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
@@ -812,8 +813,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
     }
-    // 9. Send private DM reply
-    await sendDmReply(shop.id, message.from_user_id, replyText);
+    // 9. Send private reply to the comment (within 7 days)
+    if (!commentExternalId) {
+      console.warn("[automation] Missing comment ID for private reply");
+      return { sent: false, reason: "Missing comment ID for private reply" };
+    }
+    await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
 
     // 10. Increment usage count
     await incrementUsage(shop.id, 1);
@@ -829,7 +834,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       replyText: replyText,
     });
 
-    console.log(`[automation] ✅ Comment-to-DM sent successfully for comment ${message.id}`);
+    console.log(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
   } catch (error) {
     console.error(`[automation] Error processing comment ${message.id}:`, error);
