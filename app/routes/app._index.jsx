@@ -4,7 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks, sendInstagramDm, lookupInstagramUserIdByUsername } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -129,6 +129,50 @@ export const action = async ({ request }) => {
       }
     }
     
+    // Handle send test DM (outbound message from app UI)
+    if (actionType === "send-test-dm") {
+      const { shop } = await getShopWithPlan(request);
+      if (!shop?.id) {
+        return { error: "Shop not found" };
+      }
+
+      const recipientId = formData.get("recipient_id");
+      const messageText = formData.get("message_text");
+      if (!recipientId || !messageText) {
+        return { error: "Recipient ID and message are required" };
+      }
+
+      try {
+        await sendInstagramDm(shop.id, String(recipientId), String(messageText));
+        return { success: true, message: "Test DM sent successfully" };
+      } catch (error) {
+        console.error("[home] Error sending test DM:", error);
+        return { error: error.message || "Failed to send test DM" };
+      }
+    }
+
+    if (actionType === "lookup-test-recipient") {
+      const { shop } = await getShopWithPlan(request);
+      if (!shop?.id) {
+        return { error: "Shop not found" };
+      }
+      const username = formData.get("lookup_username");
+      if (!username) {
+        return { error: "Username is required" };
+      }
+      try {
+        const result = await lookupInstagramUserIdByUsername(shop.id, String(username));
+        return {
+          lookupSuccess: true,
+          lookupUserId: result.id,
+          lookupUsername: result.username,
+        };
+      } catch (error) {
+        console.error("[home] Error looking up user ID:", error);
+        return { lookupError: error.message || "Failed to lookup user ID" };
+      }
+    }
+
     // Handle connect action (OAuth flow) – Facebook Login or Instagram Login
     const shopDomain = session.shop;
     const connectType = formData.get("connectType") || "facebook";
@@ -205,12 +249,17 @@ export default function Index() {
   // Use separate fetchers for different actions to avoid conflicts
   const automationFetcher = useFetcher();
   const instagramFetcher = useFetcher();
+  const testDmFetcher = useFetcher();
+  const lookupFetcher = useFetcher();
 
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
+  const [testRecipientId, setTestRecipientId] = useState("");
+  const [testMessageText, setTestMessageText] = useState("Test message from DM Checkout AI");
+  const [lookupUsername, setLookupUsername] = useState("");
 
   // Update local state when settings change (e.g., on initial load or after page refresh)
   useEffect(() => {
@@ -269,6 +318,12 @@ export default function Index() {
       navigate(`/app?error=${encodeURIComponent(instagramFetcher.data.error)}`);
     }
   }, [instagramFetcher.data, navigate]);
+
+  useEffect(() => {
+    if (lookupFetcher.data?.lookupSuccess && lookupFetcher.data?.lookupUserId) {
+      setTestRecipientId(String(lookupFetcher.data.lookupUserId));
+    }
+  }, [lookupFetcher.data]);
 
   return (
     <s-page heading="DM Checkout AI">
@@ -451,6 +506,110 @@ export default function Index() {
                   </s-stack>
                 </s-box>
               )}
+
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">Send Test DM (for Meta review)</s-text>
+                  <s-text variant="subdued">
+                    This sends a real outbound DM from your app UI. Webhooks are not required for this step.
+                    The recipient must be a test user on your Meta app and must have messaged your IG business account
+                    within the last 24 hours.
+                  </s-text>
+
+                  {testDmFetcher.data?.success && (
+                    <s-banner tone="success">
+                      <s-text variant="strong">Test DM sent</s-text>
+                      <s-text>{testDmFetcher.data.message}</s-text>
+                    </s-banner>
+                  )}
+                  {testDmFetcher.data?.error && (
+                    <s-banner tone="critical">
+                      <s-text variant="strong">Test DM failed</s-text>
+                      <s-text>{testDmFetcher.data.error}</s-text>
+                    </s-banner>
+                  )}
+
+                  {lookupFetcher.data?.lookupSuccess && (
+                    <s-banner tone="success">
+                      <s-text variant="strong">Recipient found</s-text>
+                      <s-text>
+                        @{lookupFetcher.data.lookupUsername} → {lookupFetcher.data.lookupUserId}
+                      </s-text>
+                    </s-banner>
+                  )}
+                  {lookupFetcher.data?.lookupError && (
+                    <s-banner tone="critical">
+                      <s-text variant="strong">Lookup failed</s-text>
+                      <s-text>{lookupFetcher.data.lookupError}</s-text>
+                    </s-banner>
+                  )}
+
+                  <lookupFetcher.Form method="post">
+                    <input type="hidden" name="action" value="lookup-test-recipient" />
+                    <s-stack direction="inline" gap="tight" alignment="end">
+                      <label className="srFlex1">
+                        <s-text variant="strong">Lookup recipient by @username</s-text>
+                        <input
+                          type="text"
+                          name="lookup_username"
+                          placeholder="@testuser"
+                          value={lookupUsername}
+                          onChange={(e) => setLookupUsername(e.target.value)}
+                          className="srInput"
+                        />
+                      </label>
+                      <s-button
+                        variant="secondary"
+                        loading={lookupFetcher.state !== "idle"}
+                        disabled={!lookupUsername}
+                        type="submit"
+                      >
+                        Find ID
+                      </s-button>
+                    </s-stack>
+                  </lookupFetcher.Form>
+                  <s-text variant="subdued">
+                    Username lookup works only with Facebook Login. If it fails, paste the recipient IG user ID manually.
+                  </s-text>
+
+                  <testDmFetcher.Form method="post">
+                    <input type="hidden" name="action" value="send-test-dm" />
+                    <s-stack direction="block" gap="tight">
+                      <label>
+                        <s-text variant="strong">Recipient IG User ID</s-text>
+                        <input
+                          type="text"
+                          name="recipient_id"
+                          placeholder="1784..."
+                          value={testRecipientId}
+                          onChange={(e) => setTestRecipientId(e.target.value)}
+                          className="srInput"
+                          required
+                        />
+                      </label>
+                      <label>
+                        <s-text variant="strong">Message</s-text>
+                        <input
+                          type="text"
+                          name="message_text"
+                          value={testMessageText}
+                          onChange={(e) => setTestMessageText(e.target.value)}
+                          className="srInput"
+                          required
+                        />
+                      </label>
+                      <s-button
+                        variant="primary"
+                        loading={testDmFetcher.state !== "idle"}
+                        disabled={!testRecipientId || !testMessageText}
+                        type="submit"
+                      >
+                        Send Test DM
+                      </s-button>
+                    </s-stack>
+                  </testDmFetcher.Form>
+                </s-stack>
+              </s-box>
           <s-button
                 variant="secondary" 
                 onClick={() => {
