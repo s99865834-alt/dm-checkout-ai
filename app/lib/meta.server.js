@@ -352,8 +352,16 @@ export async function sendInstagramPrivateReply(shopId, commentId, message) {
   if (!shopId || !commentId || !message) {
     throw new Error("shopId, commentId, and message are required");
   }
+  const auth = await getMetaAuthWithRefresh(shopId);
+  if (!auth) {
+    throw new Error("No Meta auth found for shop");
+  }
+  const accessToken = auth.ig_access_token || auth.page_access_token;
+  if (!accessToken) {
+    throw new Error("No access token available for private reply");
+  }
   const endpoint = `/${encodeURIComponent(commentId)}/private_replies`;
-  return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
+  return metaGraphAPI(endpoint, accessToken, {
     method: "POST",
     body: { message },
   });
