@@ -5,7 +5,6 @@
 
 import { randomUUID } from "crypto";
 import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply } from "./db.server";
-import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -249,78 +248,19 @@ export async function sendDmReply(shopId, igUserId, text) {
     throw new Error("shopId, igUserId, and text are required");
   }
 
-  // Get Meta auth with automatic token refresh
-  const metaAuth = await getMetaAuthWithRefresh(shopId);
-  if (!metaAuth || !metaAuth.ig_business_id) {
-    throw new Error("Instagram not connected for this shop");
+  const { error } = await supabase.from("outbound_dm_queue").insert({
+    shop_id: shopId,
+    ig_user_id: String(igUserId),
+    text,
+    status: "pending",
+  });
+
+  if (error) {
+    console.error("[automation] Error enqueueing DM:", error);
+    throw new Error("Failed to queue DM message");
   }
 
-  // Use IG token if available, otherwise fall back to page token
-  const accessToken = metaAuth.ig_access_token || metaAuth.page_access_token;
-  if (!accessToken) {
-    throw new Error("No Instagram access token available");
-  }
-
-  // Rate limiting: max 10 messages per minute per shop
-  // TODO: Implement proper rate limiting (in-memory or Redis)
-  // For now, we'll rely on Meta's API rate limits
-
-  // Send DM: POST /{IG_ID}/messages with recipient.id = IGSID (string). Doc allows /me/messages or /{IG_ID}/messages.
-  // Meta: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
-  const endpoint = `/${metaAuth.ig_business_id}/messages`;
-  const messageData = {
-    recipient: { id: String(igUserId) },
-    message: { text: text },
-  };
-  console.log(`[automation] Sending DM shopId=${shopId} ig_id=${metaAuth.ig_business_id} recipient=${igUserId}`);
-  const apiCall =
-    metaAuth.auth_type === "instagram"
-      ? () => metaGraphAPIInstagram(endpoint, accessToken, { method: "POST", body: messageData })
-      : () => metaGraphAPI(endpoint, accessToken, { method: "POST", body: messageData });
-
-  try {
-    const response = await apiCall();
-    console.log(`[automation] DM sent successfully to ${igUserId}`);
-    return response;
-  } catch (error) {
-    const errMsg = error?.message ?? String(error);
-    const errCode = error?.code ?? error?.body?.error?.code ?? error?.response?.error?.code;
-    console.error(`[automation] Error sending DM: message=${errMsg} code=${errCode ?? "n/a"} full=`, error);
-
-    if (error.message?.includes("Code: 190") || error.message?.includes("Session has expired")) {
-      console.log(`[automation] Token expired, refreshing and retrying...`);
-      try {
-        const { refreshMetaToken } = await import("./meta.server");
-        await refreshMetaToken(shopId);
-        const freshAuth = await getMetaAuthWithRefresh(shopId);
-        const freshToken = freshAuth.ig_access_token || freshAuth.page_access_token;
-        if (!freshToken) throw new Error("No Instagram access token available after refresh");
-        const retryCall = freshAuth.auth_type === "instagram"
-          ? () => metaGraphAPIInstagram(endpoint, freshToken, { method: "POST", body: messageData })
-          : () => metaGraphAPI(endpoint, freshToken, { method: "POST", body: messageData });
-        const retryResponse = await retryCall();
-        console.log(`[automation] DM sent successfully to ${igUserId} after token refresh`);
-        return retryResponse;
-      } catch (refreshError) {
-        console.error(`[automation] Token refresh failed:`, refreshError);
-        throw new Error("Instagram token expired and refresh failed. Please reconnect your account.");
-      }
-    }
-    
-    // Handle specific error cases
-    if (error.message?.includes("rate limit")) {
-      throw new Error("Rate limit exceeded. Please try again later.");
-    } else if (error.message?.includes("invalid token")) {
-      throw new Error("Instagram token expired. Please reconnect your account.");
-    } else if (error.message?.includes("user blocked")) {
-      throw new Error("User has blocked this account.");
-    } else if (error.message?.includes("Code: 100") || error.message?.includes("cannot be found") || error.message?.includes("does not exist")) {
-      console.warn("[automation] Code 100: In Development/Standard Access, the recipient may need to be added as a Tester in Meta App Dashboard, or request Advanced Access for instagram_manage_messages.");
-      throw new Error("Instagram could not deliver (recipient not found or permission denied). If in Development mode, add the recipient as an app Tester or request Advanced Access.");
-    }
-    
-    throw error;
-  }
+  return { queued: true };
 }
 
 /**

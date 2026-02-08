@@ -7,7 +7,7 @@ import {
   isAdminAuthConfigured,
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
-import { getAdminDashboardStores } from "../lib/db.server";
+import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -33,11 +33,16 @@ export const loader = async ({ request }) => {
   }
 
   try {
+    const url = new URL(request.url);
+    const shopId = url.searchParams.get("queue_shop_id") || null;
+    const status = url.searchParams.get("queue_status") || null;
     const stores = await getAdminDashboardStores();
-    return { authenticated: true, stores };
+    const queueOverview = await getOutboundQueueOverview({ shopId, status });
+    const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
+    return { authenticated: true, stores, queueOverview, queueItems, queueFilters: { shopId, status } };
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
-    return { authenticated: true, stores: [], error: String(err.message) };
+    return { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) };
   }
 };
 
@@ -102,7 +107,7 @@ function formatRevenue(value) {
 }
 
 export default function Admin() {
-  const { authenticated, stores, error: loaderError } = useLoaderData() ?? {};
+  const { authenticated, stores, queueOverview, queueItems, queueFilters, error: loaderError } = useLoaderData() ?? {};
   const actionData = useActionData();
 
   if (!authenticated) {
@@ -141,6 +146,11 @@ export default function Admin() {
       </div>
     );
   }
+
+  const statusLabel = (status) => {
+    if (!status) return "All";
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
 
   return (
     <div style={styles.page}>
@@ -185,6 +195,98 @@ export default function Admin() {
               <tr>
                 <td colSpan={4} style={styles.tdEmpty}>
                   No stores yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={styles.sectionHeader}>
+        <h2 style={styles.sectionTitle}>DM Queue</h2>
+        <Form method="get" style={styles.filters}>
+          <label style={styles.filterLabel}>
+            Shop
+            <select name="queue_shop_id" defaultValue={queueFilters?.shopId || ""} style={styles.select}>
+              <option value="">All shops</option>
+              {stores && stores.length > 0 && stores.map((row) => (
+                <option key={row.shop_id} value={row.shop_id}>{row.shopify_domain}</option>
+              ))}
+            </select>
+          </label>
+          <label style={styles.filterLabel}>
+            Status
+            <select name="queue_status" defaultValue={queueFilters?.status || ""} style={styles.select}>
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="sent">Sent</option>
+              <option value="failed">Failed</option>
+            </select>
+          </label>
+          <button type="submit" style={styles.filterBtn}>Apply</button>
+        </Form>
+      </div>
+
+      <div style={styles.queueSummary}>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Total</div>
+          <div style={styles.summaryValue}>{queueOverview?.total ?? 0}</div>
+        </div>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Pending</div>
+          <div style={styles.summaryValue}>{queueOverview?.counts?.pending ?? 0}</div>
+        </div>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Processing</div>
+          <div style={styles.summaryValue}>{queueOverview?.counts?.processing ?? 0}</div>
+        </div>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Sent</div>
+          <div style={styles.summaryValue}>{queueOverview?.counts?.sent ?? 0}</div>
+        </div>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Failed</div>
+          <div style={styles.summaryValue}>{queueOverview?.counts?.failed ?? 0}</div>
+        </div>
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryLabel}>Last Update</div>
+          <div style={styles.summaryValueSmall}>
+            {queueOverview?.lastUpdatedAt ? new Date(queueOverview.lastUpdatedAt).toLocaleString() : "—"}
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.tableWrap}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Shop</th>
+              <th style={styles.th}>Status</th>
+              <th style={styles.th}>Attempts</th>
+              <th style={styles.th}>Not Before</th>
+              <th style={styles.th}>Preview</th>
+              <th style={styles.th}>Last Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {queueItems && queueItems.length > 0 ? (
+              queueItems.map((row) => (
+                <tr key={row.id}>
+                  <td style={styles.td}>
+                    <span style={styles.domain}>{row.shops?.shopify_domain || row.shop_id}</span>
+                  </td>
+                  <td style={styles.td}>{statusLabel(row.status)}</td>
+                  <td style={styles.td}>{row.attempts}</td>
+                  <td style={styles.td}>{row.not_before ? new Date(row.not_before).toLocaleString() : "—"}</td>
+                  <td style={styles.td} title={row.text}>{row.text?.slice(0, 60)}{row.text?.length > 60 ? "…" : ""}</td>
+                  <td style={styles.td} title={row.last_error || ""}>{row.last_error ? row.last_error.slice(0, 60) : "—"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={6} style={styles.tdEmpty}>
+                  No queue items.
                 </td>
               </tr>
             )}
@@ -269,6 +371,80 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "1.5rem",
+  },
+  sectionHeader: {
+    marginTop: "2rem",
+    marginBottom: "0.75rem",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "1rem",
+    flexWrap: "wrap",
+  },
+  sectionTitle: {
+    margin: 0,
+    fontSize: "1.125rem",
+    fontWeight: 600,
+  },
+  filters: {
+    display: "flex",
+    gap: "0.75rem",
+    alignItems: "flex-end",
+    flexWrap: "wrap",
+  },
+  filterLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    fontSize: "0.75rem",
+    color: "#94a3b8",
+  },
+  filterBtn: {
+    padding: "0.35rem 0.75rem",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    color: "#0f172a",
+    backgroundColor: "#e2e8f0",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  select: {
+    padding: "0.35rem 0.5rem",
+    borderRadius: "6px",
+    border: "1px solid #334155",
+    backgroundColor: "#0f172a",
+    color: "#e2e8f0",
+    fontSize: "0.75rem",
+    minWidth: "160px",
+  },
+  queueSummary: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: "0.75rem",
+    marginBottom: "1rem",
+  },
+  summaryCard: {
+    backgroundColor: "#1e293b",
+    borderRadius: "8px",
+    padding: "0.75rem",
+    boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+  },
+  summaryLabel: {
+    fontSize: "0.7rem",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: "#94a3b8",
+  },
+  summaryValue: {
+    fontSize: "1.2rem",
+    fontWeight: 600,
+    marginTop: "0.25rem",
+  },
+  summaryValueSmall: {
+    fontSize: "0.8rem",
+    fontWeight: 500,
+    marginTop: "0.25rem",
   },
   logoutBtn: {
     padding: "0.375rem 0.75rem",

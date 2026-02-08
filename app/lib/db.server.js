@@ -1611,6 +1611,77 @@ export async function getAdminDashboardStores() {
   return buildAdminStoresResult(shops || []);
 }
 
+export async function getOutboundQueueOverview(filters = {}) {
+  const { shopId = null, status = null } = filters;
+
+  let query = supabase
+    .from("outbound_dm_queue")
+    .select("id, status, updated_at");
+
+  if (shopId) {
+    query = query.eq("shop_id", shopId);
+  }
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("getOutboundQueueOverview error", error);
+    throw error;
+  }
+
+  const counts = { pending: 0, processing: 0, sent: 0, failed: 0 };
+  let lastUpdatedAt = null;
+  (data || []).forEach((row) => {
+    if (row.status && counts[row.status] !== undefined) {
+      counts[row.status] += 1;
+    }
+    if (row.updated_at) {
+      if (!lastUpdatedAt || new Date(row.updated_at) > new Date(lastUpdatedAt)) {
+        lastUpdatedAt = row.updated_at;
+      }
+    }
+  });
+
+  return {
+    total: (data || []).length,
+    counts,
+    lastUpdatedAt,
+  };
+}
+
+export async function getOutboundQueueItems(filters = {}) {
+  const {
+    shopId = null,
+    status = null,
+    limit = 50,
+  } = filters;
+
+  let query = supabase
+    .from("outbound_dm_queue")
+    .select("id, shop_id, ig_user_id, text, status, attempts, not_before, last_error, created_at, updated_at, shops(shopify_domain)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (shopId) {
+    query = query.eq("shop_id", shopId);
+  }
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("getOutboundQueueItems error", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
 async function buildAdminStoresResult(shops) {
   const { data: linksRows, error: linksError } = await supabase
     .from("links_sent")
