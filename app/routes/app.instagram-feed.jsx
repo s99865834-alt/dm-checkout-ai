@@ -390,6 +390,13 @@ export default function InstagramFeedPage() {
                     Use the checkboxes below each post to enable/disable AI automation for that specific post. By default, all posts have automation enabled.
                   </s-text>
                 </s-paragraph>
+            {metaAuth?.auth_type === "instagram" && (
+              <s-callout variant="info" title="Comment replies require Facebook Login">
+                <s-paragraph>
+                  Instagram Login supports DMs but cannot send private comment replies. Connect via Facebook on the Home page to enable comment automation.
+                </s-paragraph>
+              </s-callout>
+            )}
 
               {mediaData.data && mediaData.data.length > 0 ? (
                 <div className="srMediaGrid">
