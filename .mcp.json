@@ -8,6 +8,10 @@
         "POLARIS_UNIFIED": "true",
         "LIQUID": "true"
       }
+    },
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp?project_ref=gffnpympnrexphdwwehr",
+      "headers": {}
     }
   }
 }
