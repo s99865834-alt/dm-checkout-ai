@@ -9,7 +9,7 @@ import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo } from "./shopify-data.server";
-import { sendInstagramPrivateReply } from "./meta.server";
+import { sendInstagramPrivateReply, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
@@ -672,6 +672,11 @@ async function hasCommentBeenReplied(commentId, shopId) {
  */
 export async function handleIncomingComment(message, mediaId, shop, plan) {
   try {
+    const metaAuth = await getMetaAuth(shop.id);
+    if (metaAuth?.auth_type === "instagram") {
+      console.log("[automation] Comment private replies require Facebook Login");
+      return { sent: false, reason: "Comment replies require Facebook Login" };
+    }
     // 1. Only for Growth/Pro plans
     if (plan.name === "FREE") {
       console.log(`[automation] Comment-to-DM automation only available for Growth/Pro plans`);

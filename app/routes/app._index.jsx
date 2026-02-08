@@ -354,6 +354,14 @@ export default function Index() {
 
           {isConnected ? (
             <s-stack direction="block" gap="base">
+              {metaAuth?.auth_type === "instagram" && (
+                <s-banner tone="info">
+                  <s-text variant="strong">Comment replies require Facebook Login</s-text>
+                  <s-text>
+                    Instagram Login supports DMs but cannot send private comment replies. Connect via Facebook if you want comment automation.
+                  </s-text>
+                </s-banner>
+              )}
               <s-paragraph>
                 <s-text variant="strong">Status: Connected</s-text>
               </s-paragraph>
@@ -460,18 +468,29 @@ export default function Index() {
               <s-paragraph>
                 Connect your Instagram professional account (Business or Creator) to enable automation features.
               </s-paragraph>
-              <s-button
-                variant="primary"
-                onClick={() => {
-                  fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
-                }}
-                disabled={fetcher.state === "submitting"}
-              >
-                {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram"}
-              </s-button>
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  variant="primary"
+                  onClick={() => {
+                    fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
+                  }}
+                  disabled={fetcher.state === "submitting"}
+                >
+                  {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram"}
+                </s-button>
+                <s-button
+                  variant="secondary"
+                  onClick={() => {
+                    fetcher.submit({ connectType: "facebook" }, { method: "post" });
+                  }}
+                  disabled={fetcher.state === "submitting"}
+                >
+                  Connect via Facebook (Pages)
+                </s-button>
+              </s-stack>
               <s-paragraph>
                 <s-text variant="subdued">
-                  Sign in with your Instagram professional (Business or Creator) account.
+                  Instagram Login is simplest. Facebook Login is required for automated comment private replies.
                 </s-text>
               </s-paragraph>
             </s-stack>
@@ -485,6 +504,14 @@ export default function Index() {
           <s-paragraph>
             Control which types of messages are automatically processed and responded to.
           </s-paragraph>
+          {metaAuth?.auth_type === "instagram" && (
+            <s-banner tone="info">
+              <s-text variant="strong">Comment automation needs Facebook Login</s-text>
+              <s-text>
+                Instagram Login can’t send private comment replies. Connect via Facebook to enable comment automation.
+              </s-text>
+            </s-banner>
+          )}
 
           <automationFetcher.Form method="post">
             <input type="hidden" name="action" value="update-automation-settings" />
