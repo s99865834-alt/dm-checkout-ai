@@ -4,7 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -32,9 +32,17 @@ export const loader = async ({ request }) => {
         metaAuth.ig_business_id || "",
         shop.id
       );
-      // Webhook status: Instagram Login uses dashboard; Facebook Login uses Page subscribe (kept in code for future use)
+      // Webhook status: Instagram Login uses dashboard; Facebook Login uses Page subscribe
       if (metaAuth.page_id && metaAuth.auth_type !== "instagram") {
         webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
+        if (webhookStatus && webhookStatus.subscribed === false) {
+          try {
+            await subscribeToWebhooks(shop.id, metaAuth.page_id, metaAuth.ig_business_id);
+            webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
+          } catch (error) {
+            console.error("[home] Webhook auto-subscribe failed:", error);
+          }
+        }
       } else if (metaAuth.auth_type === "instagram") {
         webhookStatus = { subscribed: null, note: "Configure webhooks in Meta App Dashboard (Instagram product)." };
       }
