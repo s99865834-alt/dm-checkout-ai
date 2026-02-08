@@ -240,6 +240,7 @@ export const action = async ({ request }) => {
   }
 
   try {
+    let hadProcessingError = false;
     // Read body as text first for HMAC verification
     const bodyText = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
@@ -257,11 +258,21 @@ export const action = async ({ request }) => {
       }
       console.log(`[webhook] HMAC signature verified`);
     } else {
+      if (secrets.length > 0) {
+        console.error("[webhook] Missing HMAC signature");
+        return new Response("Invalid signature", { status: 403 });
+      }
       console.log(`[webhook] HMAC verification skipped (no app secret or signature)`);
     }
 
     // Parse JSON body
-    const body = JSON.parse(bodyText);
+    let body;
+    try {
+      body = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error("[webhook] Invalid JSON body:", parseError);
+      return new Response("Invalid JSON", { status: 400 });
+    }
     const entryCount = body.entry?.length ?? 0;
     const firstEntryKeys = body.entry?.[0] ? Object.keys(body.entry[0]).join(", ") : "";
     console.log(`[webhook] POST object=${body.object} entries=${entryCount} keys=[${firstEntryKeys}]`);
@@ -290,6 +301,7 @@ export const action = async ({ request }) => {
             settings = await getSettings(shopId);
           } catch (error) {
             console.error(`[webhook] Error fetching settings:`, error);
+            hadProcessingError = true;
             // Continue processing - default to enabled if settings can't be fetched
           }
           
@@ -447,12 +459,14 @@ export const action = async ({ request }) => {
                                   })
                                   .catch((error) => {
                                     console.error(`[webhook] Error in automation:`, error);
+                                    hadProcessingError = true;
                                     // Don't throw - automation failure shouldn't break webhook
                                   });
                               }
                             }
                           } catch (error) {
                             console.error(`[webhook] Error getting shop/plan for automation:`, error);
+                            hadProcessingError = true;
                             // Don't throw - continue processing
                           }
                         }
@@ -460,12 +474,14 @@ export const action = async ({ request }) => {
                     })
                     .catch((error) => {
                       console.error(`[webhook] Error classifying message:`, error);
+                      hadProcessingError = true;
                       // Don't throw - classification failure shouldn't break webhook
                     });
                 }
               } catch (error) {
                 console.error(`[webhook] Error logging DM:`, error);
                 console.error(`[webhook] Error stack:`, error.stack);
+                hadProcessingError = true;
                 // Continue processing other messages
               }
             }
@@ -579,12 +595,14 @@ export const action = async ({ request }) => {
                                   })
                                   .catch((error) => {
                                     console.error(`[webhook] Error in comment automation:`, error);
+                                    hadProcessingError = true;
                                     // Don't throw - automation failure shouldn't break webhook
                                   });
                               }
                             }
                           } catch (error) {
                             console.error(`[webhook] Error getting shop/plan for comment automation:`, error);
+                            hadProcessingError = true;
                             // Don't throw - continue processing
                           }
                         }
@@ -592,11 +610,13 @@ export const action = async ({ request }) => {
                     })
                     .catch((error) => {
                       console.error(`[webhook] Error classifying comment:`, error);
+                      hadProcessingError = true;
                       // Don't throw - classification failure shouldn't break webhook
                     });
                 }
                 } catch (error) {
                   console.error(`[webhook] Error logging comment:`, error);
+                  hadProcessingError = true;
                   // Continue processing other comments
                 }
               }
@@ -654,19 +674,18 @@ export const action = async ({ request }) => {
       console.log(`[webhook] Unknown webhook object type: ${body.object}`);
     }
 
-    // Always return 200 to acknowledge receipt (prevents retries)
-    return new Response("OK", {
-      status: 200,
+    // Return 200 if processing succeeded, 500 if any internal error occurred
+    return new Response(hadProcessingError ? "ERROR" : "OK", {
+      status: hadProcessingError ? 500 : 200,
       headers: { "Content-Type": "text/plain" },
     });
   } catch (error) {
     console.error(`[webhook] Error processing Meta webhook:`, error);
     console.error(`[webhook] Error stack:`, error.stack);
     
-    // Return 200 even on error to prevent Meta from retrying
-    // (We'll log the error for debugging)
-    return new Response("OK", {
-      status: 200,
+    // Return 500 on unhandled errors to allow retries for transient failures
+    return new Response("ERROR", {
+      status: 500,
       headers: { "Content-Type": "text/plain" },
     });
   }
