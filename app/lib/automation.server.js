@@ -314,13 +314,11 @@ export async function handleIncomingDm(message, shop, plan) {
       }
     }
 
-    // 2. If shop plan is FREE, check usage_count < cap (25)
-    if (plan.name === "FREE") {
-      const usageData = await getShopPlanAndUsage(shop.id);
-      if (usageData.usage >= plan.cap) {
-        console.log(`[automation] Usage cap exceeded for FREE shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
-        return { sent: false, reason: "Usage cap exceeded" };
-      }
+    // 2. Enforce usage cap for all plans
+    const usageData = await getShopPlanAndUsage(shop.id);
+    if (usageData.usage >= plan.cap) {
+      console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
+      return { sent: false, reason: "Usage cap exceeded" };
     }
 
     // 3. Check if this is a follow-up (conversation support for Growth/Pro)
@@ -687,7 +685,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     }
 
 
-    // 3. Check AI intent and confidence threshold (0.7)
+    // 3. Enforce usage cap for all plans
+    const usageData = await getShopPlanAndUsage(shop.id);
+    if (usageData.usage >= plan.cap) {
+      console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
+      return { sent: false, reason: "Usage cap exceeded" };
+    }
+
+    // 4. Check AI intent and confidence threshold (0.7)
     // Note: price_request indicates purchase intent, so we should respond with checkout link
     const eligibleIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
     if (!message.ai_intent || !eligibleIntents.includes(message.ai_intent)) {
@@ -700,7 +705,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       return { sent: false, reason: `Confidence ${message.ai_confidence} below threshold` };
     }
 
-    // 4. Check if we've already replied to this comment (7-day window check)
+    // 5. Check if we've already replied to this comment (7-day window check)
     const commentAge = new Date() - new Date(message.created_at);
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     if (commentAge > sevenDaysMs) {
@@ -718,7 +723,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       return { sent: false, reason: "Already replied to this comment" };
     }
 
-    // 5. Find product mapping for this media
+    // 6. Find product mapping for this media
     const productMappings = await getProductMappings(shop.id);
     const productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
 
@@ -727,7 +732,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       return { sent: false, reason: "No product mapping found for this post" };
     }
 
-    // 6. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
+    // 7. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
     let productPageUrl = null;
     let checkoutUrl = null;
     let linkId = null;
@@ -761,7 +766,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       linkId = checkoutLink.linkId;
     }
 
-    // 7. Get brand voice and generate reply message (private DM)
+    // 8. Get brand voice and generate reply message (private DM)
     const brandVoiceData = await getBrandVoice(shop.id);
     let productName = null;
     let productPrice = null;
@@ -807,13 +812,13 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
     }
-    // 8. Send private DM reply
+    // 9. Send private DM reply
     await sendDmReply(shop.id, message.from_user_id, replyText);
 
-    // 9. Increment usage count
+    // 10. Increment usage count
     await incrementUsage(shop.id, 1);
 
-    // 10. Log the sent link (comment claim already recorded via claimCommentReply)
+    // 11. Log the sent link (comment claim already recorded via claimCommentReply)
     await logLinkSent({
       shopId: shop.id,
       messageId: message.id, // Link this to the comment message
