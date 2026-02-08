@@ -116,45 +116,14 @@ export async function updateShopPlan(shopId, plan) {
  * Increment usage, resetting month if needed.
  */
 export async function incrementUsage(shopId, delta) {
-  // Fetch current
-  const { data, error } = await supabase
-    .from("shops")
-    .select("usage_month, usage_count")
-    .eq("id", shopId)
-    .single();
+  const { error } = await supabase.rpc("increment_usage", {
+    p_shop_id: shopId,
+    p_delta: delta,
+  });
 
   if (error) {
-    console.error("incrementUsage fetch error", error);
+    console.error("incrementUsage rpc error", error);
     throw error;
-  }
-
-  const now = new Date();
-  const currMonth = new Date(data.usage_month);
-  const isSameMonth =
-    currMonth.getUTCFullYear() === now.getUTCFullYear() &&
-    currMonth.getUTCMonth() === now.getUTCMonth();
-
-  let usageMonth = currMonth;
-  let usageCount = data.usage_count;
-
-  if (!isSameMonth) {
-    usageMonth = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
-    );
-    usageCount = 0;
-  }
-
-  const { error: updateError } = await supabase
-    .from("shops")
-    .update({
-      usage_month: usageMonth.toISOString(),
-      usage_count: usageCount + delta,
-    })
-    .eq("id", shopId);
-
-  if (updateError) {
-    console.error("incrementUsage update error", updateError);
-    throw updateError;
   }
 }
 

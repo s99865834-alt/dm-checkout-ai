@@ -270,7 +270,7 @@ export default function Index() {
             <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
               {plan.name} Plan
             </s-badge>
-            {plan.name === "FREE" && shop.usage_count !== undefined && (
+            {shop.usage_count !== undefined && (
               <s-stack direction="block" gap="tight" className="srFlex1">
                 <s-stack direction="inline" gap="base" alignment="center">
                   <s-text variant="subdued">
