@@ -305,7 +305,7 @@ export default function InstagramFeedPage() {
             </s-paragraph>
             <s-paragraph>
               <s-text variant="subdued">
-                Upgrade to unlock Instagram Feed, product mapping, and comment-to-DM automation.
+                Upgrade to unlock Instagram Feed, product mapping, and comment reply automation.
               </s-text>
             </s-paragraph>
             <s-button href="/app/billing/select" variant="primary">

@@ -345,6 +345,21 @@ export async function metaGraphAPIWithRefresh(shopId, endpoint, tokenType = "pag
 }
 
 /**
+ * Send a private reply to an Instagram comment (allowed within 7 days).
+ * Uses the same host as the shop's auth (Instagram Login → graph.instagram.com, Page Login → graph.facebook.com).
+ */
+export async function sendInstagramPrivateReply(shopId, commentId, message) {
+  if (!shopId || !commentId || !message) {
+    throw new Error("shopId, commentId, and message are required");
+  }
+  const endpoint = `/${encodeURIComponent(commentId)}/private_replies`;
+  return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
+    method: "POST",
+    body: { message },
+  });
+}
+
+/**
  * Fetch message content by message ID (mid).
  * Used when webhook sends message_edit without text so we can still log and reply.
  * Uses the same host as the shop's auth: Instagram token → graph.instagram.com; Page token → graph.facebook.com.
