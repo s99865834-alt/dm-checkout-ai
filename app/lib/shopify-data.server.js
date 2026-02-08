@@ -79,6 +79,68 @@ export async function getShopifyStoreInfo(shopDomain) {
 }
 
 /**
+ * Get product name and price by product/variant ID.
+ * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
+ * @param {string} productId - Shopify product GID
+ * @param {string|null} variantId - Shopify variant GID (optional)
+ * @returns {Promise<{productName: string|null, productPrice: string|null}>}
+ */
+export async function getShopifyProductInfo(shopDomain, productId, variantId = null) {
+  try {
+    if (!shopDomain || !productId) {
+      return { productName: null, productPrice: null };
+    }
+
+    const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
+    const session = await sessionStorage.loadSession(sessionId);
+    if (!session || !session.accessToken) {
+      console.error("[shopify-data] No valid session found for shop:", shopDomain);
+      return { productName: null, productPrice: null };
+    }
+
+    const admin = new shopify.clients.Graphql({ session });
+    const response = await admin.graphql(`
+      query getProductInfo($productId: ID!, $variantId: ID) {
+        product(id: $productId) {
+          title
+          priceRangeV2 {
+            minVariantPrice {
+              amount
+              currencyCode
+            }
+          }
+        }
+        productVariant(id: $variantId) {
+          price
+        }
+      }
+    `, {
+      variables: { productId, variantId },
+    });
+
+    const json = await response.json();
+    const product = json?.data?.product || null;
+    const variant = json?.data?.productVariant || null;
+
+    const productName = product?.title || null;
+    let productPrice = null;
+
+    if (variant?.price) {
+      productPrice = variant.price;
+    } else if (product?.priceRangeV2?.minVariantPrice?.amount) {
+      const amount = product.priceRangeV2.minVariantPrice.amount;
+      const currency = product.priceRangeV2.minVariantPrice.currencyCode;
+      productPrice = currency ? `${amount} ${currency}` : String(amount);
+    }
+
+    return { productName, productPrice };
+  } catch (error) {
+    console.error("[shopify-data] Error fetching product info:", error);
+    return { productName: null, productPrice: null };
+  }
+}
+
+/**
  * Search for products by name or handle
  * @param {Object} request - Request object (for authentication)
  * @param {string} searchTerm - Search term (product name, handle, etc.)
