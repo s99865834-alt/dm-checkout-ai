@@ -356,12 +356,22 @@ export async function sendInstagramPrivateReply(shopId, commentId, message) {
   if (!auth) {
     throw new Error("No Meta auth found for shop");
   }
-  const accessToken = auth.ig_access_token || auth.page_access_token;
-  if (!accessToken) {
-    throw new Error("No access token available for private reply");
+  if (auth.auth_type === "instagram") {
+    if (!auth.ig_business_id) {
+      throw new Error("No Instagram business account ID available for private reply");
+    }
+    const endpoint = `/${auth.ig_business_id}/messages`;
+    return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
+      method: "POST",
+      body: {
+        recipient: { comment_id: String(commentId) },
+        message: { text: message },
+      },
+    });
   }
+
   const endpoint = `/${encodeURIComponent(commentId)}/private_replies`;
-  return metaGraphAPI(endpoint, accessToken, {
+  return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
     method: "POST",
     body: { message },
   });
