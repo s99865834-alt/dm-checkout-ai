@@ -368,6 +368,63 @@ export async function sendInstagramPrivateReply(shopId, commentId, message) {
 }
 
 /**
+ * Send a direct Instagram DM (outbound) via Messaging API.
+ * Works for both Facebook Login and Instagram Login auth types.
+ */
+export async function sendInstagramDm(shopId, igUserId, text) {
+  if (!shopId || !igUserId || !text) {
+    throw new Error("shopId, igUserId, and text are required");
+  }
+  const auth = await getMetaAuthWithRefresh(shopId);
+  if (!auth || !auth.ig_business_id) {
+    throw new Error("Instagram not connected for this shop");
+  }
+  const accessToken = auth.ig_access_token || auth.page_access_token;
+  if (!accessToken) {
+    throw new Error("No Instagram access token available");
+  }
+  const endpoint = `/${auth.ig_business_id}/messages`;
+  const messageData = {
+    recipient: { id: String(igUserId) },
+    message: { text: text },
+  };
+  return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
+    method: "POST",
+    body: messageData,
+  });
+}
+
+/**
+ * Lookup an Instagram user ID by username using Business Discovery.
+ * Requires Facebook Login (graph.facebook.com).
+ */
+export async function lookupInstagramUserIdByUsername(shopId, igUsername) {
+  if (!shopId || !igUsername) {
+    throw new Error("shopId and igUsername are required");
+  }
+  const auth = await getMetaAuthWithRefresh(shopId);
+  if (!auth?.ig_business_id) {
+    throw new Error("Instagram not connected for this shop");
+  }
+  if (auth.auth_type === "instagram") {
+    throw new Error("Username lookup requires Facebook Login");
+  }
+  const username = String(igUsername).trim().replace(/^@/, "");
+  if (!username) {
+    throw new Error("Username is required");
+  }
+  const fields = `business_discovery.username(${username}){id,username}`;
+  const data = await metaGraphAPIWithRefresh(shopId, `/${auth.ig_business_id}`, "page", {
+    params: { fields },
+  });
+  const user = data?.business_discovery;
+  if (!user?.id) {
+    throw new Error("User not found or not eligible for discovery");
+  }
+  return { id: user.id, username: user.username || username };
+}
+
+/**
  * Fetch message content by message ID (mid).
  * Used when webhook sends message_edit without text so we can still log and reply.
  * Uses the same host as the shop's auth: Instagram token → graph.instagram.com; Page token → graph.facebook.com.

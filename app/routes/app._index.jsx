@@ -4,7 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks, sendInstagramDm } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -32,7 +32,7 @@ export const loader = async ({ request }) => {
         metaAuth.ig_business_id || "",
         shop.id
       );
-      // Webhook status: Instagram Login uses dashboard; Facebook Login uses Page subscribe
+      // Webhook status: Instagram Login uses dashboard; Page subscribe is used for Facebook Login
       if (metaAuth.page_id && metaAuth.auth_type !== "instagram") {
         webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
         if (webhookStatus && webhookStatus.subscribed === false) {
@@ -129,9 +129,31 @@ export const action = async ({ request }) => {
       }
     }
     
-    // Handle connect action (OAuth flow) – Facebook Login or Instagram Login
+    // Handle send test DM (outbound message from app UI)
+    if (actionType === "send-test-dm") {
+      const { shop } = await getShopWithPlan(request);
+      if (!shop?.id) {
+        return { error: "Shop not found" };
+      }
+
+      const recipientId = formData.get("recipient_id");
+      const messageText = formData.get("message_text");
+      if (!recipientId || !messageText) {
+        return { error: "Recipient ID and message are required" };
+      }
+
+      try {
+        await sendInstagramDm(shop.id, String(recipientId), String(messageText));
+        return { success: true, message: "Test DM sent successfully" };
+      } catch (error) {
+        console.error("[home] Error sending test DM:", error);
+        return { error: error.message || "Failed to send test DM" };
+      }
+    }
+
+    // Handle connect action (OAuth flow) – Instagram Login (Facebook Login kept server-side)
     const shopDomain = session.shop;
-    const connectType = formData.get("connectType") || "facebook";
+    const connectType = formData.get("connectType") || "instagram-login";
 
     const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
     const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL || PRODUCTION_URL;
@@ -148,7 +170,7 @@ export const action = async ({ request }) => {
       const instagramAppId = process.env.META_INSTAGRAM_APP_ID;
       if (!instagramAppId) {
         return {
-          error: "Instagram Login is not configured. Set META_INSTAGRAM_APP_ID (and META_INSTAGRAM_APP_SECRET) from Meta App Dashboard → Instagram → API setup with Instagram login → Set up Instagram business login → Business login settings → Instagram App ID. The main Facebook App ID cannot be used for Instagram Login.",
+          error: "Instagram Login is not configured. Set META_INSTAGRAM_APP_ID (and META_INSTAGRAM_APP_SECRET) from Meta App Dashboard → Instagram → API setup with Instagram login → Set up Instagram business login → Business login settings → Instagram App ID. The main app ID cannot be used for Instagram Login.",
         };
       }
       const redirectUri = `${finalAppUrl}/meta/instagram-login/callback`;
@@ -166,7 +188,7 @@ export const action = async ({ request }) => {
       return { oauthUrl: authUrl };
     }
 
-    // Facebook Login (default) – requires Facebook Page linked to IG Business
+    // Facebook Login (server-side only) – requires Facebook Page linked to IG Business
     const redirectUri = `${finalAppUrl}/meta/instagram/callback`;
     const scopes = [
       "instagram_basic",
@@ -205,12 +227,15 @@ export default function Index() {
   // Use separate fetchers for different actions to avoid conflicts
   const automationFetcher = useFetcher();
   const instagramFetcher = useFetcher();
+  const testDmFetcher = useFetcher();
 
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
+  const [testRecipientId, setTestRecipientId] = useState("");
+  const [testMessageText, setTestMessageText] = useState("Test message from DM Checkout AI");
 
   // Update local state when settings change (e.g., on initial load or after page refresh)
   useEffect(() => {
@@ -354,14 +379,6 @@ export default function Index() {
 
           {isConnected ? (
             <s-stack direction="block" gap="base">
-              {metaAuth?.auth_type === "instagram" && (
-                <s-banner tone="info">
-                  <s-text variant="strong">Comment replies require Facebook Login</s-text>
-                  <s-text>
-                    Instagram Login supports DMs but cannot send private comment replies. Connect via Facebook if you want comment automation.
-                  </s-text>
-                </s-banner>
-              )}
               <s-paragraph>
                 <s-text variant="strong">Status: Connected</s-text>
               </s-paragraph>
@@ -451,6 +468,67 @@ export default function Index() {
                   </s-stack>
                 </s-box>
               )}
+
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">Send Test DM (for Meta review)</s-text>
+                  <s-text variant="subdued">
+                    This sends a real outbound DM from your app UI. Webhooks are not required for this step.
+                    The recipient must be a test user on your Meta app and must have messaged your IG business account
+                    within the last 24 hours.
+                  </s-text>
+
+                  {testDmFetcher.data?.success && (
+                    <s-banner tone="success">
+                      <s-text variant="strong">Test DM sent</s-text>
+                      <s-text>{testDmFetcher.data.message}</s-text>
+                    </s-banner>
+                  )}
+                  {testDmFetcher.data?.error && (
+                    <s-banner tone="critical">
+                      <s-text variant="strong">Test DM failed</s-text>
+                      <s-text>{testDmFetcher.data.error}</s-text>
+                    </s-banner>
+                  )}
+
+                  <testDmFetcher.Form method="post">
+                    <input type="hidden" name="action" value="send-test-dm" />
+                    <s-stack direction="block" gap="tight">
+                      <label>
+                        <s-text variant="strong">Recipient IG User ID</s-text>
+                        <input
+                          type="text"
+                          name="recipient_id"
+                          placeholder="1784..."
+                          value={testRecipientId}
+                          onChange={(e) => setTestRecipientId(e.target.value)}
+                          className="srInput"
+                          required
+                        />
+                      </label>
+                      <label>
+                        <s-text variant="strong">Message</s-text>
+                        <input
+                          type="text"
+                          name="message_text"
+                          value={testMessageText}
+                          onChange={(e) => setTestMessageText(e.target.value)}
+                          className="srInput"
+                          required
+                        />
+                      </label>
+                      <s-button
+                        variant="primary"
+                        loading={testDmFetcher.state !== "idle"}
+                        disabled={!testRecipientId || !testMessageText}
+                        type="submit"
+                      >
+                        Send Test DM
+                      </s-button>
+                    </s-stack>
+                  </testDmFetcher.Form>
+                </s-stack>
+              </s-box>
           <s-button
                 variant="secondary" 
                 onClick={() => {
@@ -478,19 +556,10 @@ export default function Index() {
                 >
                   {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram"}
                 </s-button>
-                <s-button
-                  variant="secondary"
-                  onClick={() => {
-                    fetcher.submit({ connectType: "facebook" }, { method: "post" });
-                  }}
-                  disabled={fetcher.state === "submitting"}
-                >
-                  Connect via Facebook (Pages)
-                </s-button>
               </s-stack>
               <s-paragraph>
                 <s-text variant="subdued">
-                  Instagram Login is simplest. Facebook Login is required for automated comment private replies.
+                  Instagram Login is the supported connection method for this app.
                 </s-text>
               </s-paragraph>
             </s-stack>
@@ -504,15 +573,6 @@ export default function Index() {
           <s-paragraph>
             Control which types of messages are automatically processed and responded to.
           </s-paragraph>
-          {metaAuth?.auth_type === "instagram" && (
-            <s-banner tone="info">
-              <s-text variant="strong">Comment automation needs Facebook Login</s-text>
-              <s-text>
-                Instagram Login can’t send private comment replies. Connect via Facebook to enable comment automation.
-              </s-text>
-            </s-banner>
-          )}
-
           <automationFetcher.Form method="post">
             <input type="hidden" name="action" value="update-automation-settings" />
             <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
