@@ -729,8 +729,50 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     const productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
 
     if (!productMapping) {
-      console.log(`[automation] No product mapping found for media ${mediaId}`);
-      return { sent: false, reason: "No product mapping found for this post" };
+      const homepageUrl = shop?.shopify_domain ? `https://${shop.shopify_domain}` : null;
+      if (!homepageUrl) {
+        console.log(`[automation] No product mapping found for media ${mediaId} and no shop domain`);
+        return { sent: false, reason: "No product mapping found and no shop domain" };
+      }
+
+      console.log(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
+      const brandVoiceData = await getBrandVoice(shop.id);
+      const replyText = await generateReplyMessage(
+        brandVoiceData,
+        null,
+        homepageUrl,
+        message.ai_intent,
+        null,
+        null,
+        message.text,
+        null,
+        {
+          originChannel: "comment",
+          inboundChannel: "comment",
+          triggerChannel: "comment",
+          lastProductLink: {
+            url: homepageUrl,
+            product_id: null,
+            variant_id: null,
+            trigger_channel: "comment",
+          },
+          recentMessages: [{ channel: "comment", text: message.text, created_at: message.created_at }],
+        }
+      );
+
+      const commentExternalId = message.external_id ?? message.externalId;
+      const claimed = commentExternalId
+        ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
+        : await claimMessageReply(shop.id, message.id, replyText, message.external_id);
+      if (!claimed) {
+        console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
+        return { sent: false, reason: "Already replied to this comment" };
+      }
+      await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+      await incrementUsage(shop.id, 1);
+
+      console.log(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
+      return { sent: true };
     }
 
     // 7. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
