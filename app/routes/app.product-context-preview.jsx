@@ -147,6 +147,17 @@ export default function ProductContextPreview() {
           {error && (
             <s-section>
               <s-text tone="critical">{error}</s-text>
+              {error.includes("read_products") && (
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" style={{ marginTop: 12 }}>
+                  <s-text variant="strong">Fix: get a new token with read_products</s-text>
+                  <s-text style={{ display: "block", marginTop: 8 }}>
+                    1) In Railway (or your host), set <code>SCOPES=read_products,write_products,read_orders</code> and redeploy.
+                    <br />
+                    2) Re-authorize the app so Shopify issues a new token: open{" "}
+                    <a href="/auth/login">/auth/login</a> in a new tab and complete login, or uninstall and reinstall the app from your Shopify admin.
+                  </s-text>
+                </s-box>
+              )}
             </s-section>
           )}
 

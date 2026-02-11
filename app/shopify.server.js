@@ -8,11 +8,16 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { createOrUpdateShop } from "./lib/db.server";
 
+// Build scopes: ensure read_products is included when using product features (product context, preview)
+const scopesFromEnv = process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+const hasReadProducts = scopesFromEnv.some((s) => s === "read_products");
+const scopes = hasReadProducts ? scopesFromEnv : [...scopesFromEnv, "read_products"];
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
-  scopes: process.env.SCOPES?.split(","),
+  scopes,
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
