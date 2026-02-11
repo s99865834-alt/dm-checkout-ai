@@ -51,7 +51,7 @@ export async function getShopifyStoreInfo(shopDomain) {
     // Create GraphQL client using the session
     const admin = new shopify.clients.Graphql({ session });
     
-    // Fetch shop information and policies
+    // Fetch shop information, policies, and product count
     const response = await admin.graphql(`
       query getShopInfo {
         shop {
@@ -83,6 +83,9 @@ export async function getShopifyStoreInfo(shopDomain) {
             url
           }
         }
+        productsCount(limit: null) {
+          count
+        }
         pages(first: 10) {
           nodes {
             title
@@ -101,17 +104,24 @@ export async function getShopifyStoreInfo(shopDomain) {
     `);
 
     const shopData = response?.data?.shop;
+    const productsCount = response?.data?.productsCount?.count ?? null;
     const pages = response?.data?.pages?.nodes || [];
     const products = response?.data?.products?.nodes || [];
+    const primaryDomain = shopData?.primaryDomain || null;
+    const baseStoreUrl = primaryDomain?.url ? primaryDomain.url.replace(/\/$/, "") : null;
+    const storefrontAllProductsUrl = baseStoreUrl ? `${baseStoreUrl}/collections/all` : null;
+
     return {
       name: shopData?.name || null,
       email: shopData?.email || null,
       description: shopData?.description || null,
-      primaryDomain: shopData?.primaryDomain || null,
+      primaryDomain,
       refundPolicy: shopData?.refundPolicy || null,
       privacyPolicy: shopData?.privacyPolicy || null,
       termsOfService: shopData?.termsOfService || null,
       shippingPolicy: shopData?.shippingPolicy || null,
+      productsCount,
+      storefrontAllProductsUrl,
       pages,
       products,
     };
@@ -119,6 +129,200 @@ export async function getShopifyStoreInfo(shopDomain) {
     console.error("[shopify-data] Error fetching store info:", error);
     return null;
   }
+}
+
+/**
+ * Build a single, comprehensive store context document for the AI.
+ * Use this for all store_question replies so the AI can answer any question from one context.
+ * Returns the context text and the list of URLs that are allowed in the reply (for sanitization).
+ * When you add new store data, add it here so the AI gets it without new prompt logic.
+ *
+ * @param {Object} storeInfo - Result from getShopifyStoreInfo()
+ * @returns {{ text: string, allowedUrls: string[] }}
+ */
+export function buildStoreContextForAI(storeInfo) {
+  if (!storeInfo) return { text: "", allowedUrls: [] };
+
+  const sections = [];
+  const allowedUrls = [];
+
+  if (storeInfo.name) sections.push(`Store name: ${storeInfo.name}`);
+  if (storeInfo.email) {
+    sections.push(`Contact email: ${storeInfo.email}`);
+  }
+  if (storeInfo.description) {
+    sections.push(`About the store: ${storeInfo.description.substring(0, 500)}${storeInfo.description.length > 500 ? "..." : ""}`);
+  }
+
+  if (storeInfo.productsCount != null) {
+    sections.push(`Total number of products: ${storeInfo.productsCount}`);
+  }
+  if (storeInfo.storefrontAllProductsUrl) {
+    sections.push(`Browse all products: ${storeInfo.storefrontAllProductsUrl}`);
+    allowedUrls.push(storeInfo.storefrontAllProductsUrl);
+  }
+
+  const policyPart = (label, policy) => {
+    if (!policy) return "";
+    const lines = [`${label}: ${policy.title || label}`];
+    if (policy.body) lines.push(policy.body.substring(0, 2500) + (policy.body.length > 2500 ? "..." : ""));
+    if (policy.url) {
+      lines.push(`URL: ${policy.url}`);
+      allowedUrls.push(policy.url);
+    }
+    return lines.join("\n");
+  };
+  if (storeInfo.refundPolicy) sections.push(policyPart("Return / refund policy", storeInfo.refundPolicy));
+  if (storeInfo.shippingPolicy) sections.push(policyPart("Shipping policy", storeInfo.shippingPolicy));
+  if (storeInfo.privacyPolicy) sections.push(policyPart("Privacy policy", storeInfo.privacyPolicy));
+  if (storeInfo.termsOfService) sections.push(policyPart("Terms of service", storeInfo.termsOfService));
+
+  if (Array.isArray(storeInfo.pages) && storeInfo.pages.length > 0) {
+    const pageLines = storeInfo.pages
+      .filter((p) => p?.title)
+      .map((p) => (p.onlineStoreUrl ? `${p.title}: ${p.onlineStoreUrl}` : p.title));
+    if (pageLines.length) {
+      sections.push("Pages: " + pageLines.join(" | "));
+      storeInfo.pages.forEach((p) => p.onlineStoreUrl && allowedUrls.push(p.onlineStoreUrl));
+    }
+  }
+  if (Array.isArray(storeInfo.products) && storeInfo.products.length > 0) {
+    const productLines = storeInfo.products
+      .filter((p) => p?.title)
+      .map((p) => (p.onlineStoreUrl ? `${p.title}: ${p.onlineStoreUrl}` : p.title));
+    if (productLines.length) {
+      sections.push("Top products (sample): " + productLines.join(" | "));
+      storeInfo.products.forEach((p) => p.onlineStoreUrl && allowedUrls.push(p.onlineStoreUrl));
+    }
+  }
+
+  const text = sections.filter(Boolean).join("\n\n");
+  return { text, allowedUrls: [...new Set(allowedUrls)] };
+}
+
+/**
+ * Fetch full product context (title, description, options, variant options) for AI replies.
+ * Used when replying to comments on mapped products so the AI can answer variant questions
+ * (e.g. "does this come in black?") using real data.
+ *
+ * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
+ * @param {string} productId - Shopify product GID
+ * @returns {Promise<Object|null>} - Raw product context or null
+ */
+export async function getShopifyProductContextForReply(shopDomain, productId) {
+  try {
+    if (!shopDomain || !productId) return null;
+
+    const session = await loadShopSession(shopDomain);
+    if (!session || !session.accessToken) {
+      console.error("[shopify-data] No valid session found for shop:", shopDomain);
+      return null;
+    }
+
+    const admin = new shopify.clients.Graphql({ session });
+    const response = await admin.graphql(
+      `
+      query getProductContext($productId: ID!) {
+        product(id: $productId) {
+          title
+          description
+          priceRangeV2 {
+            minVariantPrice {
+              amount
+              currencyCode
+            }
+            maxVariantPrice {
+              amount
+              currencyCode
+            }
+          }
+          options {
+            name
+            values
+          }
+          variants(first: 100) {
+            nodes {
+              id
+              title
+              price
+              selectedOptions {
+                name
+                value
+              }
+            }
+          }
+        }
+      }
+    `,
+      { variables: { productId } }
+    );
+
+    const data = response?.data ?? (typeof response?.json === "function" ? await response.json() : response)?.data;
+    const product = data?.product || null;
+    return product;
+  } catch (error) {
+    console.error("[shopify-data] Error fetching product context:", error);
+    return null;
+  }
+}
+
+/**
+ * Build a single product context document for the AI (comment automation with mapped product).
+ * Use so the AI can answer variant/product questions from real data (e.g. "does it come in black?").
+ *
+ * @param {Object} productContext - Raw result from getShopifyProductContextForReply()
+ * @returns {{ text: string }}
+ */
+export function buildProductContextForAI(productContext) {
+  if (!productContext) return { text: "" };
+
+  const parts = [];
+
+  parts.push(`Product: ${productContext.title || "Unknown"}`);
+
+  if (productContext.description) {
+    const desc = productContext.description.replace(/\s+/g, " ").trim();
+    parts.push(`Description: ${desc.substring(0, 800)}${desc.length > 800 ? "..." : ""}`);
+  }
+
+  const priceRange = productContext.priceRangeV2;
+  if (priceRange?.minVariantPrice) {
+    const min = priceRange.minVariantPrice;
+    const minStr = `${min.amount} ${min.currencyCode || ""}`.trim();
+    if (priceRange.maxVariantPrice && priceRange.maxVariantPrice.amount !== priceRange.minVariantPrice.amount) {
+      const max = priceRange.maxVariantPrice;
+      parts.push(`Price: ${minStr} - ${max.amount} ${max.currencyCode || ""}`.trim());
+    } else {
+      parts.push(`Price: ${minStr}`);
+    }
+  }
+
+  const options = productContext.options;
+  if (Array.isArray(options) && options.length > 0) {
+    const optionLines = options
+      .filter((o) => o?.name && Array.isArray(o.values))
+      .map((o) => `${o.name}: ${o.values.join(", ")}`);
+    if (optionLines.length) {
+      parts.push(`Available options: ${optionLines.join(" | ")}`);
+    }
+  }
+
+  const variants = productContext.variants?.nodes;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const variantSummaries = variants.slice(0, 30).map((v) => {
+      const opts = (v.selectedOptions || [])
+        .filter((o) => o?.name)
+        .map((o) => `${o.name}=${o.value}`)
+        .join(", ");
+      return opts ? `${opts} (${v.price})` : v.price;
+    });
+    if (variantSummaries.length) {
+      parts.push(`Variants (sample): ${variantSummaries.join("; ")}`);
+    }
+  }
+
+  const text = parts.filter(Boolean).join("\n\n");
+  return { text };
 }
 
 /**

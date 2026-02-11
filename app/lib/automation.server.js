@@ -8,7 +8,7 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessa
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI } from "./shopify-data.server";
 import { sendInstagramPrivateReply, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
@@ -841,10 +841,11 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       linkId = checkoutLink.linkId;
     }
 
-    // 8. Get brand voice and generate reply message (private DM)
+    // 8. Get brand voice, product info, and product context (for variant/product questions)
     const brandVoiceData = await getBrandVoice(shop.id);
     let productName = null;
     let productPrice = null;
+    let productContextForReply = null;
     if (shop.shopify_domain && productMapping.product_id) {
       const info = await getShopifyProductInfo(
         shop.shopify_domain,
@@ -853,8 +854,15 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       );
       productName = info.productName;
       productPrice = info.productPrice;
+      // Fetch full product context (options, variants) so AI can answer e.g. "does it come in black?"
+      if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
+        const rawProductContext = await getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id);
+        if (rawProductContext) {
+          productContextForReply = buildProductContextForAI(rawProductContext);
+        }
+      }
     }
-    // Pass the intent, links, and original message so the AI can understand context
+    // Pass the intent, links, original message, and product context so the AI can answer accurately
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
@@ -877,7 +885,8 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
           trigger_channel: "comment",
         },
         recentMessages: [{ channel: "comment", text: message.text, created_at: message.created_at }],
-      }
+      },
+      productContextForReply
     );
 
     const claimed = commentExternalId
@@ -1031,22 +1040,25 @@ async function canSendFollowUp(message, shop, plan) {
  * @param {Object} storeInfo - Store information object (optional, used for store_question intent)
  * @param {Object} channelContext - Conversation context (optional). Helps the AI understand whether the thread started
  * from a comment vs a DM, and provides light recent-message context for follow-up replies.
+ * @param {Object} productContextForReply - Optional { text } from buildProductContextForAI(); when set for product_question/variant_inquiry,
+ *   the AI answers using this product context (e.g. "does it come in black?" → answer from actual options).
  * @returns {string} - Generated reply message
  */
-export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null, channelContext = null) {
+export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null, channelContext = null, productContextForReply = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
   const safeChannelContext = intent === "store_question"
     ? { ...(channelContext || {}), lastProductLink: null }
     : channelContext;
 
-  const sanitizeStoreQuestionReply = (text) => {
+  const sanitizeStoreQuestionReply = (text, allowedUrlsOverride = null) => {
     if (!text) return text;
-    const allowedUrls = [
+    const allowedUrls = allowedUrlsOverride ?? [
       storeInfo?.refundPolicy?.url,
       storeInfo?.shippingPolicy?.url,
       storeInfo?.privacyPolicy?.url,
       storeInfo?.termsOfService?.url,
+      storeInfo?.storefrontAllProductsUrl,
     ].filter(Boolean);
     const allowedSet = new Set(allowedUrls);
     const urlRegex = /https?:\/\/[^\s)]+/g;
@@ -1091,7 +1103,13 @@ export async function generateReplyMessage(brandVoice, productName = null, check
       
       if (OPENAI_API_KEY) {
         const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-        
+
+        // Build one store context for store_question so the AI can answer any question from context
+        const storeContextForReply =
+          intent === "store_question" && storeInfo
+            ? buildStoreContextForAI(storeInfo)
+            : null;
+
         // Use AI to generate a response based on the custom instruction or product_question intent
         let promptBase = `Generate an Instagram DM reply to a customer`;
         let styleInstruction = customInstruction || tone; // Use custom instruction if provided, otherwise use tone
@@ -1109,22 +1127,28 @@ export async function generateReplyMessage(brandVoice, productName = null, check
             promptBase += `. Direct them to the checkout link where they can see the price. Mention that they can see the price when they click the link.`;
           }
         } else if (intent === "product_question") {
-          promptBase += ` who asked a question about the product (what it does, how it works, its features, etc.)`;
+          promptBase += ` who asked a question about the product (what it does, how it works, its features, variants, etc.)`;
           promptBase += `. They are asking for information about the product, not necessarily ready to buy yet.`;
+          if (productContextForReply?.text) {
+            promptBase += ` Use the product context below to answer accurately (e.g. if they ask "does it come in X?" check the available options and say yes or no accordingly).`;
+          }
           if (productPageUrl) {
-            promptBase += ` Direct them to the product page (${productPageUrl}) where they can find all product details.`;
+            promptBase += ` You can direct them to the product page (${productPageUrl}) for full details.`;
           }
           if (checkoutUrl) {
-            promptBase += ` If they're ready to buy after seeing the product details, you can also include the checkout link (${checkoutUrl}).`;
+            promptBase += ` If they're ready to buy, include the checkout link (${checkoutUrl}).`;
           }
         } else if (intent === "variant_inquiry") {
           promptBase += ` who asked about product variants (size, color, etc.)`;
           promptBase += `. They are interested in specific options.`;
+          if (productContextForReply?.text) {
+            promptBase += ` Use the product context below to answer accurately. If they ask about an option we don't have (e.g. "do you have black?" and we don't), say so clearly and offer the product or checkout link for what we do have.`;
+          }
           if (productPageUrl) {
-            promptBase += ` Direct them to the product page (${productPageUrl}) where they can see all available variants.`;
+            promptBase += ` Direct them to the product page (${productPageUrl}) to see all variants.`;
           }
           if (checkoutUrl) {
-            promptBase += ` If they're ready to buy after seeing the variants, you can also include the checkout link (${checkoutUrl}).`;
+            promptBase += ` If they're ready to buy, include the checkout link (${checkoutUrl}).`;
           }
         } else if (intent === "purchase") {
           // Don't add duplicate "who said" if we already included originalMessage above
@@ -1136,56 +1160,10 @@ export async function generateReplyMessage(brandVoice, productName = null, check
             promptBase += ` If they explicitly said they want to buy, direct them to checkout. If they just expressed enthusiasm, acknowledge their excitement first, then offer the checkout link (${checkoutUrl}) as an option if they're interested.`;
           }
         } else if (intent === "store_question") {
-          // Don't add duplicate "who said" if we already included originalMessage above
           if (!originalMessage) {
             promptBase += ` who asked a general question about the store`;
           }
-          promptBase += `. They are asking about store policies, information, sales, shipping, returns, etc. - NOT about a specific product.`;
-          if (storeInfo) {
-            promptBase += ` Use the following store information to answer their question. CRITICAL: Use ONLY the exact information provided below - do NOT make up email addresses, contact info, or URLs:`;
-            if (storeInfo.name) {
-              promptBase += ` Store Name: ${storeInfo.name}`;
-            }
-            if (storeInfo.email) {
-              promptBase += ` Store Email: ${storeInfo.email}`;
-            }
-            if (storeInfo.refundPolicy) {
-              const refundBody = storeInfo.refundPolicy.body || '';
-              // Include full refund policy body (or at least first 2000 chars to capture email addresses)
-              promptBase += ` Return Policy Title: ${storeInfo.refundPolicy.title || 'Return Policy'}`;
-              promptBase += ` Return Policy Content: ${refundBody.substring(0, 2000)}${refundBody.length > 2000 ? '...' : ''}`;
-              if (storeInfo.refundPolicy.url) {
-                promptBase += ` Return Policy URL: ${storeInfo.refundPolicy.url}`;
-              }
-            }
-            if (storeInfo.privacyPolicy) {
-              const privacyBody = storeInfo.privacyPolicy.body || '';
-              promptBase += ` Privacy Policy Title: ${storeInfo.privacyPolicy.title || 'Privacy Policy'}`;
-              promptBase += ` Privacy Policy Content: ${privacyBody.substring(0, 2000)}${privacyBody.length > 2000 ? '...' : ''}`;
-              if (storeInfo.privacyPolicy.url) {
-                promptBase += ` Privacy Policy URL: ${storeInfo.privacyPolicy.url}`;
-              }
-            }
-            if (storeInfo.termsOfService) {
-              const termsBody = storeInfo.termsOfService.body || '';
-              promptBase += ` Terms of Service Title: ${storeInfo.termsOfService.title || 'Terms of Service'}`;
-              promptBase += ` Terms of Service Content: ${termsBody.substring(0, 2000)}${termsBody.length > 2000 ? '...' : ''}`;
-              if (storeInfo.termsOfService.url) {
-                promptBase += ` Terms of Service URL: ${storeInfo.termsOfService.url}`;
-              }
-            }
-            if (storeInfo.shippingPolicy) {
-              const shippingBody = storeInfo.shippingPolicy.body || '';
-              promptBase += ` Shipping Policy Title: ${storeInfo.shippingPolicy.title || 'Shipping Policy'}`;
-              promptBase += ` Shipping Policy Content: ${shippingBody.substring(0, 1000)}${shippingBody.length > 1000 ? '...' : ''}`;
-              if (storeInfo.shippingPolicy.url) {
-                promptBase += ` Shipping Policy URL: ${storeInfo.shippingPolicy.url}`;
-              }
-            }
-            if (storeInfo.description) {
-              promptBase += ` Store Description: ${storeInfo.description.substring(0, 300)}`;
-            }
-          }
+          promptBase += `. Answer their question using ONLY the store context provided below.`;
         } else {
           if (!originalMessage) {
             promptBase += ` who wants to buy a product or is ready to purchase`;
@@ -1224,13 +1202,10 @@ ${intent === "price_request" && productPrice ? `The exact price is ${productPric
 ${intent === "price_request" && !productPrice ? `You don't have the exact price, but you MUST acknowledge their price question. Tell them they can see the price when they click the checkout link.` : ""}
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
-${intent === "store_question" ? `The customer asked a general question about the store (policies, shipping, returns, sales, etc.). Answer their question using ONLY the exact store information provided above. CRITICAL: 
-- Extract email addresses, contact information, and URLs directly from the policy content - do NOT make up or invent any contact information
-- If the policy mentions an email address, use that EXACT email - do NOT create a generic one like "support@store.com"
-- If the policy provides a URL, use that EXACT URL - do NOT create fake URLs like "https://is.gd/storeinfo"
-- If the information is not in the provided store information, say "I don't have that specific information, but you can check our policy page" or similar
-- NEVER guess or assume contact information` : ""}
-${intent === "store_question" && storeInfo ? `Store Information Available: ${JSON.stringify(storeInfo, null, 2)}` : ""}
+${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers, URLs, and contact details from the context. If the answer is not in the context, say so. Never invent, shorten, or make up URLs (no is.gd, bit.ly, or placeholders).` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `Answer using ONLY the product context below. If they ask about a variant we don't have (e.g. "does it come in black?" and we don't have black), say so clearly and offer the product or checkout link for what we do have. Use only the product page or checkout URLs provided.` : ""}
+${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
+${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
 Requirements:
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
@@ -1241,20 +1216,12 @@ ${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge the
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl && checkoutUrl ? `- Then, if they're ready to buy, you can optionally mention the checkout link (${checkoutUrl}) at the end` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
-${intent === "store_question" ? `- Answer their question directly using ONLY the exact store information provided above
-- Extract email addresses, contact info, and URLs directly from the policy content - do NOT invent or make up any information
-- If an email address is mentioned in the policy, use that EXACT email address
-- If a URL is provided in the policy, use that EXACT URL
-- If information is missing, say "I don't have that information" rather than making something up
-- NEVER create generic placeholders like "support@store.com" or fake URLs` : ""}
-${intent === "store_question" && storeInfo?.refundPolicy?.url ? `- If mentioning the return policy, you can include the policy URL: ${storeInfo.refundPolicy.url}` : ""}
-${intent === "store_question" && storeInfo?.privacyPolicy?.url ? `- If mentioning the privacy policy, you can include the policy URL: ${storeInfo.privacyPolicy.url}` : ""}
-${intent === "store_question" && storeInfo?.termsOfService?.url ? `- If mentioning the terms of service, you can include the policy URL: ${storeInfo.termsOfService.url}` : ""}
-${intent === "store_question" && storeInfo?.shippingPolicy?.url ? `- If mentioning shipping, you can include the shipping policy URL: ${storeInfo.shippingPolicy.url}` : ""}
+${intent === "store_question" ? `- Answer from the store context only. Use only URLs, numbers, and contact info that appear in the store context. If something is not there, say so. No invented or shortened URLs.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the product or checkout link for available options.` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
-- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the full URL directly. ${intent === "store_question" ? `IMPORTANT: Only include URLs if they are provided in the store information above - do NOT make up or invent URLs like "https://is.gd/storeinfo". If no URL is provided, just use the email address or contact information from the policy.` : `URLs will be automatically shortened for cleaner appearance.`} Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.
+- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the full URL directly. ${intent === "store_question" ? `Only use URLs from the store context above.` : `URLs will be automatically shortened for cleaner appearance.`} Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? "- Structure: Acknowledge question → Direct to product page link for details/variants → Optionally mention checkout link at the end if ready to buy" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- CRITICAL: Don't make up details you don't know - just acknowledge their question and direct them to the link for full details. If you don't know the answer, say so." : ""}
@@ -1290,7 +1257,7 @@ Write the response:`;
         if (response?.choices?.[0]?.message?.content) {
           message = response.choices[0].message.content.trim();
           if (intent === "store_question") {
-            message = sanitizeStoreQuestionReply(message);
+            message = sanitizeStoreQuestionReply(message, storeContextForReply?.allowedUrls);
           }
         }
       }
