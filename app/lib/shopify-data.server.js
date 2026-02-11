@@ -42,14 +42,14 @@ export async function getShopifyStoreInfo(shopDomain) {
     }
     
     const session = await loadShopSession(shopDomain);
-    
+
     if (!session || !session.accessToken) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return null;
     }
     
     // Create GraphQL client using the session
-    const admin = new shopify.clients.Graphql({ session });
+    const admin = new shopify.api.clients.Graphql({ session });
     
     // Fetch shop information, policies, and product count
     const response = await admin.graphql(`
@@ -219,7 +219,7 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
       return null;
     }
 
-    const admin = new shopify.clients.Graphql({ session });
+    const admin = new shopify.api.clients.Graphql({ session });
     const response = await admin.graphql(
       `
       query getProductContext($productId: ID!) {
