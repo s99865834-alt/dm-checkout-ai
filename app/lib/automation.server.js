@@ -21,6 +21,25 @@ function generateLinkId() {
   return randomUUID();
 }
 
+function getShopDomainHost(shop) {
+  const rawDomain = shop?.shopify_domain;
+  if (!rawDomain) return null;
+  try {
+    const url = rawDomain.includes("://")
+      ? new URL(rawDomain)
+      : new URL(`https://${rawDomain}`);
+    return url.hostname;
+  } catch (error) {
+    console.warn(`[automation] Invalid shopify_domain: ${rawDomain}`);
+    return null;
+  }
+}
+
+function getShopHomepageUrl(shop) {
+  const host = getShopDomainHost(shop);
+  return host ? `https://${host}` : null;
+}
+
 /**
  * Shorten a URL using a free URL shortener service
  * @param {string} longUrl - The URL to shorten
@@ -65,7 +84,8 @@ async function shortenUrl(longUrl) {
  * @returns {Promise<string>} - Product detail page URL (shortened if shorten=true)
  */
 export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, shorten = true) {
-  if (!shop || !shop.shopify_domain) {
+  const shopHost = getShopDomainHost(shop);
+  if (!shopHost) {
     throw new Error("Shop domain is required");
   }
 
@@ -85,10 +105,10 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
   // Build PDP URL - prefer handle if available, otherwise use numeric ID
   let pdpUrl;
   if (productHandle) {
-    pdpUrl = `https://${shop.shopify_domain}/products/${productHandle}`;
+    pdpUrl = `https://${shopHost}/products/${productHandle}`;
   } else {
     // Fallback to numeric ID (may not work for all stores, but better than nothing)
-    pdpUrl = `https://${shop.shopify_domain}/products/${productNumericId}`;
+    pdpUrl = `https://${shopHost}/products/${productNumericId}`;
   }
 
   // Add variant parameter if provided
@@ -122,7 +142,8 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
  * @returns {Promise<{url: string, linkId: string}>} - Checkout URL and link ID
  */
 export async function buildCheckoutLink(shop, productId, variantId = null, qty = 1, shorten = true) {
-  if (!shop || !shop.shopify_domain) {
+  const shopHost = getShopDomainHost(shop);
+  if (!shopHost) {
     throw new Error("Shop domain is required");
   }
 
@@ -211,10 +232,10 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   let checkoutUrl;
   if (variantNumericId) {
     // Use variant-specific cart permalink
-    checkoutUrl = `https://${shop.shopify_domain}/cart/${variantNumericId}:${qty}`;
+    checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
   } else {
     // Use product cart URL (will use default variant)
-    checkoutUrl = `https://${shop.shopify_domain}/cart/add?id=${productNumericId}&quantity=${qty}`;
+    checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
   }
 
   // Add UTM parameters and link_id
@@ -729,7 +750,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     const productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
 
     if (!productMapping) {
-      const homepageUrl = shop?.shopify_domain ? `https://${shop.shopify_domain}` : null;
+      const homepageUrl = getShopHomepageUrl(shop);
       if (!homepageUrl) {
         console.log(`[automation] No product mapping found for media ${mediaId} and no shop domain`);
         return { sent: false, reason: "No product mapping found and no shop domain" };
