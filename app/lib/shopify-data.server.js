@@ -6,6 +6,29 @@
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 
+async function loadShopSession(shopDomain) {
+  if (!shopDomain) return null;
+
+  // Preferred: app-session format used by this codebase
+  const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
+  let session = await sessionStorage.loadSession(sessionId);
+  if (session?.accessToken) return session;
+
+  // Fallback: offline session if available
+  const offlineId = `offline_${shopDomain}`;
+  session = await sessionStorage.loadSession(offlineId);
+  if (session?.accessToken) return session;
+
+  // Fallback: any session for shop
+  if (typeof sessionStorage.findSessionsByShop === "function") {
+    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
+    const candidate = sessions?.find((s) => s?.accessToken) || sessions?.[0];
+    if (candidate?.accessToken) return candidate;
+  }
+
+  return null;
+}
+
 /**
  * Get Shopify store information including policies using shop domain
  * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
@@ -18,10 +41,7 @@ export async function getShopifyStoreInfo(shopDomain) {
       return null;
     }
     
-    // Get session from storage using shop domain
-    // Session ID format: {shop}_{apiKey}
-    const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
-    const session = await sessionStorage.loadSession(sessionId);
+    const session = await loadShopSession(shopDomain);
     
     if (!session || !session.accessToken) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
@@ -38,6 +58,10 @@ export async function getShopifyStoreInfo(shopDomain) {
           name
           email
           description
+          primaryDomain {
+            url
+            host
+          }
           refundPolicy {
             title
             body
@@ -59,18 +83,37 @@ export async function getShopifyStoreInfo(shopDomain) {
             url
           }
         }
+        pages(first: 10) {
+          nodes {
+            title
+            handle
+            onlineStoreUrl
+          }
+        }
+        products(first: 5, sortKey: BEST_SELLING) {
+          nodes {
+            title
+            handle
+            onlineStoreUrl
+          }
+        }
       }
     `);
 
     const shopData = response?.data?.shop;
+    const pages = response?.data?.pages?.nodes || [];
+    const products = response?.data?.products?.nodes || [];
     return {
       name: shopData?.name || null,
       email: shopData?.email || null,
       description: shopData?.description || null,
+      primaryDomain: shopData?.primaryDomain || null,
       refundPolicy: shopData?.refundPolicy || null,
       privacyPolicy: shopData?.privacyPolicy || null,
       termsOfService: shopData?.termsOfService || null,
       shippingPolicy: shopData?.shippingPolicy || null,
+      pages,
+      products,
     };
   } catch (error) {
     console.error("[shopify-data] Error fetching store info:", error);
@@ -91,8 +134,7 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
       return { productName: null, productPrice: null };
     }
 
-    const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
-    const session = await sessionStorage.loadSession(sessionId);
+    const session = await loadShopSession(shopDomain);
     if (!session || !session.accessToken) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return { productName: null, productPrice: null };
