@@ -7,7 +7,7 @@ const MAX_ATTEMPTS = 3;
 
 const rateBuckets = new Map();
 
-function canSendForShop(shopId) {
+export function canSendForShop(shopId) {
   const now = Date.now();
   const bucket = rateBuckets.get(shopId) || [];
   const recent = bucket.filter((ts) => now - ts < WINDOW_MS);
@@ -20,7 +20,7 @@ function canSendForShop(shopId) {
   return true;
 }
 
-async function sendDmNow(shopId, igUserId, text) {
+export async function sendDmNow(shopId, igUserId, text) {
   const metaAuth = await getMetaAuthWithRefresh(shopId);
   if (!metaAuth || !metaAuth.ig_business_id) {
     throw new Error("Instagram not connected for this shop");
