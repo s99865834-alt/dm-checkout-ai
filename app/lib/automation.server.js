@@ -11,6 +11,7 @@ import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo } from "./shopify-data.server";
 import { sendInstagramPrivateReply, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
+import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 
@@ -269,6 +270,16 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
 export async function sendDmReply(shopId, igUserId, text) {
   if (!shopId || !igUserId || !text) {
     throw new Error("shopId, igUserId, and text are required");
+  }
+
+  if (canSendForShop(shopId)) {
+    try {
+      await sendDmNow(shopId, igUserId, text);
+      return { sent: true };
+    } catch (error) {
+      console.error("[automation] Error sending DM immediately, queueing:", error);
+      // Fall through to queue
+    }
   }
 
   const { error } = await supabase.from("outbound_dm_queue").insert({
