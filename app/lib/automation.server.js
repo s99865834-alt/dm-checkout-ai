@@ -862,6 +862,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       productPrice = info.productPrice;
       if (rawProductContext) {
         productContextForReply = buildProductContextForAI(rawProductContext);
+        const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
+        console.log(
+          `[automation] Product context attached for comment reply: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0} preview=${(productContextForReply?.text ?? "").substring(0, 120).replace(/\n/g, " ")}...`
+        );
+      } else if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
+        productContextForReply = {
+          text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
+        };
       }
     }
     // Pass the intent, links, original message, and product context so the AI can answer accurately
@@ -1206,7 +1214,7 @@ ${intent === "price_request" && !productPrice ? `You don't have the exact price,
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
 ${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers, URLs, and contact details from the context. If the answer is not in the context, say so. Never invent, shorten, or make up URLs (no is.gd, bit.ly, or placeholders).` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `Answer using ONLY the product context below. If they ask about a variant we don't have (e.g. "does it come in black?" or "different sizes?" and we don't have that), say NO clearly and offer the product or checkout link for what we do have. You MUST use only the exact product page and checkout URLs provided in this prompt - copy them exactly into your reply. Do not use any other or shortened URL.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `CRITICAL: Answer using ONLY the product context below. If the product context says "only one variant" or "does NOT come in different sizes or colors", you MUST answer NO to the customer (e.g. "No, it only comes in one option" or "We don't have other colors"). If they ask about a variant we don't have, say NO clearly and include the product page and checkout URLs from this prompt - copy those exact URLs into your reply.` : ""}
 ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
@@ -1265,14 +1273,20 @@ Write the response:`;
           }
           if ((intent === "product_question" || intent === "variant_inquiry") && (productPageUrl || checkoutUrl)) {
             const allowedProductUrls = [productPageUrl, checkoutUrl].filter(Boolean);
-            const allowedSet = new Set(allowedProductUrls);
             const urlRegex = /https?:\/\/[^\s)]+/g;
-            message = message.replace(urlRegex, (url) => (allowedSet.has(url) ? url : ""));
+            message = message.replace(urlRegex, (matched) => {
+              const normalized = matched.replace(/[.,;:!?)\]\s]+$/g, "").trim();
+              const allowed = allowedProductUrls.find((a) => normalized === a || normalized.startsWith(a + "/") || normalized.startsWith(a + "?"));
+              return allowed != null ? allowed : "";
+            });
             message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
           }
           if (safeChannelContext?.isHomepageFallback && checkoutUrl) {
             const urlRegex = /https?:\/\/[^\s)]+/g;
-            message = message.replace(urlRegex, (url) => (url === checkoutUrl ? url : ""));
+            message = message.replace(urlRegex, (matched) => {
+              const normalized = matched.replace(/[.,;:!?)\]\s]+$/g, "").trim();
+              return normalized === checkoutUrl || normalized.startsWith(checkoutUrl + "/") || normalized.startsWith(checkoutUrl + "?") ? checkoutUrl : "";
+            });
             message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
           }
         }

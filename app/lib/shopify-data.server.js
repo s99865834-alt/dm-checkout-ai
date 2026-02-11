@@ -281,6 +281,13 @@ export function buildProductContextForAI(productContext) {
   const variants = productContext.variants?.nodes ?? [];
   const variantCount = variants.length;
 
+  // Single-variant first so the AI always sees it and must say no to size/color questions
+  if (variantCount <= 1) {
+    parts.push(
+      "CRITICAL: This product has only one variant. It does NOT come in different sizes or colors. If the customer asks about sizes, colors, or other options, you MUST answer no."
+    );
+  }
+
   parts.push(`Product: ${productContext.title || "Unknown"}`);
 
   if (productContext.description) {
@@ -300,12 +307,7 @@ export function buildProductContextForAI(productContext) {
     }
   }
 
-  // Explicit single-variant statement so the AI never says "yes, different sizes" when there's only one
-  if (variantCount === 1) {
-    parts.push(
-      "This product has only one variant. It does NOT come in different sizes or colors. If the customer asks about sizes, colors, or other options, the answer is no."
-    );
-  } else {
+  if (variantCount > 1) {
     const options = productContext.options;
     if (Array.isArray(options) && options.length > 0) {
       // Exclude "Title" / "Default Title" so we don't imply real choices
