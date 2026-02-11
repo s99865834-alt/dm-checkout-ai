@@ -1,14 +1,48 @@
 /**
  * Product context preview – proves what context the AI gets for comment replies.
  * Pick a mapped product and see the exact text sent to the model.
+ * Uses the current request's admin session so it works when opened in the app.
  */
 import { useLoaderData, useSearchParams } from "react-router";
+import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getProductMappings } from "../lib/db.server";
-import {
-  getShopifyProductContextForReply,
-  buildProductContextForAI,
-} from "../lib/shopify-data.server";
+import { buildProductContextForAI } from "../lib/shopify-data.server";
+
+const PRODUCT_CONTEXT_QUERY = `
+  query getProductContext($productId: ID!) {
+    product(id: $productId) {
+      title
+      handle
+      description
+      priceRangeV2 {
+        minVariantPrice {
+          amount
+          currencyCode
+        }
+        maxVariantPrice {
+          amount
+          currencyCode
+        }
+      }
+      options {
+        name
+        values
+      }
+      variants(first: 100) {
+        nodes {
+          id
+          title
+          price
+          selectedOptions {
+            name
+            value
+          }
+        }
+      }
+    }
+  }
+`;
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
@@ -26,24 +60,24 @@ export const loader = async ({ request }) => {
     if (!selectedProductId && productMappings.length > 0) {
       selectedProductId = productMappings[0].product_id;
     }
-    if (shop.shopify_domain && selectedProductId) {
+    if (selectedProductId) {
       try {
-        const raw = await getShopifyProductContextForReply(
-          shop.shopify_domain,
-          selectedProductId
-        );
+        const { admin } = await authenticate.admin(request);
+        const response = await admin.graphql(PRODUCT_CONTEXT_QUERY, {
+          variables: { productId: selectedProductId },
+        });
+        const json = await response.json();
+        const raw = json?.data?.product ?? null;
         if (raw) {
           variantCount = raw.variants?.nodes?.length ?? 0;
           const built = buildProductContextForAI(raw);
           productContextText = built.text;
         } else {
-          error = "Could not load product context (session or API issue).";
+          error = json?.errors?.[0]?.message || "Could not load product (invalid ID or no access).";
         }
       } catch (e) {
         error = e.message || "Failed to fetch product context.";
       }
-    } else if (selectedProductId && !shop.shopify_domain) {
-      error = "Shop domain not set.";
     }
   }
 
