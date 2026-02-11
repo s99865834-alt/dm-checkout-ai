@@ -782,6 +782,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
           originChannel: "comment",
           inboundChannel: "comment",
           triggerChannel: "comment",
+          isHomepageFallback: true,
           lastProductLink: {
             url: homepageUrl,
             product_id: null,
@@ -811,16 +812,22 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     let productPageUrl = null;
     let checkoutUrl = null;
     let linkId = null;
-    
+
+    // For product/variant questions: fetch product context first (so we have handle + variant info), then build full PDP URL (no shortening)
+    let rawProductContext = null;
+    if (shop.shopify_domain && productMapping.product_id && (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry")) {
+      rawProductContext = await getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id);
+    }
+
     if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-      // For product questions and variant inquiries, use PDP link first (they need to see product details/variants)
+      const productHandle = (rawProductContext?.handle || productMapping.product_handle || "").trim() || null;
       productPageUrl = await buildProductPageLink(
         shop,
         productMapping.product_id,
         productMapping.variant_id,
-        productMapping.product_handle || null // TODO: Store product handle in mapping
+        productHandle,
+        true
       );
-      // Also generate checkout link for after they see product details
       const checkoutLink = await buildCheckoutLink(
         shop,
         productMapping.product_id,
@@ -830,13 +837,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       checkoutUrl = checkoutLink.url;
       linkId = checkoutLink.linkId;
     } else {
-      // For purchase intent, price requests - use checkout link
       const checkoutLink = await buildCheckoutLink(
-      shop,
-      productMapping.product_id,
-      productMapping.variant_id,
-      1
-    );
+        shop,
+        productMapping.product_id,
+        productMapping.variant_id,
+        1
+      );
       checkoutUrl = checkoutLink.url;
       linkId = checkoutLink.linkId;
     }
@@ -854,12 +860,8 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       );
       productName = info.productName;
       productPrice = info.productPrice;
-      // Fetch full product context (options, variants) so AI can answer e.g. "does it come in black?"
-      if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-        const rawProductContext = await getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id);
-        if (rawProductContext) {
-          productContextForReply = buildProductContextForAI(rawProductContext);
-        }
+      if (rawProductContext) {
+        productContextForReply = buildProductContextForAI(rawProductContext);
       }
     }
     // Pass the intent, links, original message, and product context so the AI can answer accurately
@@ -1192,6 +1194,7 @@ IMPORTANT CONTEXT:
 ${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelContext.originChannel === "comment" ? "Instagram comment → DM (has product context from a post mapping)" : "Direct DM (may not have product context unless explicitly provided)"}` : ""}
 ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
+${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
@@ -1203,7 +1206,7 @@ ${intent === "price_request" && !productPrice ? `You don't have the exact price,
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
 ${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers, URLs, and contact details from the context. If the answer is not in the context, say so. Never invent, shorten, or make up URLs (no is.gd, bit.ly, or placeholders).` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `Answer using ONLY the product context below. If they ask about a variant we don't have (e.g. "does it come in black?" and we don't have black), say so clearly and offer the product or checkout link for what we do have. Use only the product page or checkout URLs provided.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `Answer using ONLY the product context below. If they ask about a variant we don't have (e.g. "does it come in black?" or "different sizes?" and we don't have that), say NO clearly and offer the product or checkout link for what we do have. You MUST use only the exact product page and checkout URLs provided in this prompt - copy them exactly into your reply. Do not use any other or shortened URL.` : ""}
 ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
@@ -1218,7 +1221,8 @@ ${(intent === "product_question" || intent === "variant_inquiry") && productPage
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
 ${intent === "store_question" ? `- Answer from the store context only. Use only URLs, numbers, and contact info that appear in the store context. If something is not there, say so. No invented or shortened URLs.` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the product or checkout link for available options.` : ""}
-${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl ? `- Include this checkout link: ${checkoutUrl}` : ""}
+${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl && !safeChannelContext?.isHomepageFallback ? `- Include this checkout link: ${checkoutUrl}` : ""}
+${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- Include the store homepage link so they can browse (use this URL exactly): ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
 - CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the full URL directly. ${intent === "store_question" ? `Only use URLs from the store context above.` : `URLs will be automatically shortened for cleaner appearance.`} Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.
@@ -1258,6 +1262,18 @@ Write the response:`;
           message = response.choices[0].message.content.trim();
           if (intent === "store_question") {
             message = sanitizeStoreQuestionReply(message, storeContextForReply?.allowedUrls);
+          }
+          if ((intent === "product_question" || intent === "variant_inquiry") && (productPageUrl || checkoutUrl)) {
+            const allowedProductUrls = [productPageUrl, checkoutUrl].filter(Boolean);
+            const allowedSet = new Set(allowedProductUrls);
+            const urlRegex = /https?:\/\/[^\s)]+/g;
+            message = message.replace(urlRegex, (url) => (allowedSet.has(url) ? url : ""));
+            message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+          }
+          if (safeChannelContext?.isHomepageFallback && checkoutUrl) {
+            const urlRegex = /https?:\/\/[^\s)]+/g;
+            message = message.replace(urlRegex, (url) => (url === checkoutUrl ? url : ""));
+            message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
           }
         }
       }
