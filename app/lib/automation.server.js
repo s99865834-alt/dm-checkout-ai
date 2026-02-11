@@ -76,11 +76,12 @@ async function shortenUrl(longUrl) {
 }
 
 /**
- * Build a Shopify product detail page (PDP) link
+ * Build a Shopify product detail page (PDP) link.
+ * Always uses product HANDLE in the path (/products/{handle}), never numeric ID.
  * @param {Object} shop - Shop object with shopify_domain
  * @param {string} productId - Shopify product ID (gid format)
  * @param {string|null} variantId - Shopify variant ID (gid format, optional)
- * @param {string|null} productHandle - Product handle (optional, preferred)
+ * @param {string|null} productHandle - Product handle (optional; fetched from API if missing)
  * @param {boolean} shorten - Whether to shorten the URL (default: true)
  * @returns {Promise<string>} - Product detail page URL (shortened if shorten=true)
  */
@@ -94,23 +95,19 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
     throw new Error("Product ID is required");
   }
 
-  // Extract numeric ID from GID format
-  const productIdMatch = productId.match(/\/(\d+)$/);
+  let handle = (productHandle || "").trim() || null;
+  if (!handle && shop.shopify_domain) {
+    const raw = await getShopifyProductContextForReply(shop.shopify_domain, productId);
+    handle = (raw?.handle || "").trim() || null;
+  }
+  if (!handle) {
+    throw new Error("Product handle is required for PDP URL; could not resolve from product ID. Ensure the product exists and the app has read_products scope.");
+  }
+
   const variantIdMatch = variantId ? variantId.match(/\/(\d+)$/) : null;
-  const productNumericId = productIdMatch ? productIdMatch[1] : null;
 
-  if (!productNumericId) {
-    throw new Error("Invalid product ID format");
-  }
-
-  // Build PDP URL - prefer handle if available, otherwise use numeric ID
-  let pdpUrl;
-  if (productHandle) {
-    pdpUrl = `https://${shopHost}/products/${productHandle}`;
-  } else {
-    // Fallback to numeric ID (may not work for all stores, but better than nothing)
-    pdpUrl = `https://${shopHost}/products/${productNumericId}`;
-  }
+  // Always use handle in path (Shopify storefront expects /products/{handle})
+  const pdpUrl = `https://${shopHost}/products/${handle}`;
 
   // Add variant parameter if provided
   const params = new URLSearchParams();
