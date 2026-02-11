@@ -225,6 +225,7 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
       query getProductContext($productId: ID!) {
         product(id: $productId) {
           title
+          handle
           description
           priceRangeV2 {
             minVariantPrice {
@@ -277,6 +278,8 @@ export function buildProductContextForAI(productContext) {
   if (!productContext) return { text: "" };
 
   const parts = [];
+  const variants = productContext.variants?.nodes ?? [];
+  const variantCount = variants.length;
 
   parts.push(`Product: ${productContext.title || "Unknown"}`);
 
@@ -297,27 +300,38 @@ export function buildProductContextForAI(productContext) {
     }
   }
 
-  const options = productContext.options;
-  if (Array.isArray(options) && options.length > 0) {
-    const optionLines = options
-      .filter((o) => o?.name && Array.isArray(o.values))
-      .map((o) => `${o.name}: ${o.values.join(", ")}`);
-    if (optionLines.length) {
-      parts.push(`Available options: ${optionLines.join(" | ")}`);
+  // Explicit single-variant statement so the AI never says "yes, different sizes" when there's only one
+  if (variantCount === 1) {
+    parts.push(
+      "This product has only one variant. It does NOT come in different sizes or colors. If the customer asks about sizes, colors, or other options, the answer is no."
+    );
+  } else {
+    const options = productContext.options;
+    if (Array.isArray(options) && options.length > 0) {
+      // Exclude "Title" / "Default Title" so we don't imply real choices
+      const optionLines = options
+        .filter(
+          (o) =>
+            o?.name &&
+            Array.isArray(o.values) &&
+            !(o.name === "Title" && o.values.length === 1 && (o.values[0] === "Default Title" || o.values[0] === "Default"))
+        )
+        .map((o) => `${o.name}: ${o.values.join(", ")}`);
+      if (optionLines.length) {
+        parts.push(`Available options: ${optionLines.join(" | ")}`);
+      }
     }
-  }
-
-  const variants = productContext.variants?.nodes;
-  if (Array.isArray(variants) && variants.length > 0) {
-    const variantSummaries = variants.slice(0, 30).map((v) => {
-      const opts = (v.selectedOptions || [])
-        .filter((o) => o?.name)
-        .map((o) => `${o.name}=${o.value}`)
-        .join(", ");
-      return opts ? `${opts} (${v.price})` : v.price;
-    });
-    if (variantSummaries.length) {
-      parts.push(`Variants (sample): ${variantSummaries.join("; ")}`);
+    if (variantCount > 0) {
+      const variantSummaries = variants.slice(0, 30).map((v) => {
+        const opts = (v.selectedOptions || [])
+          .filter((o) => o?.name && o?.value && !(o.name === "Title" && (o.value === "Default Title" || o.value === "Default")))
+          .map((o) => `${o.name}=${o.value}`)
+          .join(", ");
+        return opts ? `${opts} (${v.price})` : v.price;
+      });
+      if (variantSummaries.length) {
+        parts.push(`Variants (sample): ${variantSummaries.join("; ")}`);
+      }
     }
   }
 
