@@ -179,15 +179,17 @@ export const action = async ({ request }) => {
     try {
       const { admin } = await authenticate.admin(request);
       
-      // Always fetch the first variant from Shopify (even if one was selected)
-      // This ensures we always have a variant_id stored
+      // Always fetch the first variant and handle from Shopify (even if one was selected)
+      // This ensures we always have variant_id and product_handle stored for PDP URLs
       let finalVariantId = variantId;
-      
+      let productHandle = null;
+
       try {
         const response = await admin.graphql(`
           query getProduct($id: ID!) {
             product(id: $id) {
               id
+              handle
               variants(first: 1) {
                 nodes {
                   id
@@ -200,12 +202,14 @@ export const action = async ({ request }) => {
         });
 
         const json = await response.json();
-        const variants = json.data?.product?.variants?.nodes || [];
-        
+        const product = json.data?.product;
+        const variants = product?.variants?.nodes || [];
+        productHandle = product?.handle?.trim() || null;
+
         if (variants.length > 0) {
           // Use the selected variant if provided, otherwise use the first variant
           finalVariantId = variantId || variants[0].id;
-          console.log(`[instagram-feed] Saving mapping with variant: ${finalVariantId} (selected: ${variantId || 'auto'})`);
+          console.log(`[instagram-feed] Saving mapping with variant: ${finalVariantId} (selected: ${variantId || 'auto'}), handle: ${productHandle || '(none)'}`);
         } else {
           console.warn(`[instagram-feed] Product ${productId} has no variants - this should not happen in Shopify`);
           // Don't save if there are no variants - this is an error condition
@@ -221,7 +225,7 @@ export const action = async ({ request }) => {
         return { error: "Could not determine variant ID for product" };
       }
 
-      await saveProductMapping(shop.id, igMediaId, productId, finalVariantId);
+      await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
       return { success: true, message: "Product mapping saved successfully" };
     } catch (error) {
       console.error("[instagram-feed] Error saving mapping:", error);

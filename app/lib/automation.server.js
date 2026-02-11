@@ -817,7 +817,8 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     }
 
     if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-      const productHandle = (rawProductContext?.handle || productMapping.product_handle || "").trim() || null;
+      // Prefer stored product_handle so PDP URL works in webhooks without calling Shopify Admin API
+      const productHandle = (productMapping.product_handle || rawProductContext?.handle || "").trim() || null;
       productPageUrl = await buildProductPageLink(
         shop,
         productMapping.product_id,
