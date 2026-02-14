@@ -77,22 +77,8 @@ export async function getShopifyStoreInfo(shopDomain) {
             url
             host
           }
-          refundPolicy {
-            title
-            body
-            url
-          }
-          privacyPolicy {
-            title
-            body
-            url
-          }
-          termsOfService {
-            title
-            body
-            url
-          }
-          shippingPolicy {
+          shopPolicies {
+            type
             title
             body
             url
@@ -105,10 +91,9 @@ export async function getShopifyStoreInfo(shopDomain) {
           nodes {
             title
             handle
-            onlineStoreUrl
           }
         }
-        products(first: 5, sortKey: BEST_SELLING) {
+        products(first: 5, sortKey: ID) {
           nodes {
             title
             handle
@@ -121,21 +106,34 @@ export async function getShopifyStoreInfo(shopDomain) {
 
     const shopData = response?.data?.shop;
     const productsCount = response?.data?.productsCount?.count ?? null;
-    const pages = response?.data?.pages?.nodes || [];
+    const rawPages = response?.data?.pages?.nodes || [];
     const products = response?.data?.products?.nodes || [];
     const primaryDomain = shopData?.primaryDomain || null;
     const baseStoreUrl = primaryDomain?.url ? primaryDomain.url.replace(/\/$/, "") : null;
     const storefrontAllProductsUrl = baseStoreUrl ? `${baseStoreUrl}/collections/all` : null;
+
+    // Map shopPolicies array to named policies (Admin API 2024+ uses shopPolicies instead of refundPolicy etc.)
+    const policies = shopData?.shopPolicies || [];
+    const policyByType = (type) => policies.find((p) => p?.type === type) || null;
+    const refundPolicy = policyByType("REFUND_POLICY");
+    const privacyPolicy = policyByType("PRIVACY_POLICY");
+    const termsOfService = policyByType("TERMS_OF_SERVICE");
+    const shippingPolicy = policyByType("SHIPPING_POLICY");
+
+    // Build page URLs from base (Page no longer has onlineStoreUrl in Admin API)
+    const pages = baseStoreUrl
+      ? rawPages.map((p) => (p ? { ...p, onlineStoreUrl: `${baseStoreUrl}/pages/${p.handle}` } : p))
+      : rawPages;
 
     return {
       name: shopData?.name || null,
       email: shopData?.email || null,
       description: shopData?.description || null,
       primaryDomain,
-      refundPolicy: shopData?.refundPolicy || null,
-      privacyPolicy: shopData?.privacyPolicy || null,
-      termsOfService: shopData?.termsOfService || null,
-      shippingPolicy: shopData?.shippingPolicy || null,
+      refundPolicy: refundPolicy || null,
+      privacyPolicy: privacyPolicy || null,
+      termsOfService: termsOfService || null,
+      shippingPolicy: shippingPolicy || null,
       productsCount,
       storefrontAllProductsUrl,
       pages,

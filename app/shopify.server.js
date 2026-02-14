@@ -8,10 +8,12 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { createOrUpdateShop } from "./lib/db.server";
 
-// Build scopes: ensure read_products is included when using product features (product context, preview)
+// Build scopes: ensure read_products and read_legal_policies for product/store context
 const scopesFromEnv = process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
 const hasReadProducts = scopesFromEnv.some((s) => s === "read_products");
-const scopes = hasReadProducts ? scopesFromEnv : [...scopesFromEnv, "read_products"];
+const hasReadLegalPolicies = scopesFromEnv.some((s) => s === "read_legal_policies");
+let scopes = hasReadProducts ? scopesFromEnv : [...scopesFromEnv, "read_products"];
+if (!hasReadLegalPolicies) scopes = [...scopes, "read_legal_policies"];
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
