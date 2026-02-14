@@ -32,6 +32,16 @@ function getClickTrackingUrl(linkId) {
   return `${base}/c/${linkId}`;
 }
 
+/**
+ * Tracking URL to show in messages: shortened so users see a short link (e.g. is.gd/xxx) instead of the app URL.
+ * If shortening fails, returns the raw tracking URL. If no app base URL, returns null.
+ */
+async function getClickTrackingUrlForMessage(linkId) {
+  const trackingUrl = getClickTrackingUrl(linkId);
+  if (!trackingUrl) return null;
+  return await shortenUrl(trackingUrl);
+}
+
 function getShopDomainHost(shop) {
   const rawDomain = shop?.shopify_domain;
   if (!rawDomain) return null;
@@ -549,7 +559,7 @@ export async function handleIncomingDm(message, shop, plan) {
           productPrice = info.productPrice;
         }
 
-        const checkoutUrlForMessage = getClickTrackingUrl(linkId) || checkoutUrl;
+        const checkoutUrlForMessage = (await getClickTrackingUrlForMessage(linkId)) || checkoutUrl;
         const replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
@@ -881,7 +891,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
         };
       }
     }
-    const checkoutUrlForMessage = getClickTrackingUrl(linkId) || checkoutUrl;
+    const checkoutUrlForMessage = (await getClickTrackingUrlForMessage(linkId)) || checkoutUrl;
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
