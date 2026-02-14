@@ -1,31 +1,23 @@
 /**
  * Click tracking redirect: /c/:linkId
- * Looks up the link in links_sent, logs the click (unless from a preview bot), then redirects to the stored URL.
- * Links sent in comment/DM replies use this URL so analytics can count clicks.
+ * Looks up the link in links_sent, logs the click (only for browser-like requests), then redirects to the stored URL.
+ * We only count requests that look like real browsers (User-Agent allowlist); crawlers/preview bots never send browser UAs.
  */
 import { redirect } from "react-router";
 import supabase from "../lib/supabase.server";
 import { logClick } from "../lib/db.server";
 
-/** User-Agent substrings for link-preview/crawler bots; we still redirect but don't count as a click. */
-const PREVIEW_BOT_UA_PATTERNS = [
-  "facebookexternalhit",
-  "facebot",
-  "facebookbot",
-  "facebookcatalog",
-  "whatsapp",
-  "telegrambot",
-  "twitterbot",
-  "linkedinbot",
-  "slurp",
-  "discordbot",
-  "embed",
-  "preview",
+/** User-Agent must contain one of these to be counted as a real click (browsers and in-app browsers send these). */
+const BROWSER_UA_PATTERNS = [
+  "mozilla/",      // All major browsers (Chrome, Safari, Firefox, Edge, Instagram in-app, etc.)
+  "opera",
+  "opr/",
 ];
 
-function isPreviewBot(request) {
+function looksLikeBrowser(request) {
   const ua = (request.headers.get("user-agent") || "").toLowerCase();
-  return PREVIEW_BOT_UA_PATTERNS.some((p) => ua.includes(p));
+  if (!ua.trim()) return false;
+  return BROWSER_UA_PATTERNS.some((p) => ua.includes(p));
 }
 
 export async function loader({ params, request }) {
@@ -44,7 +36,7 @@ export async function loader({ params, request }) {
     return new Response("Not Found", { status: 404 });
   }
 
-  const shouldLogClick = !isPreviewBot(request);
+  const shouldLogClick = looksLikeBrowser(request);
   if (shouldLogClick) {
     const userAgent = request.headers.get("user-agent") || null;
     const forwarded = request.headers.get("x-forwarded-for");
