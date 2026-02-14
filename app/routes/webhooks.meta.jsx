@@ -95,7 +95,10 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
     
     if (error || !data) {
       console.log(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
-      // Fallback: if one Instagram-connected shop exists, use it (webhook entry.id can differ from stored id for same account)
+      // Fallback: if one Instagram-connected shop exists, attribute this event to that shop.
+      // Do NOT overwrite ig_business_id with the webhook's entry.id: our token is for the stored
+      // account. Overwriting caused Code 100 (object does not exist) because we then called the
+      // API with an ID we don't have a token for. Token refresh (Code 190) is handled elsewhere.
       if (igBusinessId) {
         const { data: fallbackRows } = await supabase
           .from("meta_auth")
@@ -105,17 +108,7 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
           const shopId = fallbackRows[0].shop_id;
           const { data: shop } = await supabase.from("shops").select("id, active").eq("id", shopId).single();
           if (shop?.active) {
-            console.log(`[webhook] Using single Instagram shop fallback: shop_id=${shopId}`);
-            // Self-correct stored ig_business_id so sendDmReply uses the webhook's ID (required for API)
-            const { error: updateErr } = await supabase
-              .from("meta_auth")
-              .update({ ig_business_id: igBusinessId })
-              .eq("shop_id", shopId);
-            if (updateErr) {
-              console.error(`[webhook] Failed to update meta_auth.ig_business_id for shop ${shopId}:`, updateErr);
-            } else {
-              console.log(`[webhook] Updated meta_auth.ig_business_id to ${igBusinessId} for shop ${shopId}`);
-            }
+            console.log(`[webhook] Using single Instagram shop fallback: shop_id=${shopId} (keeping stored ig_business_id for API calls)`);
             return shopId;
           }
         }
