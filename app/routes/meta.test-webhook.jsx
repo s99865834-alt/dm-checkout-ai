@@ -18,10 +18,15 @@ export const action = async ({ request }) => {
   if (secret) {
     const provided = request.headers.get("x-test-webhook-secret");
     if (provided !== secret) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 403, headers: { "Content-Type": "application/json" } }
-      );
+      try {
+        const { authenticate } = await import("../shopify.server");
+        await authenticate.admin(request);
+      } catch {
+        return new Response(
+          JSON.stringify({ success: false, error: "Unauthorized" }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
     }
   } else if (process.env.NODE_ENV === "production") {
     return new Response(

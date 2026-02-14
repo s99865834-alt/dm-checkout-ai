@@ -3,8 +3,25 @@
  * Fetches store information, policies, products, etc. for AI responses
  */
 
+import { shopifyApi, ApiVersion } from "@shopify/shopify-api";
 import { sessionStorage } from "../shopify.server";
-import shopify from "../shopify.server";
+
+// Lazy-initialized Admin API instance (same config as app, used when we have a session but no request)
+let _shopifyApiInstance = null;
+function getShopifyApi() {
+  if (!_shopifyApiInstance) {
+    const appUrl = process.env.SHOPIFY_APP_URL || "https://example.com";
+    const hostName = new URL(appUrl).host;
+    _shopifyApiInstance = shopifyApi({
+      apiKey: process.env.SHOPIFY_API_KEY || "",
+      apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
+      hostName,
+      apiVersion: ApiVersion.October25,
+      isEmbeddedApp: true,
+    });
+  }
+  return _shopifyApiInstance;
+}
 
 async function loadShopSession(shopDomain) {
   if (!shopDomain) return null;
@@ -47,12 +64,10 @@ export async function getShopifyStoreInfo(shopDomain) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return null;
     }
-    
-    // Create GraphQL client using the session
-    const admin = new shopify.api.clients.Graphql({ session });
-    
-    // Fetch shop information, policies, and product count
-    const response = await admin.graphql(`
+
+    const api = getShopifyApi();
+    const client = new api.clients.Graphql({ session });
+    const query = `
       query getShopInfo {
         shop {
           name
@@ -101,7 +116,8 @@ export async function getShopifyStoreInfo(shopDomain) {
           }
         }
       }
-    `);
+    `;
+    const response = await client.request(query);
 
     const shopData = response?.data?.shop;
     const productsCount = response?.data?.productsCount?.count ?? null;
@@ -219,9 +235,9 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
       return null;
     }
 
-    const admin = new shopify.api.clients.Graphql({ session });
-    const response = await admin.graphql(
-      `
+    const api = getShopifyApi();
+    const client = new api.clients.Graphql({ session });
+    const query = `
       query getProductContext($productId: ID!) {
         product(id: $productId) {
           title
@@ -254,11 +270,10 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
           }
         }
       }
-    `,
-      { variables: { productId } }
-    );
+    `;
+    const response = await client.request(query, { variables: { productId } });
 
-    const data = response?.data ?? (typeof response?.json === "function" ? await response.json() : response)?.data;
+    const data = response?.data;
     const product = data?.product || null;
     return product;
   } catch (error) {
@@ -360,8 +375,9 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
       return { productName: null, productPrice: null };
     }
 
-    const admin = new shopify.clients.Graphql({ session });
-    const response = await admin.graphql(`
+    const api = getShopifyApi();
+    const client = new api.clients.Graphql({ session });
+    const query = `
       query getProductInfo($productId: ID!, $variantId: ID) {
         product(id: $productId) {
           title
@@ -376,13 +392,11 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
           price
         }
       }
-    `, {
-      variables: { productId, variantId },
-    });
+    `;
+    const response = await client.request(query, { variables: { productId, variantId } });
 
-    const json = await response.json();
-    const product = json?.data?.product || null;
-    const variant = json?.data?.productVariant || null;
+    const product = response?.data?.product || null;
+    const variant = response?.data?.productVariant || null;
 
     const productName = product?.title || null;
     let productPrice = null;
