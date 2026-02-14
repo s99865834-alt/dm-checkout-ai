@@ -322,6 +322,26 @@ export async function metaGraphAPIInstagram(endpoint, accessToken, options = {})
 }
 
 /**
+ * Resolve the Instagram account ID for the given token (Instagram Login).
+ * Calls GET /me on graph.instagram.com so we always use the ID that matches the token.
+ * Use this when sending DMs so we never use a stale/wrong stored ig_business_id (e.g. from webhook overwrite).
+ * @returns {Promise<string|null>} - The user/account id or null if /me fails
+ */
+export async function getInstagramUserIdFromToken(accessToken) {
+  if (!accessToken) return null;
+  try {
+    const data = await metaGraphAPIInstagram("/me", accessToken, {
+      params: { fields: "id" },
+    });
+    const id = data?.id ?? data?.user_id ?? null;
+    return id ? String(id) : null;
+  } catch (e) {
+    console.warn("[meta] getInstagramUserIdFromToken failed:", e?.message);
+    return null;
+  }
+}
+
+/**
  * Make authenticated request to Meta Graph API with automatic token refresh
  * Uses graph.facebook.com (Facebook Login) or graph.instagram.com (Instagram Login) based on auth_type.
  */

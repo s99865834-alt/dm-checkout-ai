@@ -1,5 +1,5 @@
 import supabase from "./supabase.server";
-import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
+import { getMetaAuthWithRefresh, getInstagramUserIdFromToken, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 
 const MAX_PER_MINUTE = 120;
 const WINDOW_MS = 60 * 1000;
@@ -22,7 +22,7 @@ export function canSendForShop(shopId) {
 
 export async function sendDmNow(shopId, igUserId, text) {
   const metaAuth = await getMetaAuthWithRefresh(shopId);
-  if (!metaAuth || !metaAuth.ig_business_id) {
+  if (!metaAuth) {
     throw new Error("Instagram not connected for this shop");
   }
 
@@ -31,7 +31,20 @@ export async function sendDmNow(shopId, igUserId, text) {
     throw new Error("No Instagram access token available");
   }
 
-  const endpoint = `/${metaAuth.ig_business_id}/messages`;
+  // For Instagram Login, resolve account ID from token (GET /me) so we never use a wrong stored id (Code 100)
+  let senderId = metaAuth.ig_business_id;
+  if (metaAuth.auth_type === "instagram") {
+    const idFromToken = await getInstagramUserIdFromToken(accessToken);
+    if (idFromToken) {
+      senderId = idFromToken;
+    } else if (!senderId) {
+      throw new Error("Instagram not connected for this shop");
+    }
+  } else if (!senderId) {
+    throw new Error("Instagram not connected for this shop");
+  }
+
+  const endpoint = `/${senderId}/messages`;
   const messageData = {
     recipient: { id: String(igUserId) },
     message: { text: text },
@@ -52,9 +65,14 @@ export async function sendDmNow(shopId, igUserId, text) {
       const freshAuth = await getMetaAuthWithRefresh(shopId);
       const freshToken = freshAuth.ig_access_token || freshAuth.page_access_token;
       if (!freshToken) throw new Error("No Instagram access token available after refresh");
+      let retryEndpoint = endpoint;
+      if (freshAuth.auth_type === "instagram") {
+        const idFromToken = await getInstagramUserIdFromToken(freshToken);
+        if (idFromToken) retryEndpoint = `/${idFromToken}/messages`;
+      }
       const retryCall = freshAuth.auth_type === "instagram"
-        ? () => metaGraphAPIInstagram(endpoint, freshToken, { method: "POST", body: messageData })
-        : () => metaGraphAPI(endpoint, freshToken, { method: "POST", body: messageData });
+        ? () => metaGraphAPIInstagram(retryEndpoint, freshToken, { method: "POST", body: messageData })
+        : () => metaGraphAPI(retryEndpoint, freshToken, { method: "POST", body: messageData });
       return await retryCall();
     }
 
