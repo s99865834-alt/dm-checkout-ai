@@ -22,6 +22,16 @@ function generateLinkId() {
   return randomUUID();
 }
 
+/**
+ * URL for click tracking: user hits this, we log the click and redirect to the real URL.
+ * Used so analytics "clicks" count works (links_sent.url is the destination; we store it and redirect).
+ */
+function getClickTrackingUrl(linkId) {
+  const base = (process.env.SHOPIFY_APP_URL || process.env.APP_URL || "").replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/c/${linkId}`;
+}
+
 function getShopDomainHost(shop) {
   const rawDomain = shop?.shopify_domain;
   if (!rawDomain) return null;
@@ -539,10 +549,11 @@ export async function handleIncomingDm(message, shop, plan) {
           productPrice = info.productPrice;
         }
 
+        const checkoutUrlForMessage = getClickTrackingUrl(linkId) || checkoutUrl;
         const replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
-          checkoutUrl,
+          checkoutUrlForMessage,
           intent,
           productPrice,
           productPageUrl,
@@ -870,11 +881,11 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
         };
       }
     }
-    // Pass the intent, links, original message, and product context so the AI can answer accurately
+    const checkoutUrlForMessage = getClickTrackingUrl(linkId) || checkoutUrl;
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
-      checkoutUrl,
+      checkoutUrlForMessage,
       message.ai_intent,
       productPrice,
       productPageUrl,
