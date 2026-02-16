@@ -141,6 +141,7 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
  */
 function parseCommentEvent(comment) {
   try {
+    const from = comment.from || comment?.value?.from;
     return {
       commentId:
         comment.id ||
@@ -150,7 +151,8 @@ function parseCommentEvent(comment) {
         comment?.value?.id ||
         comment?.value?.comment_id,
       commentText: comment.text || comment.message || null,
-      igUserId: comment.from?.id || comment.from?.username || null,
+      igUserId: from?.id || comment.from?.username || null,
+      igUsername: from?.username || null,
       mediaId:
         comment.media?.id ||
         comment.media_id ||
@@ -204,10 +206,12 @@ function parseMessageEvent(message) {
         : new Date(timestamp).toISOString();
     }
     
+    const igUsername = sender?.username || message.from?.username || null;
     return {
       messageId,
       messageText,
       igUserId,
+      igUsername,
       timestamp,
     };
   } catch (error) {
@@ -395,6 +399,7 @@ export const action = async ({ request }) => {
                   channel: "dm",
                   externalId: parsed.messageId,
                   fromUserId: parsed.igUserId,
+                  fromUsername: parsed.igUsername || null,
                   text: parsed.messageText,
                   aiIntent: null,
                   aiConfidence: null,
@@ -531,6 +536,7 @@ export const action = async ({ request }) => {
                   channel: "comment",
                   externalId: parsed.commentId,
                   fromUserId: parsed.igUserId,
+                  fromUsername: parsed.igUsername || null,
                   text: parsed.commentText,
                   aiIntent: null,
                   aiConfidence: null,
@@ -648,6 +654,7 @@ export const action = async ({ request }) => {
                   channel: "dm",
                   externalId: parsed.messageId,
                   fromUserId: parsed.igUserId,
+                  fromUsername: parsed.igUsername || null,
                   text: parsed.messageText,
                   aiIntent: null,
                   aiConfidence: null,

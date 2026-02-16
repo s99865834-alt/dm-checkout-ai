@@ -705,6 +705,11 @@ export default function WebhookDemo() {
                           {new Date(msg.created_at).toLocaleString()}
                         </s-text>
                       </s-stack>
+                      {(msg.from_username || msg.from_user_id) && (
+                        <s-text variant="subdued">
+                          From: {msg.from_username ? `@${msg.from_username}` : `(ID: ${msg.from_user_id})`}
+                        </s-text>
+                      )}
                       <s-text variant="subdued">
                         {msg.text || "(No text)"}
                       </s-text>
