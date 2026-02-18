@@ -46,6 +46,17 @@ async function loadShopSession(shopDomain) {
   return null;
 }
 
+/** Strip HTML tags and collapse whitespace for plain-text AI context. Keeps payload minimal. */
+function stripHtml(html) {
+  if (!html || typeof html !== "string") return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Max chars per page body in store context (keeps one query, bounded workload). */
+const PAGE_BODY_MAX_CHARS = 1800;
+/** Max number of pages to include body for in AI context. */
+const PAGE_BODY_MAX_PAGES = 5;
+
 /**
  * Get Shopify store information including policies using shop domain
  * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
@@ -91,6 +102,7 @@ export async function getShopifyStoreInfo(shopDomain) {
           nodes {
             title
             handle
+            body
           }
         }
         products(first: 5, sortKey: ID) {
@@ -120,10 +132,21 @@ export async function getShopifyStoreInfo(shopDomain) {
     const termsOfService = policyByType("TERMS_OF_SERVICE");
     const shippingPolicy = policyByType("SHIPPING_POLICY");
 
-    // Build page URLs from base (Page no longer has onlineStoreUrl in Admin API)
-    const pages = baseStoreUrl
-      ? rawPages.map((p) => (p ? { ...p, onlineStoreUrl: `${baseStoreUrl}/pages/${p.handle}` } : p))
-      : rawPages;
+    // Build page URLs and optional body summary (strip HTML, truncate; read_content only)
+    const pages = rawPages.map((p) => {
+      if (!p) return p;
+      let bodySummary = null;
+      if (p.body) {
+        const plain = stripHtml(p.body);
+        if (plain) {
+          bodySummary = plain.length > PAGE_BODY_MAX_CHARS
+            ? plain.substring(0, PAGE_BODY_MAX_CHARS) + "..."
+            : plain;
+        }
+      }
+      const onlineStoreUrl = baseStoreUrl ? `${baseStoreUrl}/pages/${p.handle}` : null;
+      return { ...p, onlineStoreUrl, bodySummary };
+    });
 
     return {
       name: shopData?.name || null,
@@ -198,6 +221,15 @@ export function buildStoreContextForAI(storeInfo) {
     if (pageLines.length) {
       sections.push("Pages: " + pageLines.join(" | "));
       storeInfo.pages.forEach((p) => p.onlineStoreUrl && allowedUrls.push(p.onlineStoreUrl));
+    }
+    // Include body for first N pages (read_content); keeps context bounded
+    const pagesWithBody = storeInfo.pages.filter((p) => p?.bodySummary).slice(0, PAGE_BODY_MAX_PAGES);
+    if (pagesWithBody.length > 0) {
+      sections.push("Page content (use to answer customer questions):");
+      pagesWithBody.forEach((p) => {
+        sections.push(`Page "${p.title}": ${p.bodySummary}`);
+        if (p.onlineStoreUrl) allowedUrls.push(p.onlineStoreUrl);
+      });
     }
   }
   if (Array.isArray(storeInfo.products) && storeInfo.products.length > 0) {
