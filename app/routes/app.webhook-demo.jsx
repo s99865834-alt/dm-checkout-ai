@@ -236,8 +236,12 @@ export default function WebhookDemo() {
   const [customMessage, setCustomMessage] = useState("");
   const [demoResults, setDemoResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  /** Optional: real Instagram User ID (PSID). When set, the test reply is sent to this user's DMs so it appears in the native app (required for Meta review). */
+  const [realRecipientId, setRealRecipientId] = useState("");
 
   const igBusinessId = metaAuth?.ig_business_id || "17841478724885002";
+  const senderIdForPayload = realRecipientId.trim() || `test_user_${Date.now()}`;
+  const willSendToRealUser = Boolean(realRecipientId.trim());
   
   // Get first product mapping for comment > DM scenario (to provide product context)
   const firstProductMapping = productMappings && productMappings.length > 0 ? productMappings[0] : null;
@@ -287,8 +291,6 @@ export default function WebhookDemo() {
     if (testType === "comment") {
       // Comment > DM scenario: Comment event that triggers DM with product context
       const testCommentId = `test_comment_${Date.now()}`;
-      const testUserId = `test_user_${Date.now()}`;
-      
       testPayload = {
         object: "instagram",
         entry: [
@@ -301,8 +303,8 @@ export default function WebhookDemo() {
                   id: testCommentId,
                   text: messageText,
                   from: {
-                    id: testUserId,
-                    username: "test_user",
+                    id: senderIdForPayload,
+                    username: realRecipientId.trim() ? "real_user" : "test_user",
                   },
                   media: {
                     id: testMediaId,
@@ -315,7 +317,7 @@ export default function WebhookDemo() {
         ],
       };
     } else {
-      // Direct DM scenario: No product context
+      // Direct DM scenario: No product context. Use realRecipientId when set so the reply is sent to a real user's DMs (for Meta review).
       testPayload = {
         object: "instagram",
         entry: [
@@ -323,7 +325,7 @@ export default function WebhookDemo() {
             id: igBusinessId,
             messaging: [
               {
-                sender: { id: `test_user_${Date.now()}` },
+                sender: { id: senderIdForPayload },
                 recipient: { id: igBusinessId },
                 message: {
                   mid: `test_message_${Date.now()}`,
@@ -528,6 +530,51 @@ export default function WebhookDemo() {
                 />
               </label>
             )}
+
+            <s-stack direction="block" gap="tight" className="srDividerTop">
+              <s-text variant="strong">Optional: Send reply to real Instagram user (for Meta review)</s-text>
+              <s-text variant="subdued">
+                If you enter a real Instagram User ID (PSID), the test reply will be sent to that user's DMs so it appears in the native app. Leave blank for preview only (no message sent to Instagram).
+              </s-text>
+              <label>
+                <s-text variant="subdued">Instagram User ID (PSID)</s-text>
+                <input
+                  type="text"
+                  value={realRecipientId}
+                  onChange={(e) => setRealRecipientId(e.target.value)}
+                  placeholder="e.g. 12345678901234567"
+                  className="srInput"
+                />
+              </label>
+              {recentMessages && recentMessages.length > 0 && (
+                <label>
+                  <s-text variant="subdued">Or pick a recent sender:</s-text>
+                  <select
+                    className="srSelect"
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) setRealRecipientId(v);
+                    }}
+                  >
+                    <option value="">— Select —</option>
+                    {[...new Map((recentMessages || [])
+                      .filter((m) => m.from_user_id)
+                      .map((m) => [m.from_user_id, m]))
+                      .values()].map((msg) => (
+                      <option key={msg.from_user_id} value={msg.from_user_id}>
+                        {msg.from_username ? `@${msg.from_username}` : msg.from_user_id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {willSendToRealUser && (
+                <s-banner tone="info">
+                  <s-text>Reply will be sent to this user's Instagram DMs. Check the native app to show the message for Meta review.</s-text>
+                </s-banner>
+              )}
+            </s-stack>
 
             <s-button
               variant="primary"
