@@ -342,6 +342,7 @@ export default function WebhookDemo() {
     try {
       const response = await fetch("/meta/test-webhook", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

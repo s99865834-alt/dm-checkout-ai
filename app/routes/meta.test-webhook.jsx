@@ -12,27 +12,21 @@
  */
 
 export const action = async ({ request }) => {
-  // Allow in production for testing before app approval
-  // TODO: Remove or secure this endpoint after Meta app approval
+  // Require either shared secret (for scripts) or authenticated Shopify admin (for in-app Webhook Demo).
   const secret = process.env.META_TEST_WEBHOOK_SECRET;
-  if (secret) {
-    const provided = request.headers.get("x-test-webhook-secret");
-    if (provided !== secret) {
-      try {
-        const { authenticate } = await import("../shopify.server");
-        await authenticate.admin(request);
-      } catch {
-        return new Response(
-          JSON.stringify({ success: false, error: "Unauthorized" }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
-        );
-      }
+  const provided = request.headers.get("x-test-webhook-secret");
+  if (secret && provided === secret) {
+    // Header matches – allow (e.g. curl or script)
+  } else {
+    try {
+      const { authenticate } = await import("../shopify.server");
+      await authenticate.admin(request);
+    } catch {
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
     }
-  } else if (process.env.NODE_ENV === "production") {
-    return new Response(
-      JSON.stringify({ success: false, error: "Test endpoint disabled" }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
   }
 
   try {
