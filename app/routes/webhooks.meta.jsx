@@ -241,10 +241,13 @@ export const action = async ({ request }) => {
     // Read body as text first for HMAC verification
     const bodyText = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
+    const isTestWebhook = request.headers.get("x-test-webhook") === "true";
 
-    // Verify HMAC signature: Meta signs with the app that owns the webhook (main or Instagram app)
+    // Verify HMAC signature: Meta signs with the app that owns the webhook (main or Instagram app). Skip for internal test-webhook.
     const secrets = [META_APP_SECRET, META_INSTAGRAM_APP_SECRET].filter(Boolean);
-    if (signature && secrets.length > 0) {
+    if (isTestWebhook) {
+      console.log(`[webhook] Test webhook request – skipping HMAC verification`);
+    } else if (signature && secrets.length > 0) {
       const expectedSignatures = secrets.map((secret) =>
         `sha256=${crypto.createHmac("sha256", secret).update(bodyText).digest("hex")}`
       );

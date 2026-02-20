@@ -61,12 +61,13 @@ export const action = async ({ request }) => {
     // Import the actual webhook handler
     const { action: webhookAction } = await import("./webhooks.meta.jsx");
     
-    // Create a mock request with the test payload
+    // Create a mock request with the test payload. Header tells webhooks.meta to skip HMAC (no Meta signature on test).
     const mockRequest = new Request(request.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...request.headers,
+        "X-Test-Webhook": "true",
       },
       body: JSON.stringify(body),
     });

@@ -3,6 +3,11 @@ import globalStylesHref from "./styles/global.css?url";
 
 export const links = () => [{ rel: "stylesheet", href: globalStylesHref }];
 
+/** Handle POST (and other mutations) to root - e.g. bots/probes to / or /api/ - return 405 without throwing. */
+export function action() {
+  return new Response("Method Not Allowed", { status: 405 });
+}
+
 export default function App() {
   return (
     <html lang="en">
