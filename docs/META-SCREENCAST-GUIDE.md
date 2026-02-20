@@ -1,11 +1,62 @@
 # Meta App Review – Screencast Guide
 
-Meta rejected the submission because the screencast did not clearly show:
-1. **Asset selection** – Page, account, or number visible  
-2. **A live send action from your app** – You sending a message from the app UI  
-3. **The same message delivered in the native client** – That message visible in Instagram (or Messenger/WhatsApp)
+Meta’s rejection cited **Developer Policy 1.6** and “Screencast Not Aligned with Use Case Details.” Your use case is allowed; the screencast must show the **full end-to-end experience**. Use the checklist and steps below in one recording.
 
-Use the flow below so one recording shows all three.
+---
+
+## Meta’s full checklist (all must be in the screencast)
+
+Your screencast must include **all** of the following. Re-submit only when every item is clearly visible.
+
+| # | Requirement | What to show |
+|---|-------------|--------------|
+| 1 | **Complete Meta login flow** | User starts in your app → clicks “Connect Instagram” (or equivalent) → is redirected to **Instagram or Facebook** → logs in (if needed) → sees the **permission/consent screen**. |
+| 2 | **User granting app access to the permission/feature** | The **Meta/Instagram permission screen** where the user taps “Allow” or “Continue” to grant **instagram_business_basic**, **instagram_business_manage_messages**, and **instagram_business_manage_comments**. Do not skip or fast-forward this. |
+| 3 | **Asset selection (Page, account, or number visible)** | Back in your app: the **connected Instagram account** clearly visible (e.g. Status: Connected, Username: @…, Account ID). |
+| 4 | **Live send action from your app** | A clear moment where **your app sends a message** (e.g. automated reply after a DM, or “Send Test Webhook” with “Send to real user”) and the app shows the **message that was sent** (e.g. the green “Message sent from this app to Instagram” box with the reply text). |
+| 5 | **Same message in the native client** | On **Instagram** (native app on phone): the **exact same message** from step 4 visible in the recipient’s DM thread. |
+| 6 | **Best practices** | **English** as the app UI language; **captions or tooltips** that explain what is happening (e.g. “Connecting Instagram,” “Granting message permission,” “Reply sent from app,” “Same message in Instagram”); briefly **explain important buttons** (e.g. “Connect Instagram,” “Send Test Webhook”). |
+
+**If your app is server-to-server or uses a system user token:** State in your **submission notes** that the frontend Meta login flow is not visible for that reason, so reviewers don’t expect a user-facing Meta login in the app.
+
+---
+
+## Recommended order for the full flow (one video)
+
+Do this in **one continuous recording** so the end-to-end experience is clear.
+
+### Phase 1: Meta login and permission grant (required)
+
+1. **Start recording.** Open your app in Shopify Admin (English UI).
+2. **Show the “Connect Instagram” (or “Connect account”) area** on Home. Add a caption/tooltip: e.g. “User connects Instagram account.”
+3. **Click “Connect Instagram.”** Show the redirect to **Instagram** (or Facebook) and the **Meta permission/consent screen** where the user grants access to the app. Do not skip this screen.
+4. **Show the user tapping “Allow” or “Continue”** on that permission screen. Add a caption: e.g. “User grants instagram_business_basic, instagram_business_manage_messages, instagram_business_manage_comments.”
+5. **Show the return to your app** and that the account is now connected (Status: Connected, username, Account ID). Add a caption: e.g. “Instagram account connected (asset visible).”
+
+### Phase 2: Asset, send action, same message in native client (required)
+
+6. **Option A – Real DM:** On **phone** (test account), send a **new DM** to your business (e.g. “How much is this?”) so the 24-hour window is open. Back on **desktop**, show the app (Webhook Demo or Messages) and the **automated reply** the app sent, including the **exact reply text** (“Message sent from this app to Instagram” if using Webhook Demo).  
+   **Option B – Webhook Demo:** In the app, set “Send to real user,” click **“Send Test Webhook”**, then show the green box with the **exact reply text** that was sent.
+7. **On phone:** Open **Instagram** → DMs → conversation with the business. Show the **same reply text** as the latest message. Add a caption: e.g. “Same message delivered in native Instagram.”
+
+---
+
+## Meta review – exact steps (messages use case)
+
+Instagram only delivers messages to users who have messaged your business **in the last 24 hours**. So do the following in one continuous flow so the reply is delivered and visible in the native app.
+
+**Before you hit record:** Have two devices ready – desktop (your app in Shopify Admin) and phone (test Instagram account = Account B). Your business Instagram = Account A (connected to the app).
+
+| Step | What to do | What Meta sees |
+|------|------------|----------------|
+| **1** | **Start recording.** On desktop: open your app → go to **Home**. Show **Status: Connected**, **Username: @…**, and **Account ID** clearly on screen. | (1) Asset selection |
+| **2** | On **phone**: open **Instagram** (Account B). Go to your **business profile (Account A)** → tap **Message** → send one DM, e.g. *"How much is this?"* (This opens the 24-hour window so the next message can be delivered.) | Customer message that triggers your app |
+| **3** | On **desktop**: go to **Webhook Demo** or **Analytics → Messages**. Wait a few seconds. Show the **new message** and the **automated reply** that the app sent (e.g. “Webhook processed” or the conversation with the reply text). | (2) Live send from your app |
+| **4** | On **phone**: open **Instagram** → **DMs** → conversation with the business. Show the **same reply** from the business as the latest message in the thread. The text must match what the app showed as “Message sent from this app to Instagram.” | (3) Delivered message in native client |
+
+**Important:** The DM in step 2 must be sent **during the recording** (or at most a few minutes before). Then steps 3 and 4 happen right after so the reply is delivered and you can show it in the app and in Instagram. Do not use an old conversation where the 24-hour window has closed.
+
+**If using Webhook Demo with “Send to real user”:** After clicking “Send Test Webhook,” the app shows a green box: **“Message sent from this app to Instagram (show this same message in the native app for review)”** with the exact reply text. Record that box clearly, then show the **same text** in the recipient’s Instagram DMs so reviewers see it’s the same message.
 
 ---
 
@@ -111,10 +162,13 @@ You can record desktop and phone in one take (e.g. phone in frame or picture-in-
 
 ## Checklist before you submit
 
-- [ ] Video shows the **connected Instagram account** (username and/or ID) in the app.
-- [ ] Video shows a **send** triggered from your app (automated reply after a real DM, or test webhook that sends to a real user).
-- [ ] Video shows the **same sent message** in the **native Instagram app** (DMs with the business).
-- [ ] UI language is English (or captions explain non-English parts).
-- [ ] Optional: short text annotations for “Asset,” “App send,” “Delivered in Instagram.”
+- [ ] **Complete Meta login flow** – Redirect to Instagram/Facebook and permission screen are visible (do not skip).
+- [ ] **User granting permission** – The Meta consent screen where the user allows the app (instagram_business_basic, instagram_business_manage_messages, instagram_business_manage_comments) is clearly shown.
+- [ ] **Asset visible** – Connected Instagram account (username and/or ID) shown in the app after connect.
+- [ ] **Send from app** – A send action in the app (e.g. “Send Test Webhook” or automation replying) and the **exact message text** that was sent visible in the app (e.g. green “Message sent from this app to Instagram” box).
+- [ ] **Same message in native client** – That **exact same** message visible in the Instagram app (DMs with the business).
+- [ ] **English** – App UI is in English (or captions explain any non-English parts).
+- [ ] **Captions/tooltips** – Short text overlays explain steps (e.g. “Connecting Instagram,” “Granting permissions,” “Reply sent from app,” “Same message in Instagram”).
+- [ ] **Buttons explained** – Meaning of main buttons (e.g. “Connect Instagram,” “Send Test Webhook”) is clear or explained.
 
-If you follow this flow, your next submission should satisfy Meta’s requirement for “message sent from your app UI and the same message appearing in the native client.”
+If your app is **server-to-server** or uses a **system user token** and does not show a frontend Meta login, say so in your **submission notes** so reviewers know what to expect.
