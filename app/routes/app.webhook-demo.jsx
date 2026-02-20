@@ -537,6 +537,12 @@ export default function WebhookDemo() {
               <s-text variant="subdued">
                 If you enter a real Instagram User ID (PSID), the test reply will be sent to that user's DMs so it appears in the native app. Leave blank for preview only (no message sent to Instagram).
               </s-text>
+              <s-text variant="subdued">
+                Instagram only delivers messages to users who have messaged your business in the last 24 hours. If the DM does not appear, have the recipient send a DM to your Instagram account first, then run this test within 24 hours.
+              </s-text>
+              <s-text variant="subdued">
+                The test message you enter above is simulated (we do not send it to Instagram). Only your app's reply is sent. In the recipient's Instagram thread they will see the reply from your business; the simulated "customer" message will not appear there.
+              </s-text>
               <label>
                 <s-text variant="subdued">Instagram User ID (PSID)</s-text>
                 <input
@@ -630,6 +636,16 @@ export default function WebhookDemo() {
                         4. ✅ Automated reply sent (if conditions met)
                       </s-text>
                     </s-stack>
+                    {willSendToRealUser && demoResults.aiPreview?.responseText && (
+                      <s-box padding="base" borderWidth="base" borderRadius="base" background="success-subdued" className="srDividerTop">
+                        <s-stack direction="block" gap="tight">
+                          <s-text variant="strong">📤 Message sent from this app to Instagram (show this same message in the native app for review):</s-text>
+                          <s-text variant="subdued" className="srPreWrap srMonoPre">
+                            {demoResults.aiPreview.responseText}
+                          </s-text>
+                        </s-stack>
+                      </s-box>
+                    )}
                   </s-stack>
                 </s-box>
               )}
