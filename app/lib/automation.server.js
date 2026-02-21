@@ -9,7 +9,7 @@ import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI } from "./shopify-data.server";
-import { sendInstagramPrivateReply, getMetaAuth } from "./meta.server";
+import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
@@ -819,10 +819,16 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
         console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
         return { sent: false, reason: "Already replied to this comment" };
       }
-      await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+      // Test webhook uses fake comment IDs (test_comment_*); send as DM to commenter so message appears in Instagram
+      const fromUserId = message.from_user_id ?? message.fromUserId;
+      if (commentExternalId.startsWith("test_comment_") && fromUserId) {
+        await sendInstagramDm(shop.id, fromUserId, replyText);
+        console.log(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} (homepage link)`);
+      } else {
+        await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+        console.log(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
+      }
       await incrementUsage(shop.id, 1);
-
-      console.log(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
       return { sent: true };
     }
 
@@ -925,12 +931,18 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
     }
-    // 9. Send private reply to the comment (within 7 days)
+    // 9. Send private reply to the comment (within 7 days). Test webhook uses fake comment IDs; send as DM to commenter.
     if (!commentExternalId) {
       console.warn("[automation] Missing comment ID for private reply");
       return { sent: false, reason: "Missing comment ID for private reply" };
     }
-    await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+    const fromUserId = message.from_user_id ?? message.fromUserId;
+    if (commentExternalId.startsWith("test_comment_") && fromUserId) {
+      await sendInstagramDm(shop.id, fromUserId, replyText);
+      console.log(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} for comment ${message.id}`);
+    } else {
+      await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+    }
 
     // 10. Increment usage count
     await incrementUsage(shop.id, 1);
