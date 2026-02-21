@@ -2,7 +2,7 @@
  * Instagram Login (Business Login) OAuth callback
  * Exchanges authorization code for short-lived token, then long-lived token,
  * and saves auth with auth_type=instagram (no Facebook Page).
- * OAuth URL: https://www.instagram.com/oauth/authorize
+ * OAuth URL: https://api.instagram.com/oauth/authorize
  * Token exchange: https://api.instagram.com/oauth/access_token
  * Long-lived: https://graph.instagram.com/access_token
  */

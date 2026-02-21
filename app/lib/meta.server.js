@@ -9,7 +9,7 @@ const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 // Instagram Login (Business Login) - separate product; uses different App ID/Secret if set
 export const META_INSTAGRAM_APP_ID = process.env.META_INSTAGRAM_APP_ID || process.env.META_APP_ID;
 export const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
-const INSTAGRAM_OAUTH_AUTHORIZE = "https://www.instagram.com/oauth/authorize";
+const INSTAGRAM_OAUTH_AUTHORIZE = "https://api.instagram.com/oauth/authorize";
 export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
 const INSTAGRAM_GRAPH_VERSION = process.env.META_INSTAGRAM_API_VERSION || "v24.0";
 export const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
