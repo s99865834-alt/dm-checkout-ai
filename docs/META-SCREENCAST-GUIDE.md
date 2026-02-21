@@ -160,6 +160,26 @@ You can record desktop and phone in one take (e.g. phone in frame or picture-in-
 
 ---
 
+## Troubleshooting: Instagram connect
+
+If **Connect Instagram** sends you to Instagram login but after entering credentials the page **refreshes and lands on instagram.com/#** instead of returning to the app:
+
+1. **Redirect URI in Meta Dashboard**  
+   In [Meta for Developers](https://developers.facebook.com/) → Your app → **Instagram** → **API setup with Instagram business login** → **Business login settings** → **OAuth redirect URIs**, add **exactly** (no trailing slash unless you use it in the app):
+   - `https://dm-checkout-ai-production.up.railway.app/meta/instagram-login/callback`  
+   If you use a different app URL (e.g. staging), add that callback URL too. The value must match the app’s callback URL character-for-character.
+
+2. **Use the Instagram App ID for Business Login**  
+   Use the **Instagram App ID** from **Business login settings** (not the main Facebook App ID) in `META_INSTAGRAM_APP_ID`. The main app ID cannot be used for Instagram Login.
+
+3. **App mode and test users**  
+   If the app is in **Development** mode, the Instagram account must be added as an **Instagram tester** in the app’s Roles. In **Live** mode, any user can connect.
+
+4. **Browser and device**  
+   Try in an **incognito/private** window and avoid embedded frames. If on mobile, the flow is built to stay in the browser (#weblink); if it still opens the native Instagram app, complete login in the browser when possible.
+
+---
+
 ## Checklist before you submit
 
 - [ ] **Complete Meta login flow** – Redirect to Instagram/Facebook and permission screen are visible (do not skip).

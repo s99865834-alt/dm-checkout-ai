@@ -157,12 +157,13 @@ export const action = async ({ request }) => {
         "instagram_business_manage_messages",
         "instagram_business_manage_comments",
       ].join(",");
-      const authUrl = `https://www.instagram.com/oauth/authorize?` +
+      // Use api.instagram.com per Meta docs; #weblink keeps flow in browser (avoids native app takeover on mobile)
+      const authUrl = `https://api.instagram.com/oauth/authorize?` +
         `client_id=${instagramAppId}&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
         `response_type=code&` +
         `scope=${encodeURIComponent(scopes)}&` +
-        `state=${encodeURIComponent(shopDomain)}`;
+        `state=${encodeURIComponent(shopDomain)}#weblink`;
       return { oauthUrl: authUrl };
     }
 
