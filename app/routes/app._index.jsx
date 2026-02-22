@@ -253,12 +253,46 @@ export default function Index() {
 
   return (
     <s-page heading="DM Checkout AI">
+      {error && (
+        <s-banner tone="critical">
+          <s-text variant="strong">Connection error</s-text>
+          <s-text>{error}</s-text>
+        </s-banner>
+      )}
+      {instagramFetcher.data?.success && instagramFetcher.data?.message?.includes("connected") && (
+        <s-banner tone="success">
+          <s-text>{instagramFetcher.data.message}</s-text>
+        </s-banner>
+      )}
+      {instagramFetcher.data?.error && (
+        <s-banner tone="critical">
+          <s-text>{instagramFetcher.data.error}</s-text>
+        </s-banner>
+      )}
+      {disconnected && !error && !isConnected && (
+        <s-banner tone="info">
+          <s-text>Instagram account disconnected.</s-text>
+        </s-banner>
+      )}
+      {automationFetcher.data?.success && (
+        <s-banner tone="success">
+          <s-text>{automationFetcher.data.message}</s-text>
+        </s-banner>
+      )}
+      {automationFetcher.data?.error && (
+        <s-banner tone="critical">
+          <s-text>{automationFetcher.data.error}</s-text>
+        </s-banner>
+      )}
+
       {shop && plan && (
         <s-section>
-          <s-stack direction="inline" gap="base">
-            <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
-              {plan.name} Plan
-            </s-badge>
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <s-stack direction="block" gap="base">
+              <s-stack direction="inline" gap="base" alignment="center">
+                <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
+                  {plan.name}
+                </s-badge>
             {shop.usage_count !== undefined && (
               <s-stack direction="block" gap="tight" className="srFlex1">
                 <s-stack direction="inline" gap="base" alignment="center">
@@ -279,9 +313,9 @@ export default function Index() {
                           ? "You've reached your monthly message limit!" 
                           : "You're approaching your monthly message limit"}
                       </s-text>
-                      <s-button href="/app/billing/select" variant="primary">
-                        Upgrade Plan
-      </s-button>
+                      <s-button href="/app/billing/select" variant="primary" size="slim">
+                        Upgrade
+                      </s-button>
                     </s-stack>
                   </s-box>
                 )}
@@ -299,261 +333,136 @@ export default function Index() {
                 />
               </s-stack>
             )}
-          </s-stack>
+              </s-stack>
+            </s-stack>
+          </s-box>
         </s-section>
       )}
-      {/* Instagram Connection Section */}
-      <s-section heading="Instagram Connection">
-        <s-stack direction="block" gap="base">
-          {error && (
-            <s-banner tone="critical">
-              <s-text variant="strong">Connection Error</s-text>
-              <s-text>{error}</s-text>
-            </s-banner>
-          )}
-          
-          {instagramFetcher.data?.success && instagramFetcher.data?.message?.includes("connected") && (
-            <s-banner tone="success">
-              <s-text variant="strong">Connected Successfully!</s-text>
-              <s-text>{instagramFetcher.data.message}</s-text>
-            </s-banner>
-          )}
-          
-          {instagramFetcher.data?.error && (
-            <s-banner tone="critical">
-              <s-text variant="strong">Connection Error</s-text>
-              <s-text>{instagramFetcher.data.error}</s-text>
-            </s-banner>
-          )}
-          
-          {disconnected && !error && !isConnected && (
-            <s-banner tone="info">
-              <s-text variant="strong">Disconnected</s-text>
-              <s-text>Your Instagram Business account has been disconnected.</s-text>
-            </s-banner>
-          )}
 
+      <s-section heading="Instagram">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           {isConnected ? (
             <s-stack direction="block" gap="base">
-              <s-paragraph>
-                <s-text variant="strong">Status: Connected</s-text>
-              </s-paragraph>
-              {instagramInfo?.username && (
-                <s-paragraph>
-                  <s-text variant="strong">Username: </s-text>
-                  <s-text>@{instagramInfo.username}</s-text>
-                </s-paragraph>
-              )}
-              {instagramInfo?.mediaCount !== undefined && (
-                <s-paragraph>
-                  <s-text variant="strong">Number of posts: </s-text>
-                  <s-text>{instagramInfo.mediaCount}</s-text>
-                </s-paragraph>
-              )}
+              <s-stack direction="inline" gap="base" alignment="space-between">
+                <s-stack direction="block" gap="tight">
+                  <s-text variant="strong">Connected</s-text>
+                  {instagramInfo?.username && (
+                    <s-text variant="subdued">@{instagramInfo.username}</s-text>
+                  )}
+                </s-stack>
+                <s-button
+                  variant="secondary"
+                  size="slim"
+                  onClick={() => {
+                    if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
+                      instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
+                    }
+                  }}
+                  disabled={instagramFetcher.state === "submitting"}
+                >
+                  {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                </s-button>
+              </s-stack>
               {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                <s-paragraph>
-                  <s-text variant="strong">Account ID: </s-text>
-                  <s-text variant="subdued">{instagramInfo?.id || metaAuth.ig_business_id}</s-text>
-                </s-paragraph>
+                <s-text variant="subdued">
+                  Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
+                  {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
+                </s-text>
               )}
-              {instagramInfo?.accountType && (
-                <s-paragraph>
-                  <s-text variant="strong">Account type: </s-text>
-                  <s-text>{instagramInfo.accountType}</s-text>
-                </s-paragraph>
-              )}
-              {metaAuth.token_expires_at && (
-                <s-paragraph>
-                  <s-text variant="subdued">
-                    Token expires: {new Date(metaAuth.token_expires_at).toLocaleDateString()}
-                  </s-text>
-                </s-paragraph>
-              )}
-
-          <s-button
-                variant="secondary" 
-                onClick={() => {
-                  if (confirm("Are you sure you want to disconnect your Instagram account? You'll need to reconnect to use Instagram features.")) {
-                    instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
-                  }
-                }}
-                disabled={instagramFetcher.state === "submitting"}
-              >
-                {instagramFetcher.state === "submitting" ? "Disconnecting..." : "Disconnect Instagram"}
-          </s-button>
             </s-stack>
           ) : (
             <s-stack direction="block" gap="base">
-              <s-paragraph>
-                Connect your Instagram professional account (Business or Creator) to enable automation features.
-              </s-paragraph>
-              <s-stack direction="inline" gap="base">
-                <s-button
-                  variant="primary"
-                  onClick={() => {
-                    fetcher.submit({ connectType: "instagram-login" }, { method: "post" });
-                  }}
-                  disabled={fetcher.state === "submitting"}
-                >
-                  {fetcher.state === "submitting" ? "Connecting..." : "Connect Instagram"}
-                </s-button>
-              </s-stack>
-              <s-paragraph>
-                <s-text variant="subdued">
-                  Instagram Login is the supported connection method for this app.
-                </s-text>
-              </s-paragraph>
+              <s-text variant="subdued">
+                Connect your Instagram Business or Creator account to enable automation.
+              </s-text>
+              <s-button
+                variant="primary"
+                onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                disabled={fetcher.state === "submitting"}
+              >
+                {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
+              </s-button>
             </s-stack>
           )}
-        </s-stack>
+        </s-box>
       </s-section>
 
-      {/* Automation Controls Section */}
+      {/* Automation – one card, toggle switches */}
       <PlanGate requiredPlan="PRO" feature="Automation Controls">
-        <s-section heading="Automation Controls">
-          <s-paragraph>
-            Control which types of messages are automatically processed and responded to.
-          </s-paragraph>
-          <automationFetcher.Form method="post">
-            <input type="hidden" name="action" value="update-automation-settings" />
-            <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
-            <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
-            <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
-            <s-stack direction="block" gap="base">
-              <s-box padding="base" borderWidth="base" borderRadius="base">
-                <s-stack direction="block" gap="base">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong">DM Automation</s-text>
-                      <s-text variant="subdued">
-                        Automatically process and respond to Instagram Direct Messages
-                      </s-text>
-                    </s-stack>
-                    <label className="srCheckboxLabel">
-                      <input
-                        type="checkbox"
-                        checked={dmAutomationEnabled}
-                        onChange={(e) => setDmAutomationEnabled(e.target.checked)}
-                      />
-                    </label>
+        <s-section heading="Automation">
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <automationFetcher.Form method="post">
+              <input type="hidden" name="action" value="update-automation-settings" />
+              <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
+              <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+              <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+              <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
+              <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
+              <s-stack direction="block" gap="loose">
+                <s-stack direction="inline" gap="base" alignment="space-between">
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">DM automation</s-text>
+                    <s-text variant="subdued">Process and reply to Instagram DMs</s-text>
                   </s-stack>
+                  <label className="srToggle">
+                    <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
+                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                  </label>
                 </s-stack>
-              </s-box>
-
-              <s-box padding="base" borderWidth="base" borderRadius="base">
-                <s-stack direction="block" gap="base">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong">Comment Automation</s-text>
-                      <s-text variant="subdued">
-                        Automatically process and respond to Instagram comments
-                      </s-text>
-                    </s-stack>
-                    <label className="srCheckboxLabel">
-                      <input
-                        type="checkbox"
-                        checked={commentAutomationEnabled}
-                        onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
-                      />
-                    </label>
+                <s-stack direction="inline" gap="base" alignment="space-between">
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">Comment automation</s-text>
+                    <s-text variant="subdued">Process and reply to comments on posts</s-text>
                   </s-stack>
+                  <label className="srToggle">
+                    <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
+                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                  </label>
                 </s-stack>
-              </s-box>
-
-              <s-box padding="base" borderWidth="base" borderRadius="base">
-                <s-stack direction="block" gap="base">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong">Follow-Up Automation</s-text>
-                      <s-text variant="subdued">
-                        Automatically send follow-up messages 23-24 hours after the last message if no click was recorded
-                      </s-text>
-                    </s-stack>
-                    <label className="srCheckboxLabel">
-                      <input
-                        type="checkbox"
-                        checked={followupEnabled}
-                        onChange={(e) => setFollowupEnabled(e.target.checked)}
-                      />
-                    </label>
+                <s-stack direction="inline" gap="base" alignment="space-between">
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong">Follow-up messages</s-text>
+                    <s-text variant="subdued">Send a reminder 23–24 hours after last message if no link click</s-text>
                   </s-stack>
+                  <label className="srToggle">
+                    <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
+                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                  </label>
                 </s-stack>
-              </s-box>
-
-              {/* Brand Voice (Growth/Pro) */}
-              <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                <s-box padding="base" borderWidth="base" borderRadius="base">
-                  <s-stack direction="block" gap="base">
-                    <s-text variant="strong">Brand Voice</s-text>
-                    <s-text variant="subdued">
-                      Customize the tone and style of automated messages
-                    </s-text>
-                    
-                    <s-stack direction="block" gap="tight">
-                      <label>
+                <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
+                  <s-stack direction="block" gap="base" className="srDividerTop">
+                    <s-text variant="strong">Brand voice</s-text>
+                    <s-text variant="subdued">Tone and style of automated replies</s-text>
+                    <s-stack direction="block" gap="base">
+                      <label className="srFieldLabel">
                         <s-text variant="subdued">Tone</s-text>
-                        <select
-                          name="brand_voice_tone"
-                          value={brandVoiceTone}
-                          onChange={(e) => setBrandVoiceTone(e.target.value)}
-                          className="srSelect"
-                        >
+                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect">
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
                           <option value="casual">Casual</option>
                         </select>
                       </label>
-
-                      <label>
-                        <s-text variant="subdued">Custom Instruction (Optional)</s-text>
+                      <label className="srFieldLabel">
+                        <s-text variant="subdued">Custom instruction (optional)</s-text>
                         <textarea
-                          name="brand_voice_custom"
                           value={brandVoiceCustom}
                           onChange={(e) => setBrandVoiceCustom(e.target.value)}
-                          placeholder="Tell the AI how to sound (e.g., 'Always be enthusiastic and use emojis')"
-                          rows={3}
+                          placeholder="e.g. Always be enthusiastic and use emojis"
+                          rows={2}
                           className="srTextarea"
                         />
                       </label>
                     </s-stack>
                   </s-stack>
-                </s-box>
-              </PlanGate>
-
-              <s-button type="submit" variant="primary">
-                {automationFetcher.state === "submitting" ? "Saving..." : "Save Settings"}
-              </s-button>
-            </s-stack>
-          </automationFetcher.Form>
-          </s-section>
+                </PlanGate>
+                <s-button type="submit" variant="primary">
+                  {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
+                </s-button>
+              </s-stack>
+            </automationFetcher.Form>
+          </s-box>
+        </s-section>
       </PlanGate>
-
-      {/* Success/Error Messages */}
-      {automationFetcher.data?.success && (
-        <s-banner tone="success">
-          <s-text>{automationFetcher.data.message}</s-text>
-        </s-banner>
-      )}
-
-      {automationFetcher.data?.error && (
-        <s-banner tone="critical">
-          <s-text>{automationFetcher.data.error}</s-text>
-        </s-banner>
-      )}
-      
-      {instagramFetcher.data?.success && (
-        <s-banner tone="success">
-          <s-text>{instagramFetcher.data.message}</s-text>
-        </s-banner>
-      )}
-
-      {instagramFetcher.data?.error && (
-        <s-banner tone="critical">
-          <s-text>{instagramFetcher.data.error}</s-text>
-        </s-banner>
-      )}
     </s-page>
   );
 }

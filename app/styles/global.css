@@ -97,6 +97,54 @@ s-page > s-section + s-section {
   height: 20px;
 }
 
+/* Toggle switch (professional, minimal) – use with .srToggle wrapper */
+.srToggle {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.srToggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.srToggleTrack {
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #e1e3e5;
+  transition: background 0.15s ease;
+}
+
+.srToggle input:checked + .srToggleTrack {
+  background: #008060;
+}
+
+.srToggleThumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.srToggle input:checked + .srToggleTrack .srToggleThumb {
+  transform: translateX(20px);
+}
+
 /* Progress (usage) */
 .srProgress {
   width: 100%;
