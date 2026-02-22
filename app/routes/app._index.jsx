@@ -313,7 +313,7 @@ export default function Index() {
                           ? "You've reached your monthly message limit!" 
                           : "You're approaching your monthly message limit"}
                       </s-text>
-                      <s-button href="/app/billing/select" variant="primary" size="slim">
+                      <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact">
                         Upgrade
                       </s-button>
                     </s-stack>
@@ -345,14 +345,15 @@ export default function Index() {
             <s-stack direction="block" gap="base">
               <s-stack direction="inline" gap="base" alignment="space-between">
                 <s-stack direction="block" gap="tight">
-                  <s-text variant="strong">Connected</s-text>
+                  <s-text variant="strong" className="srCardTitle">Connected</s-text>
                   {instagramInfo?.username && (
-                    <s-text variant="subdued">@{instagramInfo.username}</s-text>
+                    <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
                   )}
                 </s-stack>
                 <s-button
                   variant="secondary"
                   size="slim"
+                  className="srBtnCompact"
                   onClick={() => {
                     if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
                       instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
@@ -364,7 +365,7 @@ export default function Index() {
                 </s-button>
               </s-stack>
               {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                <s-text variant="subdued">
+                <s-text variant="subdued" className="srCardDesc">
                   Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
                   {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
                 </s-text>
@@ -372,11 +373,12 @@ export default function Index() {
             </s-stack>
           ) : (
             <s-stack direction="block" gap="base">
-              <s-text variant="subdued">
+              <s-text variant="subdued" className="srCardDesc">
                 Connect your Instagram Business or Creator account to enable automation.
               </s-text>
               <s-button
                 variant="primary"
+                className="srBtnCompact"
                 onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
                 disabled={fetcher.state === "submitting"}
               >
@@ -401,8 +403,8 @@ export default function Index() {
               <s-stack direction="block" gap="loose">
                 <s-stack direction="inline" gap="base" alignment="space-between">
                   <s-stack direction="block" gap="tight">
-                    <s-text variant="strong">DM automation</s-text>
-                    <s-text variant="subdued">Process and reply to Instagram DMs</s-text>
+                    <s-text variant="strong" className="srCardTitle">DM automation</s-text>
+                    <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
                   </s-stack>
                   <label className="srToggle">
                     <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
@@ -411,8 +413,8 @@ export default function Index() {
                 </s-stack>
                 <s-stack direction="inline" gap="base" alignment="space-between">
                   <s-stack direction="block" gap="tight">
-                    <s-text variant="strong">Comment automation</s-text>
-                    <s-text variant="subdued">Process and reply to comments on posts</s-text>
+                    <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
+                    <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
                   </s-stack>
                   <label className="srToggle">
                     <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
@@ -421,8 +423,8 @@ export default function Index() {
                 </s-stack>
                 <s-stack direction="inline" gap="base" alignment="space-between">
                   <s-stack direction="block" gap="tight">
-                    <s-text variant="strong">Follow-up messages</s-text>
-                    <s-text variant="subdued">Send a reminder 23–24 hours after last message if no link click</s-text>
+                    <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
+                    <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
                   </s-stack>
                   <label className="srToggle">
                     <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
@@ -431,11 +433,11 @@ export default function Index() {
                 </s-stack>
                 <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
                   <s-stack direction="block" gap="base" className="srDividerTop">
-                    <s-text variant="strong">Brand voice</s-text>
-                    <s-text variant="subdued">Tone and style of automated replies</s-text>
+                    <s-text variant="strong" className="srCardTitle">Brand voice</s-text>
+                    <s-text variant="subdued" className="srCardDesc">Tone and style of automated replies</s-text>
                     <s-stack direction="block" gap="base">
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Tone</s-text>
+                        <s-text variant="subdued" className="srCardDesc">Tone</s-text>
                         <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect">
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
@@ -443,19 +445,19 @@ export default function Index() {
                         </select>
                       </label>
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Custom instruction (optional)</s-text>
-                        <textarea
+                        <s-text variant="subdued" className="srCardDesc">Custom instruction (optional)</s-text>
+                        <input
+                          type="text"
                           value={brandVoiceCustom}
                           onChange={(e) => setBrandVoiceCustom(e.target.value)}
                           placeholder="e.g. Always be enthusiastic and use emojis"
-                          rows={2}
-                          className="srTextarea"
+                          className="srInput"
                         />
                       </label>
                     </s-stack>
                   </s-stack>
                 </PlanGate>
-                <s-button type="submit" variant="primary">
+                <s-button type="submit" variant="primary" className="srBtnCompact">
                   {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
                 </s-button>
               </s-stack>

@@ -1,23 +1,55 @@
 /*
-  Global UI spacing
-
-  The app uses Shopify UI web components (s-page / s-section / etc).
-  Many routes render multiple <s-section> siblings back-to-back.
-  Add consistent vertical spacing between adjacent sections without
-  changing the existing border/radius styling inside each section.
+  Global UI: type scale, spacing, and cohesive controls.
+  Uses Shopify UI web components (s-page / s-section / etc).
 */
+
+/* Type scale & spacing (reuse on any page) */
+:root {
+  --sr-font-title: 1.0625rem;
+  --sr-font-body: 0.875rem;
+  --sr-font-caption: 0.8125rem;
+  --sr-space-tight: 6px;
+  --sr-space-base: 12px;
+  --sr-space-loose: 20px;
+}
 
 s-page {
   display: block;
+  padding-bottom: 24px;
 }
 
 s-page > s-section {
   display: block;
 }
 
-/* Consistent spacing between adjacent sections */
+/* Section spacing: clear separation, room to breathe */
 s-page > s-section + s-section {
-  margin-top: 16px;
+  margin-top: 20px;
+}
+
+/* Section headings: larger so titles read as titles (if component exposes them) */
+s-page > s-section {
+  --s-section-heading-font-size: 1.125rem;
+  --s-section-heading-font-weight: 600;
+}
+
+/* Card titles (e.g. "Connected", "DM automation") */
+s-page .srCardTitle {
+  font-size: var(--sr-font-title);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Body / description text */
+s-page .srCardDesc {
+  font-size: var(--sr-font-body);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Card inner spacing: consistent padding and gaps */
+s-page s-box[background="subdued"] {
+  padding: 14px 16px;
 }
 
 /* Generic helpers (avoid inline styles) */
@@ -47,27 +79,40 @@ s-page > s-section + s-section {
   font-style: italic;
 }
 
-/* Form controls used alongside Shopify web components */
-.srTextarea,
+/* Form controls: compact, match aesthetic */
 .srSelect {
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  height: 32px;
+  border-radius: 6px;
   border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
   font: inherit;
+  box-sizing: border-box;
 }
 
 .srInput {
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  height: 32px;
+  border-radius: 6px;
   border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
   font: inherit;
+  line-height: 1.25;
+  box-sizing: border-box;
 }
 
 .srTextarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
+  font: inherit;
   resize: vertical;
   min-height: 72px;
+  box-sizing: border-box;
 }
 
 .srChoiceRow {
@@ -97,7 +142,7 @@ s-page > s-section + s-section {
   height: 20px;
 }
 
-/* Toggle switch (professional, minimal) – use with .srToggle wrapper */
+/* Toggle switch: compact, matches button/input scale */
 .srToggle {
   display: inline-flex;
   align-items: center;
@@ -120,8 +165,8 @@ s-page > s-section + s-section {
 .srToggleTrack {
   display: inline-flex;
   align-items: center;
-  width: 44px;
-  height: 24px;
+  width: 36px;
+  height: 20px;
   padding: 2px;
   border-radius: 999px;
   background: #e1e3e5;
@@ -133,16 +178,16 @@ s-page > s-section + s-section {
 }
 
 .srToggleThumb {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   transition: transform 0.15s ease;
 }
 
 .srToggle input:checked + .srToggleTrack .srToggleThumb {
-  transform: translateX(20px);
+  transform: translateX(16px);
 }
 
 /* Progress (usage) */
@@ -282,6 +327,14 @@ s-page > s-section + s-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Compact buttons: match toggle/input scale */
+s-page s-button.srBtnCompact,
+s-page .srBtnCompact {
+  padding: 6px 12px;
+  font-size: var(--sr-font-body);
+  min-height: 32px;
 }
 
 /* Legal pages */
