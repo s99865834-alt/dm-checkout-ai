@@ -4,7 +4,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth, checkWebhookStatus, subscribeToWebhooks } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -20,36 +20,16 @@ export const loader = async ({ request }) => {
   let instagramInfo = null;
   let settings = null;
   let brandVoice = null;
-  let webhookStatus = null;
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     settings = await getSettings(shop.id);
     brandVoice = await getBrandVoice(shop.id);
-    
-    // If connected, fetch Instagram account info (with automatic token refresh)
-    if (metaAuth && shop?.id) {
-      instagramInfo = await getInstagramAccountInfo(
-        metaAuth.ig_business_id || "",
-        shop.id
-      );
-      // Webhook status: Instagram Login uses dashboard; Page subscribe is used for Facebook Login
-      if (metaAuth.page_id && metaAuth.auth_type !== "instagram") {
-        webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
-        if (webhookStatus && webhookStatus.subscribed === false) {
-          try {
-            await subscribeToWebhooks(shop.id, metaAuth.page_id, metaAuth.ig_business_id);
-            webhookStatus = await checkWebhookStatus(shop.id, metaAuth.page_id);
-          } catch (error) {
-            console.error("[home] Webhook auto-subscribe failed:", error);
-          }
-        }
-      } else if (metaAuth.auth_type === "instagram") {
-        webhookStatus = { subscribed: null, note: "Configure webhooks in Meta App Dashboard (Instagram product)." };
-      }
+    if (metaAuth?.ig_business_id) {
+      instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
     }
   }
-  
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, webhookStatus };
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice };
 };
 
 export const action = async ({ request }) => {
@@ -195,7 +175,7 @@ export default function Index() {
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, webhookStatus } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -388,61 +368,6 @@ export default function Index() {
                     Token expires: {new Date(metaAuth.token_expires_at).toLocaleDateString()}
                   </s-text>
                 </s-paragraph>
-              )}
-              
-              {/* Webhook Status */}
-              {webhookStatus && (
-                <s-box padding="base" borderWidth="base" borderRadius="base" background={webhookStatus.subscribed ? "success-subdued" : "warning-subdued"}>
-                  <s-stack direction="block" gap="tight">
-                    <s-text variant="strong">
-                      Webhook Status: {webhookStatus.subscribed ? "✅ Subscribed" : "⚠️ Not Subscribed"}
-                    </s-text>
-                    {webhookStatus.error && (
-                      <s-text variant="subdued">
-                        {webhookStatus.error} {webhookStatus.code && `(Code: ${webhookStatus.code})`}
-                      </s-text>
-                    )}
-                    {!webhookStatus.subscribed && (
-                      <s-stack direction="block" gap="base">
-                        <s-text variant="subdued">
-                          Webhooks won't work until your Meta app is approved. Until then, you can test manually.
-                        </s-text>
-                        {metaAuth?.ig_business_id && (
-                          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                            <s-stack direction="block" gap="tight">
-                              <s-text variant="strong">Test with Your Test Account:</s-text>
-                              <s-text variant="subdued">
-                                Your Instagram Account ID: <code>{metaAuth.ig_business_id}</code>
-                              </s-text>
-                              <s-text variant="subdued">
-                                Use this ID in the test webhook payload below.
-                              </s-text>
-                              <pre className="srMonoPre">
-{`curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "object": "instagram",
-    "entry": [{
-      "id": "${metaAuth.ig_business_id}",
-      "messaging": [{
-        "sender": {"id": "test_user_123"},
-        "recipient": {"id": "${metaAuth.ig_business_id}"},
-        "message": {
-          "mid": "test_message_${Date.now()}",
-          "text": "I want to buy this product"
-        },
-        "timestamp": ${Math.floor(Date.now() / 1000)}
-      }]
-    }]
-  }'`}
-                              </pre>
-                            </s-stack>
-                          </s-box>
-                        )}
-                      </s-stack>
-                    )}
-                  </s-stack>
-                </s-box>
               )}
 
           <s-button

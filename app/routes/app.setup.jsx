@@ -1,83 +1,26 @@
-import { useEffect } from "react";
-import { useLoaderData, useFetcher, useNavigate } from "react-router";
+import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getMetaAuthWithRefresh, metaGraphAPI, getInstagramAccountInfo } from "../lib/meta.server";
+import { getMetaAuth, getInstagramAccountInfo } from "../lib/meta.server";
+
+const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL || "https://dm-checkout-ai-production.up.railway.app";
+const WEBHOOK_CALLBACK_URL = `${APP_URL.replace(/\/$/, "")}/webhooks/meta`;
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
   await authenticate.admin(request);
 
   let metaAuth = null;
-  let webhookStatus = null;
   let instagramInfo = null;
 
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
-
     if (metaAuth?.ig_business_id) {
-      // Instagram Login: no Page, webhooks configured in Meta App Dashboard
-      if (metaAuth.auth_type === "instagram") {
-        webhookStatus = {
-          subscribed: null,
-          note: "Instagram Login: configure webhooks in Meta App Dashboard (Instagram product).",
-        };
-        try {
-          instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
-        } catch (e) {
-          console.error("[setup] Error fetching Instagram info (Instagram Login):", e);
-        }
-      } else if (metaAuth?.page_id) {
-        // Facebook Login: check Page webhook subscription
-        try {
-          const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
-          if (authWithRefresh?.page_access_token) {
-            try {
-              const subscriptionData = await metaGraphAPI(
-                `/${metaAuth.page_id}/subscribed_apps`,
-                authWithRefresh.page_access_token
-              );
-              if (subscriptionData?.data && Array.isArray(subscriptionData.data) && subscriptionData.data.length > 0) {
-                const appId = process.env.META_APP_ID;
-                const appSubscription = subscriptionData.data.find((sub) => sub.id === appId);
-                if (appSubscription) {
-                  const fields = appSubscription.subscribed_fields || [];
-                  webhookStatus = {
-                    subscribed: true,
-                    fields: fields,
-                    hasMessages: fields.includes("messages"),
-                    hasComments: fields.includes("comments"),
-                  };
-                } else {
-                  webhookStatus = {
-                    subscribed: false,
-                    message: "App not found in webhook subscriptions. Please enable 'Allow access to messages' in Instagram app.",
-                  };
-                }
-              } else {
-                webhookStatus = {
-                  subscribed: false,
-                  message: "No webhook subscriptions found. Please enable 'Allow access to messages' in Instagram app.",
-                };
-              }
-            } catch (apiError) {
-              console.error("[setup] Error checking webhook subscription:", apiError);
-              webhookStatus = {
-                subscribed: false,
-                error: "Could not verify webhook status. Please ensure 'Allow access to messages' is enabled in Instagram app.",
-              };
-            }
-            try {
-              instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
-            } catch (error) {
-              console.error("[setup] Error fetching Instagram info:", error);
-            }
-          }
-        } catch (error) {
-          console.error("[setup] Error checking webhook status:", error);
-          webhookStatus = { subscribed: false, error: error.message || "Failed to check webhook status" };
-        }
+      try {
+        instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
+      } catch (e) {
+        console.error("[setup] Error fetching Instagram info:", e);
       }
     }
   }
@@ -86,50 +29,37 @@ export const loader = async ({ request }) => {
     shop,
     plan,
     metaAuth,
-    webhookStatus,
     instagramInfo,
+    webhookCallbackUrl: WEBHOOK_CALLBACK_URL,
   };
 };
 
 export default function SetupPage() {
-  const { shop, plan, metaAuth, webhookStatus, instagramInfo } = useLoaderData();
-  const fetcher = useFetcher();
-  const navigate = useNavigate();
-
-  // Refresh page after checking webhooks
-  useEffect(() => {
-    if (fetcher.data?.refresh || fetcher.data?.success) {
-      navigate("/app/setup", { replace: true });
-    }
-  }, [fetcher.data, navigate]);
-
+  const { shop, plan, metaAuth, instagramInfo, webhookCallbackUrl } = useLoaderData();
   const isConnected = !!metaAuth;
-  const webhooksWorking = webhookStatus?.subscribed === true;
-  const hasMessagesField = webhookStatus?.hasMessages === true || webhookStatus?.fields?.includes("messages");
-  const hasCommentsField = webhookStatus?.hasComments === true || webhookStatus?.fields?.includes("comments");
 
   return (
     <s-page heading="Setup Guide">
       <s-section>
         <s-callout variant="info" title="Getting Started">
           <s-paragraph>
-            Follow these steps to set up your Instagram automation. Most steps are automatic, but you'll need to enable one setting in your Instagram app.
+            Two steps: connect your Instagram account here, then add our webhook URL once in the Meta for Developers dashboard. After that, the app receives DMs and comments automatically.
           </s-paragraph>
         </s-callout>
       </s-section>
 
       {/* Step 1: Connect Instagram */}
-      <s-section heading="Step 1: Connect Instagram Business Account">
+      <s-section heading="Step 1: Connect Instagram">
         {isConnected ? (
           <s-box padding="base" borderWidth="base" borderRadius="base" background="success">
             <s-stack direction="block" gap="tight">
               <s-paragraph>
-                <s-text variant="strong" tone="success">✅ Instagram Connected</s-text>
+                <s-text variant="strong" tone="success">✅ Instagram connected</s-text>
               </s-paragraph>
               {instagramInfo && (
                 <s-paragraph>
                   <s-text variant="subdued">
-                    Connected to: @{instagramInfo.username || "Instagram professional account"}
+                    Account: @{instagramInfo.username || "Instagram professional account"}
                   </s-text>
                 </s-paragraph>
               )}
@@ -139,7 +69,7 @@ export default function SetupPage() {
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
             <s-stack direction="block" gap="base">
               <s-paragraph>
-                Connect your Instagram Business account to enable automation features.
+                Connect your Instagram Business or Creator account so the app can reply to DMs and comments.
               </s-paragraph>
               <s-button
                 variant="primary"
@@ -154,186 +84,86 @@ export default function SetupPage() {
         )}
       </s-section>
 
-      {/* Step 2: Enable Access to Messages */}
-      {isConnected && (
-        <s-section heading="Step 2: Enable 'Allow Access to Messages' in Instagram">
-          {webhooksWorking ? (
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="success">
-              <s-stack direction="block" gap="tight">
-                <s-paragraph>
-                  <s-text variant="strong" tone="success">✅ Webhooks Active</s-text>
-                </s-paragraph>
-                <s-paragraph>
-                  <s-text variant="subdued">
-                    Your Instagram account is properly configured and receiving messages/comments.
-                  </s-text>
-                </s-paragraph>
-                {hasMessagesField && (
-                  <s-badge tone="success">Messages: Subscribed</s-badge>
-                )}
-                {hasCommentsField && (
-                  <s-badge tone="success">Comments: Subscribed</s-badge>
-                )}
-              </s-stack>
-            </s-box>
-          ) : (
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="warning">
-              <s-stack direction="block" gap="base">
-                <s-paragraph>
-                  <s-text variant="strong" tone="warning">⚠️ Action Required</s-text>
-                </s-paragraph>
-                <s-paragraph>
-                  To receive Instagram messages and comments, you need to enable "Allow access to messages" in your Instagram app settings.
-                </s-paragraph>
-                
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <s-stack direction="block" gap="base">
-                    <s-paragraph>
-                      <s-text variant="strong">How to Enable:</s-text>
-                    </s-paragraph>
-                    <s-stack direction="block" gap="tight">
-                      <s-paragraph>
-                        <s-text>1. Open the <s-text variant="strong">Instagram app</s-text> on your phone</s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>2. Go to your <s-text variant="strong">business profile</s-text> (@{instagramInfo?.username || "your_account"})</s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>3. Tap the <s-text variant="strong">menu icon</s-text> (three lines) in the top-right corner</s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>4. Select <s-text variant="strong">Settings and activity</s-text></s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>5. Go to <s-text variant="strong">Messages and story replies</s-text></s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>6. Under <s-text variant="strong">Message requests</s-text>, find <s-text variant="strong">Connected tools</s-text></s-text>
-                      </s-paragraph>
-                      <s-paragraph>
-                        <s-text>7. Toggle <s-text variant="strong">ON "Allow access to messages"</s-text> ✅</s-text>
-                      </s-paragraph>
-                    </s-stack>
-                  </s-stack>
-                </s-box>
-
-                <s-paragraph>
-                  <s-text variant="subdued">
-                    After enabling this setting, webhooks will automatically start working. You may need to wait a few minutes for the change to take effect.
-                  </s-text>
-                </s-paragraph>
-
-                <s-stack direction="inline" gap="base">
-                  <fetcher.Form method="post">
-                    <input type="hidden" name="action" value="check-webhooks" />
-                    <s-button
-                      type="submit"
-                      variant="secondary"
-                      loading={fetcher.state === "submitting"}
-                    >
-                      {fetcher.state === "submitting" ? "Checking..." : "Check Webhook Status Again"}
-                    </s-button>
-                  </fetcher.Form>
-                  
-                  <fetcher.Form method="post">
-                    <input type="hidden" name="action" value="subscribe-webhooks" />
-                    <s-button
-                      type="submit"
-                      variant="primary"
-                      loading={fetcher.state === "submitting"}
-                    >
-                      {fetcher.state === "submitting" ? "Subscribing..." : "Subscribe to Webhooks"}
-                    </s-button>
-                  </fetcher.Form>
-                </s-stack>
-
-                {webhookStatus?.error && (
-                  <s-callout variant="warning" title="Note">
-                    <s-paragraph>
-                      <s-text variant="subdued">
-                        {webhookStatus.error}
-                      </s-text>
-                    </s-paragraph>
-                  </s-callout>
-                )}
-              </s-stack>
-            </s-box>
-          )}
-        </s-section>
-      )}
-
-      {/* Step 3: Verify Setup */}
-      {isConnected && (
-        <s-section heading="Step 3: Verify Your Setup">
-          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-            <s-stack direction="block" gap="base">
+      {/* Step 2: Webhook in Meta App Dashboard */}
+      <s-section heading="Step 2: Add webhook in Meta for Developers">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text variant="subdued">
+                Instagram sends new messages and comments to our app using a webhook. You add this URL once in your Meta app so Meta knows where to send events.
+              </s-text>
+            </s-paragraph>
+            <s-paragraph>
+              <s-text variant="strong">Where to do it</s-text>
+            </s-paragraph>
+            <s-stack direction="block" gap="tight">
               <s-paragraph>
-                <s-text variant="strong">Setup Checklist:</s-text>
+                <s-text variant="subdued">1. Go to <s-link href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer">developers.facebook.com</s-link> and open your app.</s-text>
               </s-paragraph>
-              <s-stack direction="block" gap="tight">
-                <s-paragraph>
-                  {isConnected ? (
-                    <s-text>✅ Instagram Business account connected</s-text>
-                  ) : (
-                    <s-text>❌ Instagram Business account not connected</s-text>
-                  )}
-                </s-paragraph>
-                <s-paragraph>
-                  {webhooksWorking ? (
-                    <s-text>✅ Ready to receive messages and comments</s-text>
-                  ) : (
-                    <s-text>⚠️ Action required - enable "Allow access to messages" in Instagram app (see Step 2 above)</s-text>
-                  )}
-                </s-paragraph>
-              </s-stack>
+              <s-paragraph>
+                <s-text variant="subdued">2. In the left menu: <s-text variant="strong">Instagram</s-text> → <s-text variant="strong">Webhooks</s-text> (under “Instagram” product).</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">3. Click <s-text variant="strong">Add subscription</s-text> or edit the existing one.</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">4. Set <s-text variant="strong">Callback URL</s-text> to:</s-text>
+              </s-paragraph>
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
+                <s-text variant="subdued" className="srPreWrap srMonoPre">{webhookCallbackUrl}</s-text>
+              </s-box>
+              <s-paragraph>
+                <s-text variant="subdued">5. Set <s-text variant="strong">Verify token</s-text> to the same value as in your app’s environment (<code>META_WEBHOOK_VERIFY_TOKEN</code>). Meta will send this when it verifies the URL.</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">6. Subscribe to <s-text variant="strong">messages</s-text> and <s-text variant="strong">comments</s-text> so the app receives DMs and comment events.</s-text>
+              </s-paragraph>
+            </s-stack>
+            <s-paragraph>
+              <s-text variant="subdued">
+                You only need to do this once per app. If your app is in Development mode, webhooks still work for your test users.
+              </s-text>
+            </s-paragraph>
+          </s-stack>
+        </s-box>
+      </s-section>
+
+      {/* Step 3: Checklist */}
+      {isConnected && (
+        <s-section heading="Step 3: You’re set">
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="success-subdued">
+            <s-stack direction="block" gap="tight">
+              <s-paragraph>
+                <s-text>✅ Instagram connected</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text>✅ Add the webhook URL in Meta for Developers (Step 2) if you haven’t yet</s-text>
+              </s-paragraph>
+              <s-paragraph>
+                <s-text variant="subdued">
+                  After that, the app will receive DMs and comments and can send automated replies (within your plan limits).
+                </s-text>
+              </s-paragraph>
             </s-stack>
           </s-box>
         </s-section>
       )}
 
-      {/* Additional Information */}
-      <s-section heading="Additional Information">
+      {/* What happens next */}
+      <s-section heading="What happens after setup">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-          <s-stack direction="block" gap="base">
+          <s-stack direction="block" gap="tight">
             <s-paragraph>
-              <s-text variant="strong">Why is "Allow access to messages" required?</s-text>
+              <s-text variant="subdued">• Instagram sends new messages and comments to the app via the webhook.</s-text>
             </s-paragraph>
             <s-paragraph>
-              <s-text variant="subdued">
-                Instagram requires explicit permission for third-party apps to access your messages. This is a security feature to protect your account. Without this setting enabled, Instagram will not send webhook events to our app, and automation will not work.
-              </s-text>
-            </s-paragraph>
-
-            <s-paragraph>
-              <s-text variant="strong">What happens after setup?</s-text>
+              <s-text variant="subdued">• The app uses AI to understand intent and sends replies with product or checkout links (according to your plan).</s-text>
             </s-paragraph>
             <s-paragraph>
-              <s-text variant="subdued">
-                Once your Instagram account is connected and "Allow access to messages" is enabled, the app will automatically:
-              </s-text>
-            </s-paragraph>
-            <s-stack direction="block" gap="tight">
-              <s-paragraph>
-                <s-text variant="subdued">• Receive Instagram DMs and comments via webhooks</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">• Process messages using AI to understand intent</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">• Send automated responses with product links (based on your plan)</s-text>
-              </s-paragraph>
-              <s-paragraph>
-                <s-text variant="subdued">• Track clicks and attribute orders back to Instagram interactions</s-text>
-              </s-paragraph>
-            </s-stack>
-
-            <s-paragraph>
-              <s-text variant="strong">Need Help?</s-text>
+              <s-text variant="subdued">• Clicks are tracked so you can see which conversations lead to orders.</s-text>
             </s-paragraph>
             <s-paragraph>
-              <s-text variant="subdued">
-                If you're having trouble with setup, check the <s-link href="/app/support">Support</s-link> page or contact us at support@socialrepl.ai
-              </s-text>
+              <s-text variant="strong">Need help?</s-text> Check the Support page or contact support@socialrepl.ai
             </s-paragraph>
           </s-stack>
         </s-box>
@@ -343,92 +173,8 @@ export default function SetupPage() {
 }
 
 export const action = async ({ request }) => {
-  const { shop } = await getShopWithPlan(request);
+  await getShopWithPlan(request);
   await authenticate.admin(request);
-
-  if (!shop?.id) {
-    return { error: "Shop not found" };
-  }
-
-  const formData = await request.formData();
-  const actionType = formData.get("action");
-
-  if (actionType === "check-webhooks") {
-    // Re-check webhook status by redirecting to refresh the loader
-    // This will trigger the loader to check webhook status again
-    return { success: true, refresh: true };
-  }
-
-  if (actionType === "subscribe-webhooks") {
-    try {
-      const { shop } = await getShopWithPlan(request);
-      if (!shop?.id) {
-        return { error: "Shop not found" };
-      }
-
-      const metaAuth = await getMetaAuth(shop.id);
-      if (!metaAuth || !metaAuth.ig_business_id) {
-        return { error: "Instagram account not connected. Please connect your Instagram account first." };
-      }
-      if (metaAuth.auth_type === "instagram") {
-        return { success: true, refresh: true, message: "Instagram Login: configure webhooks in Meta App Dashboard (Instagram product)." };
-      }
-      if (!metaAuth.page_id) {
-        return { error: "Configure webhooks in Meta App Dashboard (Instagram product)." };
-      }
-
-      console.log("[setup] Subscribing to webhooks for shop:", shop.id, "page_id:", metaAuth.page_id);
-
-      const authWithRefresh = await getMetaAuthWithRefresh(shop.id);
-      if (!authWithRefresh || !authWithRefresh.page_access_token) {
-        return { error: "No page access token available. Please reconnect your Instagram account." };
-      }
-
-      const { subscribeToWebhooks } = await import("../lib/meta.server");
-      const subscribed = await subscribeToWebhooks(shop.id, metaAuth.page_id, metaAuth.ig_business_id);
-      
-      if (subscribed) {
-        return { success: true, refresh: true, message: "Successfully subscribed to webhooks!" };
-      } else {
-        // Get more details by calling the API directly
-        const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
-        const subscribeUrl = `https://graph.facebook.com/${META_API_VERSION}/${metaAuth.page_id}/subscribed_apps`;
-        
-        const response = await fetch(subscribeUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            access_token: authWithRefresh.page_access_token,
-            subscribed_fields: "messages",
-          }),
-        });
-
-        const result = await response.json();
-        console.log("[setup] Subscribe API response:", JSON.stringify(result, null, 2));
-        
-        if (result.error) {
-          // Provide specific error messages
-          if (result.error.code === 200) {
-            return { success: true, refresh: true, message: "Already subscribed to webhooks!" };
-          } else if (result.error.code === 10) {
-            return { error: `Permission denied (${result.error.message}). You need to enable 'Allow access to messages' in the Instagram app first.` };
-          } else if (result.error.code === 190) {
-            return { error: `Invalid access token (${result.error.message}). Please reconnect your Instagram account.` };
-          } else {
-            return { error: `Failed to subscribe: ${result.error.message} (Code: ${result.error.code})` };
-          }
-        }
-        
-        return { error: "Failed to subscribe to webhooks. You may need to enable 'Allow access to messages' in Instagram first, or webhooks may already be configured." };
-      }
-    } catch (error) {
-      console.error("[setup] Error subscribing to webhooks:", error);
-      return { error: error.message || "Failed to subscribe to webhooks" };
-    }
-  }
-
   return { error: "Invalid action" };
 };
 

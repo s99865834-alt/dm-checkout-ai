@@ -1,5 +1,5 @@
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, createOrUpdateShop } from "./db.server";
+import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent } from "./db.server";
 import { getPlanConfig } from "./plans";
 
 /**
@@ -63,6 +63,9 @@ export async function getShopWithPlan(request) {
       // Continue with existing shop data even if update fails
     }
   }
+
+  // If we're in a new month, reset usage so the UI shows 0/limit (and DB stays in sync)
+  shop = await ensureUsageMonthCurrent(shop);
   
   // Get plan configuration
   const plan = getPlanConfig(shop.plan);
@@ -83,6 +86,7 @@ export async function getShopWithPlan(request) {
 export async function getShop(request) {
   const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
-  return await getShopByDomain(shopDomain);
+  const shop = await getShopByDomain(shopDomain);
+  return shop ? await ensureUsageMonthCurrent(shop) : null;
 }
 
