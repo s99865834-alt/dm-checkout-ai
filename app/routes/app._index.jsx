@@ -285,62 +285,58 @@ export default function Index() {
         </s-banner>
       )}
 
-      {shop && plan && (
-        <s-section>
-          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-            <s-stack direction="block" gap="base">
-              <s-stack direction="inline" gap="base" alignment="center">
-                <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
-                  {plan.name}
-                </s-badge>
-            {shop.usage_count !== undefined && (
-              <s-stack direction="block" gap="tight" className="srFlex1">
-                <s-stack direction="inline" gap="base" alignment="center">
-                  <s-text variant="subdued">
-                    Usage: {shop.usage_count}/{plan.cap} messages this month
-                  </s-text>
-                  {shop.usage_count >= plan.cap * 0.8 && (
-                    <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                      {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
-                    </s-badge>
+      <s-section heading="Plan & Instagram">
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
+          <s-stack direction="block" gap="base">
+            {shop && plan && (
+              <>
+                <s-stack direction="inline" gap="base" alignment="center" className="srFlexWrap">
+                  <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
+                    {plan.name}
+                  </s-badge>
+                  {shop.usage_count !== undefined && (
+                    <s-stack direction="block" gap="tight" className="srFlex1 srUsageBlock">
+                      <s-stack direction="inline" gap="base" alignment="center">
+                        <s-text variant="subdued" className="srCardDesc">
+                          {shop.usage_count}/{plan.cap} messages this month
+                        </s-text>
+                        {shop.usage_count >= plan.cap * 0.8 && (
+                          <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                            {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
+                          </s-badge>
+                        )}
+                      </s-stack>
+                      {shop.usage_count >= plan.cap * 0.8 && (
+                        <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                          <s-stack direction="block" gap="tight">
+                            <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                              {shop.usage_count >= plan.cap 
+                                ? "You've reached your monthly message limit!" 
+                                : "You're approaching your monthly message limit"}
+                            </s-text>
+                            <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact">
+                              Upgrade
+                            </s-button>
+                          </s-stack>
+                        </s-box>
+                      )}
+                      <progress
+                        className={`srProgress srProgress--${
+                          shop.usage_count >= plan.cap
+                            ? "critical"
+                            : shop.usage_count >= plan.cap * 0.8
+                              ? "warning"
+                              : "ok"
+                        }`}
+                        value={shop.usage_count}
+                        max={plan.cap}
+                      />
+                    </s-stack>
                   )}
                 </s-stack>
-                {shop.usage_count >= plan.cap * 0.8 && (
-                  <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                        {shop.usage_count >= plan.cap 
-                          ? "You've reached your monthly message limit!" 
-                          : "You're approaching your monthly message limit"}
-                      </s-text>
-                      <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact">
-                        Upgrade
-                      </s-button>
-                    </s-stack>
-                  </s-box>
-                )}
-                {/* Progress bar */}
-                <progress
-                  className={`srProgress srProgress--${
-                    shop.usage_count >= plan.cap
-                      ? "critical"
-                      : shop.usage_count >= plan.cap * 0.8
-                        ? "warning"
-                        : "ok"
-                  }`}
-                  value={shop.usage_count}
-                  max={plan.cap}
-                />
-              </s-stack>
+                <div className="srDividerTop" />
+              </>
             )}
-              </s-stack>
-            </s-stack>
-          </s-box>
-        </s-section>
-      )}
-
-      <s-section heading="Instagram">
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           {isConnected ? (
             <s-stack direction="block" gap="base">
               <s-stack direction="inline" gap="base" alignment="space-between">
@@ -386,6 +382,7 @@ export default function Index() {
               </s-button>
             </s-stack>
           )}
+          </s-stack>
         </s-box>
       </s-section>
 
@@ -400,37 +397,43 @@ export default function Index() {
               <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
               <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
               <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
-              <s-stack direction="block" gap="loose">
-                <s-stack direction="inline" gap="base" alignment="space-between">
-                  <s-stack direction="block" gap="tight">
-                    <s-text variant="strong" className="srCardTitle">DM automation</s-text>
-                    <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
+              <s-stack direction="block" gap="none" className="srToggleStack">
+                <div className="srToggleRow">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong" className="srCardTitle">DM automation</s-text>
+                      <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
+                    </s-stack>
+                    <label className="srToggle">
+                      <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
                   </s-stack>
-                  <label className="srToggle">
-                    <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
-                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                  </label>
-                </s-stack>
-                <s-stack direction="inline" gap="base" alignment="space-between">
-                  <s-stack direction="block" gap="tight">
-                    <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
-                    <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
+                </div>
+                <div className="srToggleRow">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
+                      <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
+                    </s-stack>
+                    <label className="srToggle">
+                      <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
                   </s-stack>
-                  <label className="srToggle">
-                    <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
-                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                  </label>
-                </s-stack>
-                <s-stack direction="inline" gap="base" alignment="space-between">
-                  <s-stack direction="block" gap="tight">
-                    <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
-                    <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
+                </div>
+                <div className="srToggleRow srToggleRowLast">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
+                      <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
+                    </s-stack>
+                    <label className="srToggle">
+                      <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
                   </s-stack>
-                  <label className="srToggle">
-                    <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
-                    <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                  </label>
-                </s-stack>
+                </div>
                 <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
                   <s-stack direction="block" gap="base" className="srDividerTop">
                     <s-text variant="strong" className="srCardTitle">Brand voice</s-text>

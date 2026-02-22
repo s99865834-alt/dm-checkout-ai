@@ -15,16 +15,16 @@
 
 s-page {
   display: block;
-  padding-bottom: 24px;
+  padding-bottom: 18px;
 }
 
 s-page > s-section {
   display: block;
 }
 
-/* Section spacing: clear separation, room to breathe */
+/* Section spacing: compact */
 s-page > s-section + s-section {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 
 /* Section headings: larger so titles read as titles (if component exposes them) */
@@ -47,9 +47,13 @@ s-page .srCardDesc {
   margin-top: 2px;
 }
 
-/* Card inner spacing: consistent padding and gaps */
+/* Card inner spacing: compact padding */
 s-page s-box[background="subdued"] {
-  padding: 14px 16px;
+  padding: 12px 14px;
+}
+
+s-page s-box.srCardCompact {
+  padding: 12px 14px;
 }
 
 /* Generic helpers (avoid inline styles) */
@@ -318,9 +322,38 @@ s-page s-box[background="subdued"] {
 }
 
 .srDividerTop {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid #e1e3e5;
+}
+
+.srFlexWrap {
+  flex-wrap: wrap;
+}
+
+.srUsageBlock {
+  min-width: 0;
+}
+
+/* Toggle rows: more space and clear separation */
+.srToggleStack {
+  display: flex;
+  flex-direction: column;
+}
+
+.srToggleRow {
+  padding: 10px 14px;
+  margin: 0 -14px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.srToggleRow:first-child {
+  margin-top: -2px;
+}
+
+.srToggleRowLast {
+  border-bottom: none;
+  margin-bottom: -2px;
 }
 
 .srFieldLabel {
