@@ -20,6 +20,39 @@ export async function getShopByDomain(shopifyDomain) {
   return data || null;
 }
 
+/**
+ * If the shop's usage_month is before the current month, reset usage to 0 and set usage_month to current month.
+ * This ensures the UI shows 0/limit at the start of each month without waiting for the first message.
+ * Returns the updated shop row (or the same shop if no reset needed).
+ */
+export async function ensureUsageMonthCurrent(shop) {
+  if (!shop?.id) return shop;
+  const now = new Date();
+  const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const currentMonthStr = currentMonthStart.toISOString().slice(0, 10);
+  const usageMonthRaw = shop.usage_month;
+  const usageMonthStr =
+    typeof usageMonthRaw === "string"
+      ? usageMonthRaw.slice(0, 10)
+      : usageMonthRaw
+        ? new Date(usageMonthRaw).toISOString().slice(0, 10)
+        : null;
+  if (!usageMonthStr || usageMonthStr < currentMonthStr) {
+    const { data, error } = await supabase
+      .from("shops")
+      .update({
+        usage_count: 0,
+        usage_month: currentMonthStr,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", shop.id)
+      .select("*")
+      .single();
+    if (!error && data) return data;
+  }
+  return shop;
+}
+
 export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
   // Create usage_month in UTC (first day of current month)
   const now = new Date();
