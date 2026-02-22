@@ -27,6 +27,20 @@ s-page > s-section + s-section {
   margin-top: 14px;
 }
 
+/* Two-column layout: Plan & Instagram | Automation */
+.srTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .srTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Section headings: larger so titles read as titles (if component exposes them) */
 s-page > s-section {
   --s-section-heading-font-size: 1.125rem;
@@ -354,6 +368,36 @@ s-page s-box.srCardCompact {
 .srToggleRowLast {
   border-bottom: none;
   margin-bottom: -2px;
+}
+
+/* Brand voice: clear separator and consistent typography */
+.srBrandVoiceBlock {
+  margin: 0 -14px;
+  padding: 12px 14px 0;
+  border-top: 1px solid #e1e3e5;
+  margin-top: 2px;
+}
+
+.srBrandVoiceBlock .srCardTitle,
+.srBrandVoiceBlock .srCardDesc {
+  display: block;
+}
+
+.srBrandVoiceBlock .srCardDesc {
+  margin-bottom: 8px;
+}
+
+.srBrandVoiceFields {
+  margin-top: 10px;
+}
+
+.srBrandVoiceFields .srFieldLabel + .srFieldLabel {
+  margin-top: 10px;
+}
+
+/* Space between custom instruction and Save button */
+.srSaveBtnWrap {
+  margin-top: 14px;
 }
 
 .srFieldLabel {

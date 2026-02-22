@@ -285,6 +285,7 @@ export default function Index() {
         </s-banner>
       )}
 
+      <div className="srTwoCol">
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
           <s-stack direction="block" gap="base">
@@ -386,7 +387,6 @@ export default function Index() {
         </s-box>
       </s-section>
 
-      {/* Automation – one card, toggle switches */}
       <PlanGate requiredPlan="PRO" feature="Automation Controls">
         <s-section heading="Automation">
           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -435,10 +435,10 @@ export default function Index() {
                   </s-stack>
                 </div>
                 <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                  <s-stack direction="block" gap="base" className="srDividerTop">
+                  <div className="srBrandVoiceBlock">
                     <s-text variant="strong" className="srCardTitle">Brand voice</s-text>
                     <s-text variant="subdued" className="srCardDesc">Tone and style of automated replies</s-text>
-                    <s-stack direction="block" gap="base">
+                    <s-stack direction="block" gap="base" className="srBrandVoiceFields">
                       <label className="srFieldLabel">
                         <s-text variant="subdued" className="srCardDesc">Tone</s-text>
                         <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect">
@@ -458,16 +458,19 @@ export default function Index() {
                         />
                       </label>
                     </s-stack>
-                  </s-stack>
+                  </div>
                 </PlanGate>
+                <div className="srSaveBtnWrap">
                 <s-button type="submit" variant="primary" className="srBtnCompact">
                   {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
                 </s-button>
+                </div>
               </s-stack>
             </automationFetcher.Form>
           </s-box>
         </s-section>
       </PlanGate>
+      </div>
     </s-page>
   );
 }
