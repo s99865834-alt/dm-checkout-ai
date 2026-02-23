@@ -481,3 +481,175 @@ s-page .srBtnCompact {
   margin: 8px 0 0;
 }
 
+/* Marketing landing page (public index) */
+.srMarketingLanding {
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333;
+  background: #fff;
+}
+
+.srMarketingLanding .srMarketingHero {
+  text-align: center;
+  padding: 48px 24px 40px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.srMarketingLanding .srMarketingHero h1 {
+  font-size: clamp(32px, 5vw, 42px);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 12px;
+}
+
+.srMarketingLanding .srMarketingHero p {
+  font-size: 18px;
+  color: #555;
+  line-height: 1.5;
+  margin: 0 0 28px;
+}
+
+.srMarketingLanding .srMarketingCta {
+  display: inline-block;
+  padding: 14px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #008060;
+  border: none;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.srMarketingLanding .srMarketingCta:hover {
+  background: #006e52;
+}
+
+.srMarketingLanding .srMarketingSection {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.srMarketingLanding .srMarketingSection h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.srMarketingLanding .srMarketingFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.srMarketingLanding .srMarketingFeatures li {
+  padding: 12px 16px;
+  background: #f6f6f7;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.srMarketingLanding .srMarketingPricing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.srMarketingLanding .srMarketingPricingCard {
+  padding: 16px;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.srMarketingLanding .srMarketingPricingCard strong {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.srMarketingLanding .srMarketingPricingCard span {
+  font-size: 14px;
+  color: #666;
+}
+
+.srMarketingLanding .srMarketingVideo {
+  aspect-ratio: 16/9;
+  max-width: 640px;
+  margin: 0 auto 24px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 14px;
+}
+
+.srMarketingLanding .srMarketingEmail {
+  max-width: 400px;
+  margin: 24px auto 0;
+  padding: 24px;
+  background: #f6f6f7;
+  border-radius: 8px;
+}
+
+.srMarketingLanding .srMarketingEmail h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.srMarketingLanding .srMarketingEmail input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #c9c9c9;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.srMarketingLanding .srMarketingEmail button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: #008060;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.srMarketingLanding .srMarketingEmail button:hover {
+  background: #006e52;
+}
+
+.srMarketingLanding .srMarketingEmail .srMarketingEmailSuccess {
+  font-size: 14px;
+  color: #008060;
+  margin-top: 8px;
+}
+
+.srMarketingLanding .srMarketingFooter {
+  text-align: center;
+  padding: 24px;
+  font-size: 14px;
+  color: #666;
+  border-top: 1px solid #e1e3e5;
+}
+
+.srMarketingLanding .srMarketingFooter a {
+  color: #008060;
+  text-decoration: none;
+}
+
