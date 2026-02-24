@@ -1738,3 +1738,51 @@ async function buildAdminStoresResult(shops) {
     revenue: revenueByShop.get(s.id) || 0,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Store context cache (used by DM automation for store_question replies)
+// ---------------------------------------------------------------------------
+
+const STORE_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Return the cached store context for a shop, or null if missing / stale.
+ * @param {string} shopId
+ * @param {number} [ttlMs] - How old (in ms) a cached value can be before it's considered stale.
+ *   Defaults to 24 hours. Pass 0 to always return the cached value regardless of age.
+ * @returns {Promise<Object|null>}
+ */
+export async function getStoredStoreContext(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
+  if (!shopId) return null;
+  const { data, error } = await supabase
+    .from("shops")
+    .select("store_context_json, store_context_updated_at")
+    .eq("id", shopId)
+    .single();
+  if (error || !data?.store_context_json) return null;
+  if (ttlMs > 0 && data.store_context_updated_at) {
+    const age = Date.now() - new Date(data.store_context_updated_at).getTime();
+    if (age > ttlMs) return null; // stale — caller should refresh
+  }
+  return data.store_context_json;
+}
+
+/**
+ * Persist the store context object returned by getShopifyStoreInfo() onto the shops row.
+ * Called in the background from getShopWithPlan whenever the cached value is missing or stale.
+ * @param {string} shopId
+ * @param {Object} storeInfo - Result of getShopifyStoreInfo()
+ */
+export async function saveStoredStoreContext(shopId, storeInfo) {
+  if (!shopId || !storeInfo) return;
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      store_context_json: storeInfo,
+      store_context_updated_at: new Date().toISOString(),
+    })
+    .eq("id", shopId);
+  if (error) {
+    console.error("[db] saveStoredStoreContext error:", error.message);
+  }
+}

@@ -10,6 +10,7 @@ import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo } from "./shopify-data.server";
+import { getStoredStoreContext } from "./db.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
@@ -403,26 +404,26 @@ export async function handleIncomingDm(message, shop, plan) {
       // Get brand voice and generate reply message for store questions
       const brandVoiceData = await getBrandVoice(shop.id);
       
-      // Fetch store-specific information from Shopify using shop domain
+      // Read store context from the DB cache (refreshed in the background by getShopWithPlan
+      // whenever a merchant uses the embedded app, so it's always fresh and never requires a
+      // live Shopify Admin API call on the critical webhook path).
       let storeInfo = null;
-      if (shop.shopify_domain) {
-        try {
-          storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
-          if (storeInfo) {
-            console.log(`[automation] Fetched store info for ${shop.shopify_domain}:`, {
-              hasRefundPolicy: !!storeInfo.refundPolicy,
-              refundPolicyTitle: storeInfo.refundPolicy?.title,
-              refundPolicyBodyLength: storeInfo.refundPolicy?.body?.length || 0,
-              refundPolicyUrl: storeInfo.refundPolicy?.url,
-              storeEmail: storeInfo.email,
-            });
-          } else {
-            console.log(`[automation] Could not fetch store info for ${shop.shopify_domain} (session may not exist)`);
+      try {
+        storeInfo = await getStoredStoreContext(shop.id, 0); // 0 = accept any age
+        if (storeInfo) {
+          console.log(`[automation] Using cached store context for shop ${shop.id}:`, {
+            hasRefundPolicy: !!storeInfo.refundPolicy,
+            storeEmail: storeInfo.email,
+          });
+        } else {
+          // Cache miss — attempt a live fetch as a best-effort fallback (may fail at webhook time)
+          console.log(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
+          if (shop.shopify_domain) {
+            storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
           }
-        } catch (error) {
-          console.error(`[automation] Error fetching store info for ${shop.shopify_domain}:`, error);
-          // Continue without store info - AI can still answer based on question content
         }
+      } catch (error) {
+        console.warn(`[automation] Could not load store context for shop ${shop.id}:`, error?.message);
       }
       
       const replyText = await generateReplyMessage(

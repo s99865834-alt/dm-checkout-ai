@@ -1,6 +1,30 @@
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent } from "./db.server";
+import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
 import { getPlanConfig } from "./plans";
+import { getShopifyStoreInfo } from "./shopify-data.server";
+
+const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
+
+/**
+ * Fire-and-forget: refresh the cached store context if it's missing or older than the TTL.
+ * Uses the Shopify admin client already obtained by getShopWithPlan so no extra auth is needed.
+ * Errors are swallowed so a context-refresh failure never breaks a page load.
+ */
+async function maybeRefreshStoreContext(shop, shopDomain) {
+  if (!shop?.id || !shopDomain) return;
+  try {
+    // Check whether the cached value is still fresh (re-use the TTL-aware getter)
+    const cached = await getStoredStoreContext(shop.id, STORE_CONTEXT_REFRESH_TTL_MS);
+    if (cached) return; // fresh — nothing to do
+    const storeInfo = await getShopifyStoreInfo(shopDomain);
+    if (storeInfo) {
+      await saveStoredStoreContext(shop.id, storeInfo);
+      console.log(`[loader-helpers] Store context refreshed for ${shopDomain}`);
+    }
+  } catch (err) {
+    console.warn(`[loader-helpers] Background store context refresh failed for ${shopDomain}:`, err?.message);
+  }
+}
 
 /**
  * Loader helper that authenticates, fetches shop data and plan config, and returns
@@ -51,6 +75,10 @@ export async function getShopWithPlan(request) {
 
   shop = await ensureUsageMonthCurrent(shop);
   const plan = getPlanConfig(shop.plan);
+
+  // Keep store context fresh so DM automation can answer store_question DMs without
+  // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.
+  maybeRefreshStoreContext(shop, shopDomain).catch(() => {});
 
   return { shop, plan, session, admin };
 }
