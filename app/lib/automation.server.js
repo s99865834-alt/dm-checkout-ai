@@ -31,6 +31,7 @@ function generateLinkId() {
 /**
  * URL for click tracking: user hits this, we log the click and redirect to the real URL.
  * Used so analytics "clicks" count works (links_sent.url is the destination; we store it and redirect).
+ * Always uses the main app domain so the /c/ route is always reachable regardless of SHORT_LINK_DOMAIN.
  */
 function getClickTrackingUrl(linkId) {
   const base = (process.env.SHOPIFY_APP_URL || process.env.APP_URL || "").replace(/\/$/, "");
@@ -39,12 +40,14 @@ function getClickTrackingUrl(linkId) {
 }
 
 /**
- * Tracking URL to show in messages.
- * Uses the app's own /c/{linkId} redirect — this IS the short link (no external service needed).
- * External URL shorteners were removed from the webhook hot path to reduce latency and
- * eliminate external failure surfaces on the critical 20-second Meta webhook deadline.
+ * Branded short URL shown in DMs.
+ * Uses SHORT_LINK_DOMAIN (e.g. https://socialrepl.ai) when set, falling back to the
+ * main app domain. The /c/{linkId} route lives on the main app and handles both domains
+ * (Railway routes traffic from the custom domain to the same app).
  */
 function getClickTrackingUrlForMessage(linkId) {
+  const shortBase = (process.env.SHORT_LINK_DOMAIN || "").replace(/\/$/, "");
+  if (shortBase) return `${shortBase}/c/${linkId}`;
   return getClickTrackingUrl(linkId);
 }
 
