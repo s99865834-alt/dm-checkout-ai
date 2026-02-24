@@ -1,14 +1,12 @@
 import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher, useRevalidator } from "react-router";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getMetaAuthWithRefresh, getInstagramMedia } from "../lib/meta.server";
-import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings, cleanupDuplicateProductMappings } from "../lib/db.server";
+import { getProductMappings, saveProductMapping, deleteProductMapping, getSettings, updateSettings } from "../lib/db.server";
 import { PlanGate } from "../components/PlanGate";
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
-  const { admin } = await authenticate.admin(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
 
   let metaAuth = null;
   let mediaData = null;
@@ -17,8 +15,8 @@ export const loader = async ({ request }) => {
   let settings = null;
 
   if (shop?.id) {
-    // Get settings for enabled_post_ids
-    settings = await getSettings(shop.id);
+    // Get settings for enabled_post_ids (pass plan.name to skip an extra shop DB read)
+    settings = await getSettings(shop.id, plan?.name);
     
     metaAuth = await getMetaAuth(shop.id);
     // Use refreshed auth so token is valid (important for Instagram Login 60-day tokens)
@@ -27,54 +25,14 @@ export const loader = async ({ request }) => {
 
     if (effectiveAuth?.ig_business_id || effectiveAuth?.auth_type === "instagram") {
       try {
-        // Fetch Instagram media (uses /me/media for Instagram Login, /{id}/media for Facebook Login)
-        const mediaResult = await getInstagramMedia(effectiveAuth.ig_business_id || "", shop.id, { limit: 25 });
+        // Fetch Instagram media and product mappings in parallel (independent reads)
+        const [mediaResult, mappings] = await Promise.all([
+          getInstagramMedia(effectiveAuth.ig_business_id || "", shop.id, { limit: 25 }),
+          getProductMappings(shop.id),
+        ]);
         mediaData = mediaResult;
-
-        // Clean up any duplicate product mappings before fetching
-        await cleanupDuplicateProductMappings(shop.id);
-
-        // Fetch product mappings
-        productMappings = await getProductMappings(shop.id);
-        
-        // Check for mappings with null variant_id and try to fix them
-        const nullVariantMappings = productMappings.filter(m => !m.variant_id);
-        if (nullVariantMappings.length > 0) {
-          console.log(`[instagram-feed] Found ${nullVariantMappings.length} mappings with null variant_id, attempting to fix...`);
-          
-          // Try to fetch and update variants for mappings with null variant_id
-          for (const mapping of nullVariantMappings) {
-            try {
-              const response = await admin.graphql(`
-                query getProduct($id: ID!) {
-                  product(id: $id) {
-                    id
-                    variants(first: 1) {
-                      nodes {
-                        id
-                      }
-                    }
-                  }
-                }
-              `, {
-                variables: { id: mapping.product_id },
-              });
-
-              const json = await response.json();
-              const variants = json.data?.product?.variants?.nodes || [];
-              
-              if (variants.length > 0) {
-                await saveProductMapping(shop.id, mapping.ig_media_id, mapping.product_id, variants[0].id);
-                console.log(`[instagram-feed] Updated mapping for media ${mapping.ig_media_id} with variant ${variants[0].id}`);
-              }
-            } catch (error) {
-              console.error(`[instagram-feed] Error updating mapping for media ${mapping.ig_media_id}:`, error);
-            }
-          }
-          
-          // Re-fetch mappings after updates
-          productMappings = await getProductMappings(shop.id);
-        }
+        productMappings = mappings;
+        // Duplicate cleanup and null-variant fix run only in the save-mapping action, not on every load.
       } catch (error) {
         console.error("[instagram-feed] Error fetching media:", error);
       }
@@ -126,8 +84,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { shop } = await getShopWithPlan(request);
-  await authenticate.admin(request);
+  const { shop, admin } = await getShopWithPlan(request);
 
   if (!shop?.id) {
     return { error: "Shop not found" };
@@ -147,8 +104,8 @@ export const action = async ({ request }) => {
     }
 
     try {
-      // Get current settings
-      const currentSettings = await getSettings(shop.id);
+      // Get current settings (plan.name passed to skip extra shop query)
+      const currentSettings = await getSettings(shop.id, plan?.name);
       const currentEnabledPosts = currentSettings?.enabled_post_ids || [];
       
       let newEnabledPosts;
@@ -177,8 +134,6 @@ export const action = async ({ request }) => {
     }
 
     try {
-      const { admin } = await authenticate.admin(request);
-      
       // Always fetch the first variant and handle from Shopify (even if one was selected)
       // This ensures we always have variant_id and product_handle stored for PDP URLs
       let finalVariantId = variantId;

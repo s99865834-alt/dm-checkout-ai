@@ -645,15 +645,21 @@ export async function getAttributionRecords(shopId, filters = {}) {
 /**
  * Get settings for a shop.
  */
-export async function getSettings(shopId) {
-  // First get the shop to determine plan
-  const { data: shop, error: shopError } = await supabase
-    .from("shops")
-    .select("plan")
-    .eq("id", shopId)
-    .single();
-
-  const plan = shop?.plan || "FREE";
+/**
+ * @param {string} shopId
+ * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
+ */
+export async function getSettings(shopId, planName) {
+  // Only query the shop for its plan when the caller hasn't provided it
+  let plan = planName || null;
+  if (!plan) {
+    const { data: shop } = await supabase
+      .from("shops")
+      .select("plan")
+      .eq("id", shopId)
+      .single();
+    plan = shop?.plan || "FREE";
+  }
 
   const { data, error } = await supabase
     .from("settings")
@@ -692,20 +698,25 @@ export async function getSettings(shopId) {
 /**
  * Update settings for a shop.
  */
-export async function updateSettings(shopId, settings) {
-  // First get the shop to determine plan
-  const { data: shop, error: shopError } = await supabase
-    .from("shops")
-    .select("plan")
-    .eq("id", shopId)
-    .single();
-
-  if (shopError) {
-    console.error("updateSettings: Could not fetch shop", shopError);
-    throw shopError;
+/**
+ * @param {string} shopId
+ * @param {Object} settings
+ * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
+ */
+export async function updateSettings(shopId, settings, planName) {
+  let plan = planName || null;
+  if (!plan) {
+    const { data: shop, error: shopError } = await supabase
+      .from("shops")
+      .select("plan")
+      .eq("id", shopId)
+      .single();
+    if (shopError) {
+      console.error("updateSettings: Could not fetch shop", shopError);
+      throw shopError;
+    }
+    plan = shop?.plan || "FREE";
   }
-
-  const plan = shop?.plan || "FREE";
   const planConfig = getPlanConfig(plan);
 
   // Enforce plan restrictions: FREE/GROWTH can use DM automation; only PRO gets comments + followup

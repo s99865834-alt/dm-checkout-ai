@@ -13,12 +13,10 @@
 
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "../lib/meta.server";
-import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   try {
     const { shop } = await getShopWithPlan(request);
-    await authenticate.admin(request);
 
     if (!shop?.id) {
       return new Response(

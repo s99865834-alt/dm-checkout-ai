@@ -1,18 +1,15 @@
 import { useLoaderData, Form, redirect, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
   return { shop, plan };
 };
 
 export const action = async ({ request }) => {
   const { shop } = await getShopWithPlan(request);
-  await authenticate.admin(request);
 
   if (!shop) {
     throw new Response("Shop not found", { status: 404 });

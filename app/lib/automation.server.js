@@ -4,16 +4,21 @@
  */
 
 import { randomUUID } from "crypto";
+import OpenAI from "openai";
 import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply } from "./db.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo } from "./shopify-data.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
+
+// Module-level singleton — one HTTP connection pool for the lifetime of the process.
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 /**
  * Generate a unique link_id (UUID format, stored as TEXT)
@@ -33,13 +38,13 @@ function getClickTrackingUrl(linkId) {
 }
 
 /**
- * Tracking URL to show in messages: shortened so users see a short link (e.g. is.gd/xxx) instead of the app URL.
- * If shortening fails, returns the raw tracking URL. If no app base URL, returns null.
+ * Tracking URL to show in messages.
+ * Uses the app's own /c/{linkId} redirect — this IS the short link (no external service needed).
+ * External URL shorteners were removed from the webhook hot path to reduce latency and
+ * eliminate external failure surfaces on the critical 20-second Meta webhook deadline.
  */
-async function getClickTrackingUrlForMessage(linkId) {
-  const trackingUrl = getClickTrackingUrl(linkId);
-  if (!trackingUrl) return null;
-  return await shortenUrl(trackingUrl);
+function getClickTrackingUrlForMessage(linkId) {
+  return getClickTrackingUrl(linkId);
 }
 
 function getShopDomainHost(shop) {
@@ -61,39 +66,10 @@ function getShopHomepageUrl(shop) {
   return host ? `https://${host}` : null;
 }
 
-/**
- * Shorten a URL using a free URL shortener service
- * @param {string} longUrl - The URL to shorten
- * @returns {Promise<string>} - The shortened URL, or original URL if shortening fails
- */
-async function shortenUrl(longUrl) {
-  try {
-    // Use is.gd API (free, no API key required)
-    const response = await fetch(`https://is.gd/create.php?format=json&url=${encodeURIComponent(longUrl)}`);
-    const data = await response.json();
-    
-    if (data.shorturl) {
-      return data.shorturl;
-    }
-  } catch (error) {
-    console.warn(`[automation] Failed to shorten URL: ${error.message}`);
-  }
-  
-  // Fallback: try TinyURL as backup
-  try {
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
-    const shortUrl = await response.text();
-    
-    if (shortUrl && shortUrl.startsWith('http')) {
-      return shortUrl.trim();
-    }
-  } catch (error) {
-    console.warn(`[automation] Failed to shorten URL with TinyURL: ${error.message}`);
-  }
-  
-  // If all shortening fails, return original URL
-  return longUrl;
-}
+// External URL shortener removed from the webhook hot path.
+// The app's own /c/{linkId} tracking URL is used in DMs instead.
+// If you want branded short links, shorten asynchronously after the message is sent
+// and update links_sent.url — do not block the webhook response on an external fetch.
 
 /**
  * Build a Shopify product detail page (PDP) link.
@@ -102,10 +78,9 @@ async function shortenUrl(longUrl) {
  * @param {string} productId - Shopify product ID (gid format)
  * @param {string|null} variantId - Shopify variant ID (gid format, optional)
  * @param {string|null} productHandle - Product handle (optional; fetched from API if missing)
- * @param {boolean} shorten - Whether to shorten the URL (default: true)
- * @returns {Promise<string>} - Product detail page URL (shortened if shorten=true)
+ * @returns {Promise<string>} - Product detail page URL
  */
-export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, shorten = true) {
+export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, _shorten = true) {
   const shopHost = getShopDomainHost(shop);
   if (!shopHost) {
     throw new Error("Shop domain is required");
@@ -141,12 +116,6 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
   params.set("utm_campaign", "product_question");
 
   const finalUrl = params.toString() ? `${pdpUrl}?${params.toString()}` : pdpUrl;
-  
-  // Shorten URL if requested
-  if (shorten) {
-    return await shortenUrl(finalUrl);
-  }
-  
   return finalUrl;
 }
 
@@ -156,10 +125,9 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
  * @param {string} productId - Shopify product ID (gid format)
  * @param {string|null} variantId - Shopify variant ID (gid format, optional)
  * @param {number} qty - Quantity (default: 1)
- * @param {boolean} shorten - Whether to shorten the URL (default: true)
  * @returns {Promise<{url: string, linkId: string}>} - Checkout URL and link ID
  */
-export async function buildCheckoutLink(shop, productId, variantId = null, qty = 1, shorten = true) {
+export async function buildCheckoutLink(shop, productId, variantId = null, qty = 1, _shorten = true) {
   const shopHost = getShopDomainHost(shop);
   if (!shopHost) {
     throw new Error("Shop domain is required");
@@ -264,12 +232,7 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     utm_campaign: "dm_to_buy",
   });
 
-  let finalUrl = `${checkoutUrl}?${params.toString()}`;
-  
-  // Shorten URL if requested
-  if (shorten) {
-    finalUrl = await shortenUrl(finalUrl);
-  }
+  const finalUrl = `${checkoutUrl}?${params.toString()}`;
 
   return {
     url: finalUrl,
@@ -289,7 +252,7 @@ export async function sendDmReply(shopId, igUserId, text) {
     throw new Error("shopId, igUserId, and text are required");
   }
 
-  if (canSendForShop(shopId)) {
+  if (await canSendForShop(shopId)) {
     try {
       await sendDmNow(shopId, igUserId, text);
       return { sent: true };
@@ -444,7 +407,6 @@ export async function handleIncomingDm(message, shop, plan) {
       let storeInfo = null;
       if (shop.shopify_domain) {
         try {
-          const { getShopifyStoreInfo } = await import("./shopify-data.server");
           storeInfo = await getShopifyStoreInfo(shop.shopify_domain);
           if (storeInfo) {
             console.log(`[automation] Fetched store info for ${shop.shopify_domain}:`, {
@@ -559,7 +521,7 @@ export async function handleIncomingDm(message, shop, plan) {
           productPrice = info.productPrice;
         }
 
-        const checkoutUrlForMessage = (await getClickTrackingUrlForMessage(linkId)) || checkoutUrl;
+        const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
         const replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
@@ -897,7 +859,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
         };
       }
     }
-    const checkoutUrlForMessage = (await getClickTrackingUrlForMessage(linkId)) || checkoutUrl;
+    const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
@@ -979,12 +941,7 @@ export async function generateClarifyingQuestion(brandVoice, originalMessage, in
   const customInstruction = brandVoice?.custom_instruction || "";
 
   try {
-    const OpenAI = (await import("openai")).default;
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    
-    if (OPENAI_API_KEY) {
-      const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-      
+    if (openai) {
       const intentContext = {
         purchase: "wants to buy a product",
         product_question: "asked a question about a product",
@@ -1135,16 +1092,7 @@ export async function generateReplyMessage(brandVoice, productName = null, check
   const hasBrandVoiceConfig = brandVoice && (customInstruction || (tone && tone !== "friendly"));
   if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext) {
     try {
-      // Import OpenAI client from ai.server.js
-      const openaiModule = await import("../lib/ai.server.js");
-      // The openai client is not exported as default, we need to access it differently
-      // Let's create a simple AI generation function inline
-      const OpenAI = (await import("openai")).default;
-      const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-      
-      if (OPENAI_API_KEY) {
-        const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-
+      if (openai) {
         // Build one store context for store_question so the AI can answer any question from context
         const storeContextForReply =
           intent === "store_question" && storeInfo

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useFetcher, useOutletContext, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
@@ -13,17 +12,21 @@ const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
 
-  // Check if Instagram is connected
   let metaAuth = null;
   let instagramInfo = null;
   let settings = null;
   let brandVoice = null;
+
   if (shop?.id) {
-    metaAuth = await getMetaAuth(shop.id);
-    settings = await getSettings(shop.id);
-    brandVoice = await getBrandVoice(shop.id);
+    // Fetch independent DB reads in parallel
+    [metaAuth, settings, brandVoice] = await Promise.all([
+      getMetaAuth(shop.id),
+      getSettings(shop.id),
+      getBrandVoice(shop.id),
+    ]);
+
+    // Instagram info depends on metaAuth, so fetch after
     if (metaAuth?.ig_business_id) {
       instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
     }
@@ -34,9 +37,8 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   try {
-    // Authenticate and get shop domain from session
-    const { session } = await authenticate.admin(request);
-    
+    const { session, shop, plan } = await getShopWithPlan(request);
+
     if (!session || !session.shop) {
       return { error: "Authentication failed. Please try again." };
     }
@@ -48,7 +50,6 @@ export const action = async ({ request }) => {
     
     // Handle disconnect action
     if (actionType === "disconnect") {
-      const { shop } = await getShopWithPlan(request);
       if (!shop?.id) {
         return { error: "Shop not found" };
       }
@@ -60,7 +61,6 @@ export const action = async ({ request }) => {
     // Handle automation settings update
     if (actionType === "update-automation-settings") {
       console.log("[home] Processing update-automation-settings action");
-      const { shop, plan } = await getShopWithPlan(request);
       if (!shop?.id) {
         console.error("[home] Shop not found");
         return { error: "Shop not found" };
@@ -87,7 +87,7 @@ export const action = async ({ request }) => {
           comment_automation_enabled: commentAutomationEnabled,
           followup_enabled: followupEnabled,
           // Note: enabled_post_ids is now managed on the Instagram Feed page
-        });
+        }, plan?.name);
         console.log("[home] Settings updated successfully");
 
         // Update brand voice in brand_voice table
