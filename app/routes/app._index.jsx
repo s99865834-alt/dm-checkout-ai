@@ -22,6 +22,17 @@ export const loader = async ({ request }) => {
   let productsError = null;
 
   if (shop?.id) {
+    // Diagnostic: query actual granted scopes so we can see what the token has
+    let grantedScopes = [];
+    try {
+      const scopeRes = await admin.graphql(`query { currentAppInstallation { accessScopes { handle } } }`);
+      const scopeJson = await scopeRes.json();
+      grantedScopes = (scopeJson.data?.currentAppInstallation?.accessScopes || []).map((s) => s.handle);
+      console.log("[home] Granted scopes:", grantedScopes.join(", "));
+    } catch (e) {
+      console.error("[home] Failed to query scopes:", e.message);
+    }
+
     const productsPromise = (async () => {
       try {
         const response = await admin.graphql(`
@@ -46,13 +57,13 @@ export const loader = async ({ request }) => {
         const json = await response.json();
         if (json.errors?.length) {
           const msg = json.errors[0]?.message || JSON.stringify(json.errors[0]);
-          console.error("[home] GraphQL error fetching products:", msg, "| session scopes:", session?.scope);
-          return { products: [], error: `${msg} [scopes: ${session?.scope || "none"}]` };
+          console.error("[home] GraphQL error fetching products:", msg);
+          return { products: [], error: `${msg} [granted: ${grantedScopes.join(", ") || "unknown"}]` };
         }
         return { products: json.data?.products?.nodes || [], error: null };
       } catch (err) {
-        console.error("[home] Error fetching Shopify products:", err, "| session scopes:", session?.scope);
-        return { products: [], error: `${err.message || "Unknown error"} [scopes: ${session?.scope || "none"}]` };
+        console.error("[home] Error fetching Shopify products:", err.message);
+        return { products: [], error: `${err.message || "Unknown error"} [granted: ${grantedScopes.join(", ") || "unknown"}]` };
       }
     })();
 
