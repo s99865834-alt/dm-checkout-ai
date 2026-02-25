@@ -285,7 +285,7 @@ export default function Index() {
         </s-banner>
       )}
 
-      <div className="srTwoCol">
+      {/* Plan & Instagram — full width */}
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
           <s-stack direction="block" gap="base">
@@ -311,8 +311,8 @@ export default function Index() {
                         <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
                           <s-stack direction="block" gap="tight">
                             <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                              {shop.usage_count >= plan.cap 
-                                ? "You've reached your monthly message limit!" 
+                              {shop.usage_count >= plan.cap
+                                ? "You've reached your monthly message limit!"
                                 : "You're approaching your monthly message limit"}
                             </s-text>
                             <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact">
@@ -338,104 +338,113 @@ export default function Index() {
                 <div className="srDividerTop" />
               </>
             )}
-          {isConnected ? (
-            <s-stack direction="block" gap="base">
-              <s-stack direction="inline" gap="base" alignment="space-between">
-                <s-stack direction="block" gap="tight">
-                  <s-text variant="strong" className="srCardTitle">Connected</s-text>
-                  {instagramInfo?.username && (
-                    <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
-                  )}
+            {isConnected ? (
+              <s-stack direction="block" gap="base">
+                <s-stack direction="inline" gap="base" alignment="space-between">
+                  <s-stack direction="block" gap="tight">
+                    <s-text variant="strong" className="srCardTitle">Connected</s-text>
+                    {instagramInfo?.username && (
+                      <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
+                    )}
+                  </s-stack>
+                  <s-button
+                    variant="secondary"
+                    size="slim"
+                    className="srBtnCompact"
+                    onClick={() => {
+                      if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
+                        instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
+                      }
+                    }}
+                    disabled={instagramFetcher.state === "submitting"}
+                  >
+                    {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                  </s-button>
                 </s-stack>
+                {(instagramInfo?.id || metaAuth?.ig_business_id) && (
+                  <s-text variant="subdued" className="srCardDesc">
+                    Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
+                    {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
+                  </s-text>
+                )}
+              </s-stack>
+            ) : (
+              <s-stack direction="block" gap="base">
+                <s-text variant="subdued" className="srCardDesc">
+                  Connect your Instagram Business or Creator account to enable automation.
+                </s-text>
                 <s-button
-                  variant="secondary"
-                  size="slim"
+                  variant="primary"
                   className="srBtnCompact"
-                  onClick={() => {
-                    if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
-                      instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
-                    }
-                  }}
-                  disabled={instagramFetcher.state === "submitting"}
+                  onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                  disabled={fetcher.state === "submitting"}
                 >
-                  {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                  {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
                 </s-button>
               </s-stack>
-              {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                <s-text variant="subdued" className="srCardDesc">
-                  Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                  {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
-                </s-text>
-              )}
-            </s-stack>
-          ) : (
-            <s-stack direction="block" gap="base">
-              <s-text variant="subdued" className="srCardDesc">
-                Connect your Instagram Business or Creator account to enable automation.
-              </s-text>
-              <s-button
-                variant="primary"
-                className="srBtnCompact"
-                onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
-                disabled={fetcher.state === "submitting"}
-              >
-                {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
-              </s-button>
-            </s-stack>
-          )}
+            )}
           </s-stack>
         </s-box>
       </s-section>
 
+      {/* Automation — two equal columns */}
       <PlanGate requiredPlan="PRO" feature="Automation Controls">
         <s-section heading="Automation">
-          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-            <automationFetcher.Form method="post">
-              <input type="hidden" name="action" value="update-automation-settings" />
-              <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
-              <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
-              <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
-              <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
-              <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
-              <s-stack direction="block" gap="none" className="srToggleStack">
-                <div className="srToggleRow">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong" className="srCardTitle">DM automation</s-text>
-                      <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
+          <automationFetcher.Form method="post">
+            <input type="hidden" name="action" value="update-automation-settings" />
+            <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
+            <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+            <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+            <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
+            <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
+
+            <div className="srAutoTwoCol">
+              {/* Left: toggles */}
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <s-stack direction="block" gap="none" className="srToggleStack">
+                  <div className="srToggleRow">
+                    <s-stack direction="inline" gap="base" alignment="space-between">
+                      <s-stack direction="block" gap="tight">
+                        <s-text variant="strong" className="srCardTitle">DM automation</s-text>
+                        <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
+                      </s-stack>
+                      <label className="srToggle">
+                        <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
+                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                      </label>
                     </s-stack>
-                    <label className="srToggle">
-                      <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
-                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                    </label>
-                  </s-stack>
-                </div>
-                <div className="srToggleRow">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
-                      <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
+                  </div>
+                  <div className="srToggleRow">
+                    <s-stack direction="inline" gap="base" alignment="space-between">
+                      <s-stack direction="block" gap="tight">
+                        <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
+                        <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
+                      </s-stack>
+                      <label className="srToggle">
+                        <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
+                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                      </label>
                     </s-stack>
-                    <label className="srToggle">
-                      <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
-                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                    </label>
-                  </s-stack>
-                </div>
-                <div className="srToggleRow srToggleRowLast">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
-                      <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
+                  </div>
+                  <div className="srToggleRow srToggleRowLast">
+                    <s-stack direction="inline" gap="base" alignment="space-between">
+                      <s-stack direction="block" gap="tight">
+                        <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
+                        <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
+                      </s-stack>
+                      <label className="srToggle">
+                        <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
+                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                      </label>
                     </s-stack>
-                    <label className="srToggle">
-                      <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
-                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                    </label>
-                  </s-stack>
-                </div>
+                  </div>
+                </s-stack>
+              </s-box>
+
+              {/* Right: brand voice */}
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                  <div className="srBrandVoiceBlock">
+                  <div className="srBrandVoiceBlock srBrandVoiceBlockFull">
                     <s-text variant="strong" className="srCardTitle">Brand voice</s-text>
                     <s-text variant="subdued" className="srCardDesc">Tone and style of automated replies</s-text>
                     <s-stack direction="block" gap="base" className="srBrandVoiceFields">
@@ -460,17 +469,17 @@ export default function Index() {
                     </s-stack>
                   </div>
                 </PlanGate>
-                <div className="srSaveBtnWrap">
-                <s-button type="submit" variant="primary" className="srBtnCompact">
-                  {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
-                </s-button>
-                </div>
-              </s-stack>
-            </automationFetcher.Form>
-          </s-box>
+              </s-box>
+            </div>
+
+            <div className="srSaveBtnWrap">
+              <s-button type="submit" variant="primary" className="srBtnCompact">
+                {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
+              </s-button>
+            </div>
+          </automationFetcher.Form>
         </s-section>
       </PlanGate>
-      </div>
     </s-page>
   );
 }

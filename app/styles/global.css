@@ -27,7 +27,7 @@ s-page > s-section + s-section {
   margin-top: 14px;
 }
 
-/* Two-column layout: Plan & Instagram | Automation */
+/* Two-column layout (legacy — kept for any other uses) */
 .srTwoCol {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -39,6 +39,26 @@ s-page > s-section + s-section {
   .srTwoCol {
     grid-template-columns: 1fr;
   }
+}
+
+/* Automation section: two equal columns (toggles | brand voice) */
+.srAutoTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .srAutoTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Brand voice card when it fills the full column (no top margin needed) */
+.srBrandVoiceBlockFull {
+  padding-top: 0;
+  margin-top: 0;
 }
 
 /* Section headings: larger so titles read as titles (if component exposes them) */
