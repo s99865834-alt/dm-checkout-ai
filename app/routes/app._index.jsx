@@ -142,9 +142,14 @@ export const action = async ({ request }) => {
     if (actionType === "save-mapping") {
       if (!shop?.id) return { error: "Shop not found" };
       const igMediaId = formData.get("igMediaId");
-      const productId = formData.get("productId");
+      let productId = formData.get("productId");
       const variantId = formData.get("variantId") || null;
       if (!igMediaId || !productId) return { error: "Missing required fields" };
+      productId = String(productId).trim();
+      // Ensure GID format for storage (Shopify Admin API expects gid://shopify/Product/123)
+      if (!productId.startsWith("gid://")) {
+        productId = `gid://shopify/Product/${productId.replace(/\D/g, "")}`;
+      }
       try {
         const response = await admin.graphql(`
           query getProduct($id: ID!) {
@@ -162,7 +167,8 @@ export const action = async ({ request }) => {
         const finalVariantId = variantId || variants[0].id;
         const productHandle = product?.handle?.trim() || null;
         await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
-        return { success: true, message: "Product mapping saved successfully" };
+        const productMappings = await getProductMappings(shop.id);
+        return { success: true, message: "Product mapping saved successfully", productMappings };
       } catch (err) {
         console.error("[home] Error saving mapping:", err);
         return { error: err.message || "Failed to save mapping" };
@@ -176,7 +182,8 @@ export const action = async ({ request }) => {
       if (!igMediaId) return { error: "Missing Instagram media ID" };
       try {
         await deleteProductMapping(shop.id, igMediaId);
-        return { success: true, message: "Product mapping deleted successfully" };
+        const productMappings = await getProductMappings(shop.id);
+        return { success: true, message: "Product mapping deleted successfully", productMappings };
       } catch (err) {
         console.error("[home] Error deleting mapping:", err);
         return { error: err.message || "Failed to delete mapping" };
@@ -244,6 +251,8 @@ export default function Index() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
+  // After save/delete mapping we use action response so we don't revalidate (revalidate can lose shopifyProducts on index)
+  const [productMappingsOverride, setProductMappingsOverride] = useState(null);
 
   // Sync settings / brand voice when loader data refreshes
   useEffect(() => {
@@ -258,9 +267,13 @@ export default function Index() {
     }
   }, [settings, brandVoice]);
 
-  // Revalidate after successful post actions (mapping save/delete, post toggle)
+  // After save/delete mapping: use returned productMappings so we don't revalidate (avoids losing shopifyProducts).
+  // After toggle-post: revalidate so settings reflect.
   useEffect(() => {
-    if (postFetcher.state === "idle" && postFetcher.data?.success) {
+    if (postFetcher.state !== "idle" || !postFetcher.data?.success) return;
+    if (Array.isArray(postFetcher.data.productMappings)) {
+      setProductMappingsOverride(postFetcher.data.productMappings);
+    } else {
       setTimeout(() => revalidator.revalidate(), 100);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
@@ -275,8 +288,19 @@ export default function Index() {
     }
   }, [connectFetcher.data, navigate]);
 
-  // Feed helpers
-  const mappingsMap = new Map((productMappings || []).map((m) => [m.ig_media_id, m]));
+  // Feed helpers — normalize product ID for lookup (DB may store/return GID or numeric)
+  const productIdMatch = (storedId, shopifyProductId) => {
+    if (!storedId || !shopifyProductId) return false;
+    const n = (id) => {
+      if (id == null) return "";
+      const s = String(id);
+      const suffix = s.match(/\/(\d+)$/);
+      return suffix ? suffix[1] : s;
+    };
+    return n(storedId) === n(shopifyProductId);
+  };
+  const effectiveMappings = productMappingsOverride ?? productMappings ?? [];
+  const mappingsMap = new Map((effectiveMappings || []).map((m) => [m.ig_media_id, m]));
   const enabledPostIds = settings?.enabled_post_ids || [];
   const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
 
@@ -551,9 +575,16 @@ export default function Index() {
               <div className="srMediaGrid">
                 {mediaData.data.map((media) => {
                   const mapping = mappingsMap.get(media.id);
-                  const mappedProduct = mapping ? (shopifyProducts || []).find((p) => p.id === mapping.product_id) : null;
+                  const mappedProduct = mapping
+                    ? (shopifyProducts || []).find((p) => productIdMatch(mapping.product_id, p.id))
+                    : null;
+                  const variantIdMatch = (stored, nodes) => {
+                    if (!stored || !nodes?.length) return null;
+                    const n = (id) => (id == null ? "" : (String(id).match(/\/(\d+)$/)?.[1] ?? String(id)));
+                    return nodes.find((v) => n(v.id) === n(stored)) ?? null;
+                  };
                   const mappedVariant = mapping && mappedProduct && mapping.variant_id
-                    ? mappedProduct.variants?.nodes?.find((v) => v.id === mapping.variant_id)
+                    ? variantIdMatch(mapping.variant_id, mappedProduct.variants?.nodes)
                     : null;
                   const automationEnabled = isPostEnabled(media.id);
 
@@ -602,7 +633,7 @@ export default function Index() {
                             <s-stack direction="block" gap="tight">
                               <s-text variant="strong" tone="success">✅ Mapped to Product</s-text>
                               <s-text variant="subdued">
-                                {mappedProduct?.title || "Product"}
+                                {mappedProduct?.title || (mapping.product_handle ? `Product: ${mapping.product_handle}` : "Product")}
                                 {mappedVariant && ` (${mappedVariant.title})`}
                               </s-text>
                               <s-button
@@ -636,52 +667,73 @@ export default function Index() {
                               <label htmlFor={`product-${media.id}`}>
                                 <s-text variant="strong">Select Product:</s-text>
                               </label>
-                              <select
-                                id={`product-${media.id}`}
-                                value={selectedProduct}
-                                onChange={(e) => { setSelectedProduct(e.target.value); setSelectedVariant(""); }}
-                                className="srSelect"
-                              >
-                                <option value="">-- Select Product --</option>
-                                {(shopifyProducts || []).map((p) => (
-                                  <option key={p.id} value={p.id}>{p.title}</option>
-                                ))}
-                              </select>
-
-                              {selectedProduct && selectedProductVariants.length > 1 && (
+                              {(shopifyProducts || []).length === 0 ? (
+                                <s-stack direction="block" gap="tight">
+                                  <s-text variant="subdued">
+                                    No products to show. Your store may have no products, or the list could not be loaded.
+                                  </s-text>
+                                  <s-button
+                                    variant="secondary"
+                                    size="small"
+                                    onClick={() => {
+                                      setProductMappingsOverride(null);
+                                      revalidator.revalidate();
+                                    }}
+                                    disabled={revalidator.state === "loading"}
+                                  >
+                                    {revalidator.state === "loading" ? "Loading…" : "Retry loading products"}
+                                  </s-button>
+                                </s-stack>
+                              ) : (
                                 <>
-                                  <label htmlFor={`variant-${media.id}`}>
-                                    <s-text variant="strong">Select Variant (Optional):</s-text>
-                                  </label>
                                   <select
-                                    id={`variant-${media.id}`}
-                                    value={selectedVariant}
-                                    onChange={(e) => setSelectedVariant(e.target.value)}
+                                    id={`product-${media.id}`}
+                                    value={selectedProduct}
+                                    onChange={(e) => { setSelectedProduct(e.target.value); setSelectedVariant(""); }}
                                     className="srSelect"
                                   >
-                                    <option value="">-- Default Variant --</option>
-                                    {selectedProductVariants.map((v) => (
-                                      <option key={v.id} value={v.id}>{v.title} - ${v.price}</option>
+                                    <option value="">-- Select Product --</option>
+                                    {(shopifyProducts || []).map((p) => (
+                                      <option key={p.id} value={p.id}>{p.title}</option>
                                     ))}
                                   </select>
+
+                                  {selectedProduct && selectedProductVariants.length > 1 && (
+                                    <>
+                                      <label htmlFor={`variant-${media.id}`}>
+                                        <s-text variant="strong">Select Variant (Optional):</s-text>
+                                      </label>
+                                      <select
+                                        id={`variant-${media.id}`}
+                                        value={selectedVariant}
+                                        onChange={(e) => setSelectedVariant(e.target.value)}
+                                        className="srSelect"
+                                      >
+                                        <option value="">-- Default Variant --</option>
+                                        {selectedProductVariants.map((v) => (
+                                          <option key={v.id} value={v.id}>{v.title} - ${v.price}</option>
+                                        ))}
+                                      </select>
+                                    </>
+                                  )}
+
+                                  <s-stack direction="inline" gap="tight">
+                                    <s-button
+                                      variant="primary" size="small"
+                                      onClick={() => handleSaveMapping(media.id)}
+                                      disabled={!selectedProduct || postFetcher.state !== "idle"}
+                                    >
+                                      Save Mapping
+                                    </s-button>
+                                    <s-button
+                                      variant="secondary" size="small"
+                                      onClick={() => { setSelectedMedia(null); setSelectedProduct(""); setSelectedVariant(""); }}
+                                    >
+                                      Cancel
+                                    </s-button>
+                                  </s-stack>
                                 </>
                               )}
-
-                              <s-stack direction="inline" gap="tight">
-                                <s-button
-                                  variant="primary" size="small"
-                                  onClick={() => handleSaveMapping(media.id)}
-                                  disabled={!selectedProduct || postFetcher.state !== "idle"}
-                                >
-                                  Save Mapping
-                                </s-button>
-                                <s-button
-                                  variant="secondary" size="small"
-                                  onClick={() => { setSelectedMedia(null); setSelectedProduct(""); setSelectedVariant(""); }}
-                                >
-                                  Cancel
-                                </s-button>
-                              </s-stack>
                             </s-stack>
                           </s-box>
                         )}
