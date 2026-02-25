@@ -5,8 +5,6 @@ import { getShopifyStoreInfo } from "./shopify-data.server";
 
 const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
 
-const REQUIRED_SCOPES = ["read_products"];
-
 // Cache authenticate.admin per request so parent + child loaders don't double-exchange the token.
 const _authCache = new WeakMap();
 
@@ -54,13 +52,6 @@ export async function getShopWithPlan(request) {
     ({ session, admin } = await authenticate.admin(request));
     _authCache.set(request, { session, admin });
   }
-
-  const sessionScopes = (session.scope || "").split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const missingScopes = REQUIRED_SCOPES.filter((s) => !sessionScopes.includes(s));
-  if (missingScopes.length > 0) {
-    console.warn(`[getShopWithPlan] Session for ${session.shop} missing scopes: ${missingScopes.join(", ")} (has: ${session.scope})`);
-  }
-
   const shopDomain = session.shop;
 
   let shop = await getShopByDomain(shopDomain);
@@ -98,7 +89,7 @@ export async function getShopWithPlan(request) {
   // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.
   maybeRefreshStoreContext(shop, shopDomain).catch(() => {});
 
-  return { shop, plan, session, admin, missingScopes };
+  return { shop, plan, session, admin };
 }
 
 /**

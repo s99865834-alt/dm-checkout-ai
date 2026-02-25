@@ -10,7 +10,7 @@ import { sessionStorage } from "../shopify.server";
 let _shopifyApiInstance = null;
 function getShopifyApi() {
   if (!_shopifyApiInstance) {
-    const appUrl = process.env.SHOPIFY_APP_URL || "https://example.com";
+    const appUrl = (process.env.SHOPIFY_APP_URL || "https://example.com").trim();
     const hostName = new URL(appUrl).host;
     _shopifyApiInstance = shopifyApi({
       apiKey: process.env.SHOPIFY_API_KEY || "",

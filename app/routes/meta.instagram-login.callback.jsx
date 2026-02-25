@@ -18,7 +18,7 @@ import {
 } from "../lib/meta.server";
 
 const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
-const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL;
+const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL).trim();
 
 export async function loader({ request }) {
   const url = new URL(request.url);
