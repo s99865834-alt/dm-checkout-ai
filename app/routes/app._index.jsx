@@ -19,10 +19,9 @@ export const loader = async ({ request }) => {
   let mediaData = null;
   let productMappings = [];
   let shopifyProducts = [];
+  let productsError = null;
 
   if (shop?.id) {
-    // Run products fetch in parallel with first batch (same as when feed had its own page).
-    // Doing it after Meta/Instagram work can cause timeout or wrong session on the index.
     const productsPromise = (async () => {
       try {
         const response = await admin.graphql(`
@@ -45,19 +44,27 @@ export const loader = async ({ request }) => {
           }
         `, { variables: { first: 50 } });
         const json = await response.json();
-        return json.data?.products?.nodes || [];
+        if (json.errors?.length) {
+          const msg = json.errors[0]?.message || JSON.stringify(json.errors[0]);
+          console.error("[home] GraphQL error fetching products:", msg);
+          return { products: [], error: msg };
+        }
+        return { products: json.data?.products?.nodes || [], error: null };
       } catch (err) {
         console.error("[home] Error fetching Shopify products:", err);
-        return [];
+        return { products: [], error: err.message || "Unknown error" };
       }
     })();
 
-    [metaAuth, settings, brandVoice, shopifyProducts] = await Promise.all([
+    let productsResult;
+    [metaAuth, settings, brandVoice, productsResult] = await Promise.all([
       getMetaAuthWithRefresh(shop.id),
       getSettings(shop.id, plan?.name),
       getBrandVoice(shop.id),
       productsPromise,
     ]);
+    shopifyProducts = productsResult.products;
+    productsError = productsResult.error;
 
     if (metaAuth) {
       [instagramInfo, mediaData, productMappings] = await Promise.all([
@@ -72,7 +79,7 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError };
 };
 
 export const action = async ({ request }) => {
@@ -133,7 +140,7 @@ export const action = async ({ request }) => {
           ? current.includes(postId) ? current : [...current, postId]
           : current.filter((id) => id !== postId);
         await updateSettings(shop.id, { enabled_post_ids: newIds }, plan?.name);
-        return { success: true, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+        return { success: true, actionType: "toggle-post-automation", message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
         return { error: err.message || "Failed to toggle post automation" };
@@ -169,7 +176,11 @@ export const action = async ({ request }) => {
         const finalVariantId = variantId || variants[0].id;
         const productHandle = product?.handle?.trim() || null;
         await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
-        return { success: true, message: "Product mapping saved successfully" };
+        return {
+          success: true,
+          actionType: "save-mapping",
+          mapping: { ig_media_id: igMediaId, product_id: productId, variant_id: finalVariantId, product_handle: productHandle },
+        };
       } catch (err) {
         console.error("[home] Error saving mapping:", err);
         return { error: err.message || "Failed to save mapping" };
@@ -183,7 +194,7 @@ export const action = async ({ request }) => {
       if (!igMediaId) return { error: "Missing Instagram media ID" };
       try {
         await deleteProductMapping(shop.id, igMediaId);
-        return { success: true, message: "Product mapping deleted successfully" };
+        return { success: true, actionType: "delete-mapping", igMediaId };
       } catch (err) {
         console.error("[home] Error deleting mapping:", err);
         return { error: err.message || "Failed to delete mapping" };
@@ -225,7 +236,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -252,7 +263,12 @@ export default function Index() {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
 
-  // Sync settings / brand voice when loader data refreshes
+  // Local mappings state: updated from actions so we never need to revalidate for mapping ops.
+  // This preserves shopifyProducts from the initial load (revalidation can lose them).
+  const [localMappings, setLocalMappings] = useState(productMappings || []);
+  const [localProducts, setLocalProducts] = useState(shopifyProducts || []);
+
+  // Sync from loader data when it changes (initial load or full revalidation)
   useEffect(() => {
     if (settings) {
       setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
@@ -263,11 +279,23 @@ export default function Index() {
       setBrandVoiceTone(brandVoice.tone || "friendly");
       setBrandVoiceCustom(brandVoice.custom_instruction || "");
     }
-  }, [settings, brandVoice]);
+    setLocalMappings(productMappings || []);
+    if (shopifyProducts?.length) setLocalProducts(shopifyProducts);
+  }, [settings, brandVoice, productMappings, shopifyProducts]);
 
-  // Revalidate after successful post actions (mapping save/delete, post toggle)
+  // After postFetcher completes: update mappings locally or revalidate for toggle-post
   useEffect(() => {
-    if (postFetcher.state === "idle" && postFetcher.data?.success) {
+    if (postFetcher.state !== "idle" || !postFetcher.data?.success) return;
+    const { actionType } = postFetcher.data;
+
+    if (actionType === "save-mapping" && postFetcher.data.mapping) {
+      setLocalMappings((prev) => {
+        const filtered = prev.filter((m) => m.ig_media_id !== postFetcher.data.mapping.ig_media_id);
+        return [...filtered, postFetcher.data.mapping];
+      });
+    } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
+      setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
+    } else if (actionType === "toggle-post-automation") {
       setTimeout(() => revalidator.revalidate(), 100);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
@@ -293,7 +321,7 @@ export default function Index() {
     };
     return n(storedId) === n(shopifyProductId);
   };
-  const mappingsMap = new Map((productMappings || []).map((m) => [m.ig_media_id, m]));
+  const mappingsMap = new Map((localMappings || []).map((m) => [m.ig_media_id, m]));
   const enabledPostIds = settings?.enabled_post_ids || [];
   const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
 
@@ -326,7 +354,7 @@ export default function Index() {
     postFetcher.submit(fd, { method: "post" });
   };
 
-  const selectedProductData = (shopifyProducts || []).find((p) => p.id === selectedProduct);
+  const selectedProductData = (localProducts || []).find((p) => p.id === selectedProduct);
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
@@ -569,7 +597,7 @@ export default function Index() {
                 {mediaData.data.map((media) => {
                   const mapping = mappingsMap.get(media.id);
                   const mappedProduct = mapping
-                    ? (shopifyProducts || []).find((p) => productIdMatch(mapping.product_id, p.id))
+                    ? (localProducts || []).find((p) => productIdMatch(mapping.product_id, p.id))
                     : null;
                   const variantIdMatch = (stored, nodes) => {
                     if (!stored || !nodes?.length) return null;
@@ -660,10 +688,10 @@ export default function Index() {
                               <label htmlFor={`product-${media.id}`}>
                                 <s-text variant="strong">Select Product:</s-text>
                               </label>
-                              {(shopifyProducts || []).length === 0 ? (
+                              {(localProducts || []).length === 0 ? (
                                 <s-stack direction="block" gap="tight">
                                   <s-text variant="subdued">
-                                    No products to show. Your store may have no products, or the list could not be loaded.
+                                    No products to show.{productsError ? ` Error: ${productsError}` : " Your store may have no products, or the list could not be loaded."}
                                   </s-text>
                                   <s-button
                                     variant="secondary"
@@ -683,7 +711,7 @@ export default function Index() {
                                     className="srSelect"
                                   >
                                     <option value="">-- Select Product --</option>
-                                    {(shopifyProducts || []).map((p) => (
+                                    {(localProducts || []).map((p) => (
                                       <option key={p.id} value={p.id}>{p.title}</option>
                                     ))}
                                   </select>

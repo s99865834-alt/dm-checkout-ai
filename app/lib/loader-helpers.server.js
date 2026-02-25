@@ -5,6 +5,11 @@ import { getShopifyStoreInfo } from "./shopify-data.server";
 
 const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
 
+// Cache authenticate.admin per request so parent + child loaders don't double-exchange the token.
+// Without this, app.jsx and app._index.jsx both call authenticate.admin on the same request
+// concurrently, and the second token exchange can fail or return a degraded admin client.
+const _authCache = new WeakMap();
+
 /**
  * Fire-and-forget: refresh the cached store context if it's missing or older than the TTL.
  * Uses the Shopify admin client already obtained by getShopWithPlan so no extra auth is needed.
@@ -42,7 +47,13 @@ async function maybeRefreshStoreContext(shop, shopDomain) {
  * @returns {Promise<{shop: Object, plan: Object, session: Object, admin: Object}>}
  */
 export async function getShopWithPlan(request) {
-  const { session, admin } = await authenticate.admin(request);
+  let session, admin;
+  if (_authCache.has(request)) {
+    ({ session, admin } = _authCache.get(request));
+  } else {
+    ({ session, admin } = await authenticate.admin(request));
+    _authCache.set(request, { session, admin });
+  }
   const shopDomain = session.shop;
 
   let shop = await getShopByDomain(shopDomain);
