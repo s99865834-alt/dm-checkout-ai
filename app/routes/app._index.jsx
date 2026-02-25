@@ -10,7 +10,7 @@ const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
-  const { shop, plan, admin } = await getShopWithPlan(request);
+  const { shop, plan, admin, session, missingScopes } = await getShopWithPlan(request);
 
   let metaAuth = null;
   let instagramInfo = null;
@@ -46,13 +46,13 @@ export const loader = async ({ request }) => {
         const json = await response.json();
         if (json.errors?.length) {
           const msg = json.errors[0]?.message || JSON.stringify(json.errors[0]);
-          console.error("[home] GraphQL error fetching products:", msg);
-          return { products: [], error: msg };
+          console.error("[home] GraphQL error fetching products:", msg, "| session scopes:", session?.scope);
+          return { products: [], error: `${msg} [scopes: ${session?.scope || "none"}]` };
         }
         return { products: json.data?.products?.nodes || [], error: null };
       } catch (err) {
-        console.error("[home] Error fetching Shopify products:", err);
-        return { products: [], error: err.message || "Unknown error" };
+        console.error("[home] Error fetching Shopify products:", err, "| session scopes:", session?.scope);
+        return { products: [], error: `${err.message || "Unknown error"} [scopes: ${session?.scope || "none"}]` };
       }
     })();
 
@@ -79,7 +79,17 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError };
+  // If scopes are missing, build a re-auth URL so the merchant can approve them
+  let needsReauth = false;
+  let reauthUrl = null;
+  if (missingScopes?.length > 0) {
+    needsReauth = true;
+    const allScopes = "write_products,read_products,read_orders,read_legal_policies,read_content";
+    const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL || "https://dm-checkout-ai-production.up.railway.app";
+    reauthUrl = `https://${session.shop}/admin/oauth/authorize?client_id=${process.env.SHOPIFY_API_KEY}&scope=${encodeURIComponent(allScopes)}&redirect_uri=${encodeURIComponent(APP_URL + "/auth/callback")}`;
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError, needsReauth, reauthUrl };
 };
 
 export const action = async ({ request }) => {
@@ -236,7 +246,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, productsError, needsReauth, reauthUrl } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -690,17 +700,37 @@ export default function Index() {
                               </label>
                               {(localProducts || []).length === 0 ? (
                                 <s-stack direction="block" gap="tight">
-                                  <s-text variant="subdued">
-                                    No products to show.{productsError ? ` Error: ${productsError}` : " Your store may have no products, or the list could not be loaded."}
-                                  </s-text>
-                                  <s-button
-                                    variant="secondary"
-                                    size="small"
-                                    onClick={() => revalidator.revalidate()}
-                                    disabled={revalidator.state === "loading"}
-                                  >
-                                    {revalidator.state === "loading" ? "Loading…" : "Retry"}
-                                  </s-button>
+                                  {needsReauth && reauthUrl ? (
+                                    <>
+                                      <s-text variant="subdued">
+                                        This app needs permission to access your products. Please click below to approve the updated permissions.
+                                      </s-text>
+                                      <s-button
+                                        variant="primary"
+                                        size="small"
+                                        onClick={() => {
+                                          try { window.top.location.href = reauthUrl; }
+                                          catch { window.location.href = reauthUrl; }
+                                        }}
+                                      >
+                                        Approve Permissions
+                                      </s-button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <s-text variant="subdued">
+                                        No products to show.{productsError ? ` Error: ${productsError}` : " Your store may have no products, or the list could not be loaded."}
+                                      </s-text>
+                                      <s-button
+                                        variant="secondary"
+                                        size="small"
+                                        onClick={() => revalidator.revalidate()}
+                                        disabled={revalidator.state === "loading"}
+                                      >
+                                        {revalidator.state === "loading" ? "Loading…" : "Retry"}
+                                      </s-button>
+                                    </>
+                                  )}
                                 </s-stack>
                               ) : (
                                 <>
