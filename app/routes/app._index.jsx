@@ -84,6 +84,38 @@ export const action = async ({ request }) => {
     const formData = await request.formData();
     const actionType = formData.get("action");
 
+    // ── Get products (on-demand for picker when loader didn't return them) ──
+    if (actionType === "get-products") {
+      if (!shop?.id) return { error: "Shop not found" };
+      try {
+        const response = await admin.graphql(`
+          query getProducts($first: Int!) {
+            products(first: $first) {
+              nodes {
+                id
+                title
+                handle
+                variants(first: 10) {
+                  nodes {
+                    id
+                    title
+                    price
+                    selectedOptions { name value }
+                  }
+                }
+              }
+            }
+          }
+        `, { variables: { first: 50 } });
+        const json = await response.json();
+        const shopifyProducts = json.data?.products?.nodes || [];
+        return { shopifyProducts };
+      } catch (err) {
+        console.error("[home] Error fetching products (get-products):", err);
+        return { error: err.message || "Failed to load products" };
+      }
+    }
+
     // ── Disconnect Instagram ───────────────────────────────────────────────
     if (actionType === "disconnect") {
       if (!shop?.id) return { error: "Shop not found" };
@@ -239,6 +271,7 @@ export default function Index() {
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
+  const productsFetcher = useFetcher();     // On-demand product list for picker (when loader returns none)
 
   // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
@@ -277,6 +310,18 @@ export default function Index() {
       setTimeout(() => revalidator.revalidate(), 100);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
+
+  // When picker opens and loader gave no products, fetch products on demand (index loader often fails to return them)
+  const productsForPicker = productsFetcher.data?.shopifyProducts ?? (productsFetcher.data?.error ? [] : null);
+  useEffect(() => {
+    if (!selectedMedia) return;
+    const fromLoader = (shopifyProducts || []).length > 0;
+    if (fromLoader) return;
+    if (productsFetcher.state !== "idle" || productsForPicker) return;
+    const fd = new FormData();
+    fd.append("action", "get-products");
+    productsFetcher.submit(fd, { method: "post" });
+  }, [selectedMedia, shopifyProducts, productsFetcher.state, productsForPicker]);
 
   // OAuth redirect — must break out of Shopify iframe
   useEffect(() => {
@@ -333,7 +378,8 @@ export default function Index() {
     postFetcher.submit(fd, { method: "post" });
   };
 
-  const selectedProductData = (shopifyProducts || []).find((p) => p.id === selectedProduct);
+  const effectiveProductsForPicker = Array.isArray(productsForPicker) ? productsForPicker : (shopifyProducts || []);
+  const selectedProductData = effectiveProductsForPicker.find((p) => p.id === selectedProduct);
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
@@ -660,14 +706,32 @@ export default function Index() {
                           </s-box>
                         )}
 
-                        {/* Product picker — shown inline when Map is clicked */}
+                        {/* Product picker — shown inline when Map is clicked. Products loaded from loader or on-demand via get-products. */}
                         {selectedMedia === media.id && (
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                             <s-stack direction="block" gap="base">
                               <label htmlFor={`product-${media.id}`}>
                                 <s-text variant="strong">Select Product:</s-text>
                               </label>
-                              {(shopifyProducts || []).length === 0 ? (
+                              {productsFetcher.state !== "idle" && effectiveProductsForPicker.length === 0 ? (
+                                <s-text variant="subdued">Loading products…</s-text>
+                              ) : productsFetcher.data?.error ? (
+                                <s-stack direction="block" gap="tight">
+                                  <s-text variant="subdued">{productsFetcher.data.error}</s-text>
+                                  <s-button
+                                    variant="secondary"
+                                    size="small"
+                                    onClick={() => {
+                                      const fd = new FormData();
+                                      fd.append("action", "get-products");
+                                      productsFetcher.submit(fd, { method: "post" });
+                                    }}
+                                    disabled={productsFetcher.state !== "idle"}
+                                  >
+                                    Retry
+                                  </s-button>
+                                </s-stack>
+                              ) : effectiveProductsForPicker.length === 0 ? (
                                 <s-stack direction="block" gap="tight">
                                   <s-text variant="subdued">
                                     No products to show. Your store may have no products, or the list could not be loaded.
@@ -676,12 +740,13 @@ export default function Index() {
                                     variant="secondary"
                                     size="small"
                                     onClick={() => {
-                                      setProductMappingsOverride(null);
-                                      revalidator.revalidate();
+                                      const fd = new FormData();
+                                      fd.append("action", "get-products");
+                                      productsFetcher.submit(fd, { method: "post" });
                                     }}
-                                    disabled={revalidator.state === "loading"}
+                                    disabled={productsFetcher.state !== "idle"}
                                   >
-                                    {revalidator.state === "loading" ? "Loading…" : "Retry loading products"}
+                                    {productsFetcher.state !== "idle" ? "Loading…" : "Load products"}
                                   </s-button>
                                 </s-stack>
                               ) : (
@@ -693,7 +758,7 @@ export default function Index() {
                                     className="srSelect"
                                   >
                                     <option value="">-- Select Product --</option>
-                                    {(shopifyProducts || []).map((p) => (
+                                    {effectiveProductsForPicker.map((p) => (
                                       <option key={p.id} value={p.id}>{p.title}</option>
                                     ))}
                                   </select>
