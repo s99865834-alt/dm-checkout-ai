@@ -1,0 +1,26 @@
+# Dev app configuration — deploy with: shopify app deploy --config shopify.app.dev.toml
+
+client_id = "1b08e51c2a5ddd18bb42d78231124acb"
+name = "dm-checkout-ai-dev"
+application_url = "https://dm-checkout-ai-develop.up.railway.app"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+scopes = "write_products,read_products,read_orders,read_legal_policies,read_content"
+
+[auth]
+redirect_urls = [ "https://dm-checkout-ai-develop.up.railway.app/auth/callback" ]
