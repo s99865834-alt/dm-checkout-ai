@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
@@ -22,71 +21,9 @@ export const loader = async ({ request }) => {
   let shopifyProducts = [];
 
   if (shop?.id) {
-    // Fetch independent reads in parallel — use refresh so token is always valid
-    [metaAuth, settings, brandVoice] = await Promise.all([
-      getMetaAuthWithRefresh(shop.id),
-      getSettings(shop.id, plan?.name),
-      getBrandVoice(shop.id),
-    ]);
-
-    // Data that depends on metaAuth — fetch all in parallel
-    if (metaAuth) {
-      [instagramInfo, mediaData, productMappings] = await Promise.all([
-        metaAuth.ig_business_id
-          ? getInstagramAccountInfo(metaAuth.ig_business_id, shop.id)
-          : Promise.resolve(null),
-        (metaAuth.ig_business_id || metaAuth.auth_type === "instagram")
-          ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
-          : Promise.resolve(null),
-        getProductMappings(shop.id),
-      ]);
-    }
-
-    // Shopify products — independent of metaAuth
-    try {
-      const response = await admin.graphql(`
-        query getProducts($first: Int!) {
-          products(first: $first) {
-            nodes {
-              id
-              title
-              handle
-              variants(first: 10) {
-                nodes {
-                  id
-                  title
-                  price
-                  selectedOptions { name value }
-                }
-              }
-            }
-          }
-        }
-      `, { variables: { first: 50 } });
-      const json = await response.json();
-      shopifyProducts = json.data?.products?.nodes || [];
-    } catch (err) {
-      console.error("[home] Error fetching Shopify products:", err);
-    }
-  }
-
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
-};
-
-export const action = async ({ request }) => {
-  try {
-    const { session, shop, plan, admin } = await getShopWithPlan(request);
-
-    if (!session?.shop) {
-      return { error: "Authentication failed. Please try again." };
-    }
-
-    const formData = await request.formData();
-    const actionType = formData.get("action");
-
-    // ── Get products (on-demand for picker when loader didn't return them) ──
-    if (actionType === "get-products") {
-      if (!shop?.id) return { error: "Shop not found" };
+    // Run products fetch in parallel with first batch (same as when feed had its own page).
+    // Doing it after Meta/Instagram work can cause timeout or wrong session on the index.
+    const productsPromise = (async () => {
       try {
         const response = await admin.graphql(`
           query getProducts($first: Int!) {
@@ -108,13 +45,46 @@ export const action = async ({ request }) => {
           }
         `, { variables: { first: 50 } });
         const json = await response.json();
-        const shopifyProducts = json.data?.products?.nodes || [];
-        return { shopifyProducts };
+        return json.data?.products?.nodes || [];
       } catch (err) {
-        console.error("[home] Error fetching products (get-products):", err);
-        return { error: err.message || "Failed to load products" };
+        console.error("[home] Error fetching Shopify products:", err);
+        return [];
       }
+    })();
+
+    [metaAuth, settings, brandVoice, shopifyProducts] = await Promise.all([
+      getMetaAuthWithRefresh(shop.id),
+      getSettings(shop.id, plan?.name),
+      getBrandVoice(shop.id),
+      productsPromise,
+    ]);
+
+    if (metaAuth) {
+      [instagramInfo, mediaData, productMappings] = await Promise.all([
+        metaAuth.ig_business_id
+          ? getInstagramAccountInfo(metaAuth.ig_business_id, shop.id)
+          : Promise.resolve(null),
+        (metaAuth.ig_business_id || metaAuth.auth_type === "instagram")
+          ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
+          : Promise.resolve(null),
+        getProductMappings(shop.id),
+      ]);
     }
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
+};
+
+export const action = async ({ request }) => {
+  try {
+    const { session, shop, plan, admin } = await getShopWithPlan(request);
+
+    if (!session?.shop) {
+      return { error: "Authentication failed. Please try again." };
+    }
+
+    const formData = await request.formData();
+    const actionType = formData.get("action");
 
     // ── Disconnect Instagram ───────────────────────────────────────────────
     if (actionType === "disconnect") {
@@ -199,8 +169,7 @@ export const action = async ({ request }) => {
         const finalVariantId = variantId || variants[0].id;
         const productHandle = product?.handle?.trim() || null;
         await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
-        const productMappings = await getProductMappings(shop.id);
-        return { success: true, message: "Product mapping saved successfully", productMappings };
+        return { success: true, message: "Product mapping saved successfully" };
       } catch (err) {
         console.error("[home] Error saving mapping:", err);
         return { error: err.message || "Failed to save mapping" };
@@ -214,8 +183,7 @@ export const action = async ({ request }) => {
       if (!igMediaId) return { error: "Missing Instagram media ID" };
       try {
         await deleteProductMapping(shop.id, igMediaId);
-        const productMappings = await getProductMappings(shop.id);
-        return { success: true, message: "Product mapping deleted successfully", productMappings };
+        return { success: true, message: "Product mapping deleted successfully" };
       } catch (err) {
         console.error("[home] Error deleting mapping:", err);
         return { error: err.message || "Failed to delete mapping" };
@@ -271,7 +239,6 @@ export default function Index() {
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
-  const productsFetcher = useFetcher();     // On-demand product list for picker (when loader returns none)
 
   // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
@@ -284,8 +251,6 @@ export default function Index() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
-  // After save/delete mapping we use action response so we don't revalidate (revalidate can lose shopifyProducts on index)
-  const [productMappingsOverride, setProductMappingsOverride] = useState(null);
 
   // Sync settings / brand voice when loader data refreshes
   useEffect(() => {
@@ -300,28 +265,12 @@ export default function Index() {
     }
   }, [settings, brandVoice]);
 
-  // After save/delete mapping: use returned productMappings so we don't revalidate (avoids losing shopifyProducts).
-  // After toggle-post: revalidate so settings reflect.
+  // Revalidate after successful post actions (mapping save/delete, post toggle)
   useEffect(() => {
-    if (postFetcher.state !== "idle" || !postFetcher.data?.success) return;
-    if (Array.isArray(postFetcher.data.productMappings)) {
-      setProductMappingsOverride(postFetcher.data.productMappings);
-    } else {
+    if (postFetcher.state === "idle" && postFetcher.data?.success) {
       setTimeout(() => revalidator.revalidate(), 100);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
-
-  // When picker opens and loader gave no products, fetch products on demand (index loader often fails to return them)
-  const productsForPicker = productsFetcher.data?.shopifyProducts ?? (productsFetcher.data?.error ? [] : null);
-  useEffect(() => {
-    if (!selectedMedia) return;
-    const fromLoader = (shopifyProducts || []).length > 0;
-    if (fromLoader) return;
-    if (productsFetcher.state !== "idle" || productsForPicker) return;
-    const fd = new FormData();
-    fd.append("action", "get-products");
-    productsFetcher.submit(fd, { method: "post" });
-  }, [selectedMedia, shopifyProducts, productsFetcher.state, productsForPicker]);
 
   // OAuth redirect — must break out of Shopify iframe
   useEffect(() => {
@@ -344,8 +293,7 @@ export default function Index() {
     };
     return n(storedId) === n(shopifyProductId);
   };
-  const effectiveMappings = productMappingsOverride ?? productMappings ?? [];
-  const mappingsMap = new Map((effectiveMappings || []).map((m) => [m.ig_media_id, m]));
+  const mappingsMap = new Map((productMappings || []).map((m) => [m.ig_media_id, m]));
   const enabledPostIds = settings?.enabled_post_ids || [];
   const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
 
@@ -378,8 +326,7 @@ export default function Index() {
     postFetcher.submit(fd, { method: "post" });
   };
 
-  const effectiveProductsForPicker = Array.isArray(productsForPicker) ? productsForPicker : (shopifyProducts || []);
-  const selectedProductData = effectiveProductsForPicker.find((p) => p.id === selectedProduct);
+  const selectedProductData = (shopifyProducts || []).find((p) => p.id === selectedProduct);
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
@@ -706,32 +653,14 @@ export default function Index() {
                           </s-box>
                         )}
 
-                        {/* Product picker — shown inline when Map is clicked. Products loaded from loader or on-demand via get-products. */}
+                        {/* Product picker — shown when Map is clicked. Products from loader (same request as rest of page). */}
                         {selectedMedia === media.id && (
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                             <s-stack direction="block" gap="base">
                               <label htmlFor={`product-${media.id}`}>
                                 <s-text variant="strong">Select Product:</s-text>
                               </label>
-                              {productsFetcher.state !== "idle" && effectiveProductsForPicker.length === 0 ? (
-                                <s-text variant="subdued">Loading products…</s-text>
-                              ) : productsFetcher.data?.error ? (
-                                <s-stack direction="block" gap="tight">
-                                  <s-text variant="subdued">{productsFetcher.data.error}</s-text>
-                                  <s-button
-                                    variant="secondary"
-                                    size="small"
-                                    onClick={() => {
-                                      const fd = new FormData();
-                                      fd.append("action", "get-products");
-                                      productsFetcher.submit(fd, { method: "post" });
-                                    }}
-                                    disabled={productsFetcher.state !== "idle"}
-                                  >
-                                    Retry
-                                  </s-button>
-                                </s-stack>
-                              ) : effectiveProductsForPicker.length === 0 ? (
+                              {(shopifyProducts || []).length === 0 ? (
                                 <s-stack direction="block" gap="tight">
                                   <s-text variant="subdued">
                                     No products to show. Your store may have no products, or the list could not be loaded.
@@ -739,14 +668,10 @@ export default function Index() {
                                   <s-button
                                     variant="secondary"
                                     size="small"
-                                    onClick={() => {
-                                      const fd = new FormData();
-                                      fd.append("action", "get-products");
-                                      productsFetcher.submit(fd, { method: "post" });
-                                    }}
-                                    disabled={productsFetcher.state !== "idle"}
+                                    onClick={() => revalidator.revalidate()}
+                                    disabled={revalidator.state === "loading"}
                                   >
-                                    {productsFetcher.state !== "idle" ? "Loading…" : "Load products"}
+                                    {revalidator.state === "loading" ? "Loading…" : "Retry"}
                                   </s-button>
                                 </s-stack>
                               ) : (
@@ -758,7 +683,7 @@ export default function Index() {
                                     className="srSelect"
                                   >
                                     <option value="">-- Select Product --</option>
-                                    {effectiveProductsForPicker.map((p) => (
+                                    {(shopifyProducts || []).map((p) => (
                                       <option key={p.id} value={p.id}>{p.title}</option>
                                     ))}
                                   </select>
