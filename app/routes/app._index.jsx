@@ -85,7 +85,7 @@ export const loader = async ({ request }) => {
   if (missingScopes?.length > 0) {
     needsReauth = true;
     const allScopes = "write_products,read_products,read_orders,read_legal_policies,read_content";
-    const APP_URL = "https://dm-checkout-ai-production.up.railway.app";
+    const APP_URL = process.env.SHOPIFY_APP_URL || "https://dm-checkout-ai-production.up.railway.app";
     reauthUrl = `https://${session.shop}/admin/oauth/authorize?client_id=${process.env.SHOPIFY_API_KEY}&scope=${encodeURIComponent(allScopes)}&redirect_uri=${encodeURIComponent(APP_URL + "/auth/callback")}`;
   }
 
