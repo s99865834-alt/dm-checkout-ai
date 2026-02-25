@@ -369,6 +369,63 @@ s-page s-box.srCardCompact {
   min-width: 0;
 }
 
+/* Plan & Instagram: two-column interior layout */
+.srPlanIGRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.srPlanSide {
+  flex: 0 0 220px;
+  min-width: 0;
+  padding-right: 20px;
+}
+
+.srPlanIGDivider {
+  width: 1px;
+  align-self: stretch;
+  background: #e1e3e5;
+  flex-shrink: 0;
+  margin: 0 20px 0 0;
+}
+
+.srIGSide {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .srPlanIGRow {
+    flex-direction: column;
+  }
+  .srPlanSide {
+    flex: none;
+    width: 100%;
+    padding-right: 0;
+    padding-bottom: 14px;
+  }
+  .srPlanIGDivider {
+    width: 100%;
+    height: 1px;
+    margin: 0 0 14px 0;
+  }
+  .srIGSide {
+    width: 100%;
+  }
+}
+
+/* Inline select inside a toggle row (brand voice tone) */
+.srSelectInline {
+  flex-shrink: 0;
+}
+
+/* Full-width text input inside a toggle row */
+.srInputRow {
+  width: 100%;
+  margin-top: 8px;
+}
+
 /* Toggle rows: more space and clear separation */
 .srToggleStack {
   display: flex;

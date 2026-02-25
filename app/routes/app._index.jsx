@@ -285,28 +285,27 @@ export default function Index() {
         </s-banner>
       )}
 
-      {/* Plan & Instagram — full width */}
+      {/* Plan & Instagram — full width, two-column interior */}
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
-          <s-stack direction="block" gap="base">
+          <div className="srPlanIGRow">
+            {/* Left: plan badge + usage + progress */}
             {shop && plan && (
-              <>
-                <s-stack direction="inline" gap="base" alignment="center" className="srFlexWrap">
+              <div className="srPlanSide">
+                <s-stack direction="block" gap="tight">
                   <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
                     {plan.name}
                   </s-badge>
                   {shop.usage_count !== undefined && (
-                    <s-stack direction="block" gap="tight" className="srFlex1 srUsageBlock">
-                      <s-stack direction="inline" gap="base" alignment="center">
-                        <s-text variant="subdued" className="srCardDesc">
-                          {shop.usage_count}/{plan.cap} messages this month
-                        </s-text>
-                        {shop.usage_count >= plan.cap * 0.8 && (
-                          <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                            {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
-                          </s-badge>
-                        )}
-                      </s-stack>
+                    <s-stack direction="block" gap="tight" className="srUsageBlock">
+                      <s-text variant="subdued" className="srCardDesc">
+                        {shop.usage_count}/{plan.cap} messages this month
+                      </s-text>
+                      {shop.usage_count >= plan.cap * 0.8 && (
+                        <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                          {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
+                        </s-badge>
+                      )}
                       {shop.usage_count >= plan.cap * 0.8 && (
                         <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
                           <s-stack direction="block" gap="tight">
@@ -335,59 +334,66 @@ export default function Index() {
                     </s-stack>
                   )}
                 </s-stack>
-                <div className="srDividerTop" />
-              </>
+              </div>
             )}
-            {isConnected ? (
-              <s-stack direction="block" gap="base">
-                <s-stack direction="inline" gap="base" alignment="space-between">
-                  <s-stack direction="block" gap="tight">
-                    <s-text variant="strong" className="srCardTitle">Connected</s-text>
-                    {instagramInfo?.username && (
-                      <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
-                    )}
+
+            {/* Vertical divider */}
+            <div className="srPlanIGDivider" />
+
+            {/* Right: Instagram connection */}
+            <div className="srIGSide">
+              {isConnected ? (
+                <s-stack direction="block" gap="base">
+                  <s-stack direction="inline" gap="base" alignment="space-between">
+                    <s-stack direction="block" gap="tight">
+                      <s-text variant="strong" className="srCardTitle">Connected</s-text>
+                      {instagramInfo?.username && (
+                        <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
+                      )}
+                    </s-stack>
+                    <s-button
+                      variant="secondary"
+                      size="slim"
+                      className="srBtnCompact"
+                      onClick={() => {
+                        if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
+                          instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
+                        }
+                      }}
+                      disabled={instagramFetcher.state === "submitting"}
+                    >
+                      {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                    </s-button>
                   </s-stack>
+                  {(instagramInfo?.id || metaAuth?.ig_business_id) && (
+                    <s-text variant="subdued" className="srCardDesc">
+                      Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
+                      {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
+                    </s-text>
+                  )}
+                </s-stack>
+              ) : (
+                <s-stack direction="block" gap="base">
+                  <s-text variant="strong" className="srCardTitle">Not connected</s-text>
+                  <s-text variant="subdued" className="srCardDesc">
+                    Connect your Instagram Business or Creator account to enable automation.
+                  </s-text>
                   <s-button
-                    variant="secondary"
-                    size="slim"
+                    variant="primary"
                     className="srBtnCompact"
-                    onClick={() => {
-                      if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
-                        instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
-                      }
-                    }}
-                    disabled={instagramFetcher.state === "submitting"}
+                    onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                    disabled={fetcher.state === "submitting"}
                   >
-                    {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                    {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
                   </s-button>
                 </s-stack>
-                {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                  <s-text variant="subdued" className="srCardDesc">
-                    Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                    {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
-                  </s-text>
-                )}
-              </s-stack>
-            ) : (
-              <s-stack direction="block" gap="base">
-                <s-text variant="subdued" className="srCardDesc">
-                  Connect your Instagram Business or Creator account to enable automation.
-                </s-text>
-                <s-button
-                  variant="primary"
-                  className="srBtnCompact"
-                  onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
-                  disabled={fetcher.state === "submitting"}
-                >
-                  {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
-                </s-button>
-              </s-stack>
-            )}
-          </s-stack>
+              )}
+            </div>
+          </div>
         </s-box>
       </s-section>
 
-      {/* Automation — two equal columns */}
+      {/* Automation — two equal columns, both styled like toggle rows */}
       <PlanGate requiredPlan="PRO" feature="Automation Controls">
         <s-section heading="Automation">
           <automationFetcher.Form method="post">
@@ -399,7 +405,7 @@ export default function Index() {
             <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
 
             <div className="srAutoTwoCol">
-              {/* Left: toggles */}
+              {/* Left: automation toggles */}
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="none" className="srToggleStack">
                   <div className="srToggleRow">
@@ -441,35 +447,39 @@ export default function Index() {
                 </s-stack>
               </s-box>
 
-              {/* Right: brand voice */}
-              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                  <div className="srBrandVoiceBlock srBrandVoiceBlockFull">
-                    <s-text variant="strong" className="srCardTitle">Brand voice</s-text>
-                    <s-text variant="subdued" className="srCardDesc">Tone and style of automated replies</s-text>
-                    <s-stack direction="block" gap="base" className="srBrandVoiceFields">
-                      <label className="srFieldLabel">
-                        <s-text variant="subdued" className="srCardDesc">Tone</s-text>
-                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect">
+              {/* Right: brand voice — same row/divider pattern as left */}
+              <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                  <s-stack direction="block" gap="none" className="srToggleStack">
+                    <div className="srToggleRow">
+                      <s-stack direction="inline" gap="base" alignment="space-between">
+                        <s-stack direction="block" gap="tight">
+                          <s-text variant="strong" className="srCardTitle">Tone</s-text>
+                          <s-text variant="subdued" className="srCardDesc">Overall style of automated replies</s-text>
+                        </s-stack>
+                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srSelectInline">
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
                           <option value="casual">Casual</option>
                         </select>
-                      </label>
-                      <label className="srFieldLabel">
-                        <s-text variant="subdued" className="srCardDesc">Custom instruction (optional)</s-text>
+                      </s-stack>
+                    </div>
+                    <div className="srToggleRow srToggleRowLast">
+                      <s-stack direction="block" gap="tight">
+                        <s-text variant="strong" className="srCardTitle">Custom instruction</s-text>
+                        <s-text variant="subdued" className="srCardDesc">Optional override for reply style</s-text>
                         <input
                           type="text"
                           value={brandVoiceCustom}
                           onChange={(e) => setBrandVoiceCustom(e.target.value)}
                           placeholder="e.g. Always be enthusiastic and use emojis"
-                          className="srInput"
+                          className="srInput srInputRow"
                         />
-                      </label>
-                    </s-stack>
-                  </div>
-                </PlanGate>
-              </s-box>
+                      </s-stack>
+                    </div>
+                  </s-stack>
+                </s-box>
+              </PlanGate>
             </div>
 
             <div className="srSaveBtnWrap">
