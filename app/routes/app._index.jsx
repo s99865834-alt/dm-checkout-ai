@@ -1,291 +1,347 @@
 import { useEffect, useState } from "react";
-import { useFetcher, useOutletContext, useSearchParams, useNavigate, useLoaderData } from "react-router";
+import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuth, getInstagramAccountInfo, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice } from "../lib/db.server";
+import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
 
   let metaAuth = null;
   let instagramInfo = null;
   let settings = null;
   let brandVoice = null;
+  let mediaData = null;
+  let productMappings = [];
+  let shopifyProducts = [];
 
   if (shop?.id) {
-    // Fetch independent DB reads in parallel
+    // Fetch independent reads in parallel — use refresh so token is always valid
     [metaAuth, settings, brandVoice] = await Promise.all([
-      getMetaAuth(shop.id),
-      getSettings(shop.id),
+      getMetaAuthWithRefresh(shop.id),
+      getSettings(shop.id, plan?.name),
       getBrandVoice(shop.id),
     ]);
 
-    // Instagram info depends on metaAuth, so fetch after
-    if (metaAuth?.ig_business_id) {
-      instagramInfo = await getInstagramAccountInfo(metaAuth.ig_business_id, shop.id);
+    // Data that depends on metaAuth — fetch all in parallel
+    if (metaAuth) {
+      [instagramInfo, mediaData, productMappings] = await Promise.all([
+        metaAuth.ig_business_id
+          ? getInstagramAccountInfo(metaAuth.ig_business_id, shop.id)
+          : Promise.resolve(null),
+        (metaAuth.ig_business_id || metaAuth.auth_type === "instagram")
+          ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
+          : Promise.resolve(null),
+        getProductMappings(shop.id),
+      ]);
+    }
+
+    // Shopify products — independent of metaAuth
+    try {
+      const response = await admin.graphql(`
+        query getProducts($first: Int!) {
+          products(first: $first) {
+            nodes {
+              id
+              title
+              handle
+              variants(first: 10) {
+                nodes {
+                  id
+                  title
+                  price
+                  selectedOptions { name value }
+                }
+              }
+            }
+          }
+        }
+      `, { variables: { first: 50 } });
+      const json = await response.json();
+      shopifyProducts = json.data?.products?.nodes || [];
+    } catch (err) {
+      console.error("[home] Error fetching Shopify products:", err);
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice };
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
 };
 
 export const action = async ({ request }) => {
   try {
-    const { session, shop, plan } = await getShopWithPlan(request);
+    const { session, shop, plan, admin } = await getShopWithPlan(request);
 
-    if (!session || !session.shop) {
+    if (!session?.shop) {
       return { error: "Authentication failed. Please try again." };
     }
 
     const formData = await request.formData();
     const actionType = formData.get("action");
-    
-    console.log("[home] Action called with actionType:", actionType);
-    
-    // Handle disconnect action
+
+    // ── Disconnect Instagram ───────────────────────────────────────────────
     if (actionType === "disconnect") {
-      if (!shop?.id) {
-        return { error: "Shop not found" };
-      }
-      
+      if (!shop?.id) return { error: "Shop not found" };
       await deleteMetaAuth(shop.id);
       return { success: true, message: "Instagram account disconnected successfully" };
     }
-    
-    // Handle automation settings update
-    if (actionType === "update-automation-settings") {
-      console.log("[home] Processing update-automation-settings action");
-      if (!shop?.id) {
-        console.error("[home] Shop not found");
-        return { error: "Shop not found" };
-      }
 
+    // ── Automation settings + brand voice ─────────────────────────────────
+    if (actionType === "update-automation-settings") {
+      if (!shop?.id) return { error: "Shop not found" };
       const dmAutomationEnabled = formData.get("dm_automation_enabled") === "true";
       const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
       const followupEnabled = formData.get("followup_enabled") === "true";
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
-
-      console.log("[home] Form data:", {
-        dmAutomationEnabled,
-        commentAutomationEnabled,
-        brandVoiceTone,
-        brandVoiceCustom,
-      });
-
       try {
-        // Update settings
-        console.log("[home] Updating settings...");
-        await updateSettings(shop.id, {
-          dm_automation_enabled: dmAutomationEnabled,
-          comment_automation_enabled: commentAutomationEnabled,
-          followup_enabled: followupEnabled,
-          // Note: enabled_post_ids is now managed on the Instagram Feed page
-        }, plan?.name);
-        console.log("[home] Settings updated successfully");
-
-        // Update brand voice in brand_voice table
-        const brandVoice = {
-          tone: brandVoiceTone || "friendly", // Default to friendly if not set
-          custom_instruction: brandVoiceCustom && brandVoiceCustom.trim() ? brandVoiceCustom.trim() : null,
-        };
-
-        console.log("[home] Updating brand voice...", brandVoice);
-        await updateBrandVoice(shop.id, brandVoice);
-        console.log("[home] Brand voice updated successfully");
-
-        console.log("[home] Settings and brand voice updated successfully");
+        await Promise.all([
+          updateSettings(shop.id, {
+            dm_automation_enabled: dmAutomationEnabled,
+            comment_automation_enabled: commentAutomationEnabled,
+            followup_enabled: followupEnabled,
+          }, plan?.name),
+          updateBrandVoice(shop.id, {
+            tone: brandVoiceTone || "friendly",
+            custom_instruction: brandVoiceCustom?.trim() || null,
+          }),
+        ]);
         return { success: true, message: "Settings updated successfully" };
-      } catch (error) {
-        console.error("[home] Error updating settings:", error);
-        console.error("[home] Error stack:", error.stack);
-        return { error: error.message || "Failed to update settings" };
+      } catch (err) {
+        console.error("[home] Error updating settings:", err);
+        return { error: err.message || "Failed to update settings" };
       }
     }
-    
-    // Handle connect action (OAuth flow) – Instagram Login (Facebook Login kept server-side)
+
+    // ── Toggle per-post automation ─────────────────────────────────────────
+    if (actionType === "toggle-post-automation") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const postId = formData.get("postId");
+      const togglePost = formData.get("togglePost");
+      if (!postId) return { error: "Missing post ID" };
+      try {
+        const currentSettings = await getSettings(shop.id, plan?.name);
+        const current = currentSettings?.enabled_post_ids || [];
+        const newIds = togglePost === "enable"
+          ? current.includes(postId) ? current : [...current, postId]
+          : current.filter((id) => id !== postId);
+        await updateSettings(shop.id, { enabled_post_ids: newIds }, plan?.name);
+        return { success: true, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+      } catch (err) {
+        console.error("[home] Error toggling post automation:", err);
+        return { error: err.message || "Failed to toggle post automation" };
+      }
+    }
+
+    // ── Save product mapping ───────────────────────────────────────────────
+    if (actionType === "save-mapping") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const igMediaId = formData.get("igMediaId");
+      const productId = formData.get("productId");
+      const variantId = formData.get("variantId") || null;
+      if (!igMediaId || !productId) return { error: "Missing required fields" };
+      try {
+        const response = await admin.graphql(`
+          query getProduct($id: ID!) {
+            product(id: $id) {
+              id
+              handle
+              variants(first: 1) { nodes { id } }
+            }
+          }
+        `, { variables: { id: productId } });
+        const json = await response.json();
+        const product = json.data?.product;
+        const variants = product?.variants?.nodes || [];
+        if (variants.length === 0) return { error: "Product has no variants." };
+        const finalVariantId = variantId || variants[0].id;
+        const productHandle = product?.handle?.trim() || null;
+        await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
+        return { success: true, message: "Product mapping saved successfully" };
+      } catch (err) {
+        console.error("[home] Error saving mapping:", err);
+        return { error: err.message || "Failed to save mapping" };
+      }
+    }
+
+    // ── Delete product mapping ─────────────────────────────────────────────
+    if (actionType === "delete-mapping") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const igMediaId = formData.get("igMediaId");
+      if (!igMediaId) return { error: "Missing Instagram media ID" };
+      try {
+        await deleteProductMapping(shop.id, igMediaId);
+        return { success: true, message: "Product mapping deleted successfully" };
+      } catch (err) {
+        console.error("[home] Error deleting mapping:", err);
+        return { error: err.message || "Failed to delete mapping" };
+      }
+    }
+
+    // ── Instagram OAuth connect ────────────────────────────────────────────
     const shopDomain = session.shop;
     const connectType = formData.get("connectType") || "instagram-login";
-
     const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
     const APP_URL = process.env.SHOPIFY_APP_URL || process.env.APP_URL || PRODUCTION_URL;
     const finalAppUrl = APP_URL.includes("railway.app") ? APP_URL : PRODUCTION_URL;
 
-    if (!finalAppUrl || !finalAppUrl.startsWith("https://")) {
-      console.error("[oauth] Invalid APP_URL configuration");
+    if (!finalAppUrl?.startsWith("https://")) {
       return { error: "Server configuration error. Please contact support." };
     }
 
-    // Instagram Login (Business Login) – no Facebook Page required
-    // Must use the Instagram App ID from Meta Dashboard (Business login settings), not the main Facebook App ID.
     if (connectType === "instagram-login") {
       const instagramAppId = process.env.META_INSTAGRAM_APP_ID;
       if (!instagramAppId) {
-        return {
-          error: "Instagram Login is not configured. Set META_INSTAGRAM_APP_ID (and META_INSTAGRAM_APP_SECRET) from Meta App Dashboard → Instagram → API setup with Instagram login → Set up Instagram business login → Business login settings → Instagram App ID. The main app ID cannot be used for Instagram Login.",
-        };
+        return { error: "Instagram Login is not configured. Set META_INSTAGRAM_APP_ID in environment variables." };
       }
       const redirectUri = `${finalAppUrl}/meta/instagram-login/callback`;
-      const scopes = [
-        "instagram_business_basic",
-        "instagram_business_manage_messages",
-        "instagram_business_manage_comments",
-      ].join(",");
-      // Use api.instagram.com per Meta docs; #weblink keeps flow in browser (avoids native app takeover on mobile)
-      const authUrl = `https://api.instagram.com/oauth/authorize?` +
-        `client_id=${instagramAppId}&` +
-        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-        `response_type=code&` +
-        `scope=${encodeURIComponent(scopes)}&` +
-        `state=${encodeURIComponent(shopDomain)}#weblink`;
+      const scopes = ["instagram_business_basic", "instagram_business_manage_messages", "instagram_business_manage_comments"].join(",");
+      const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${instagramAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(shopDomain)}#weblink`;
       return { oauthUrl: authUrl };
     }
 
-    // Facebook Login (server-side only) – requires Facebook Page linked to IG Business
+    // Facebook Login fallback
     const redirectUri = `${finalAppUrl}/meta/instagram/callback`;
-    const scopes = [
-      "instagram_basic",
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_metadata",
-      "instagram_manage_comments",
-      "instagram_manage_messages",
-    ].join(",");
-    const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?` +
-      `client_id=${META_APP_ID}&` +
-      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-      `scope=${encodeURIComponent(scopes)}&` +
-      `response_type=code&` +
-      `auth_type=rerequest&` +
-      `state=${encodeURIComponent(shopDomain)}`;
+    const scopes = ["instagram_basic", "pages_show_list", "pages_read_engagement", "pages_manage_metadata", "instagram_manage_comments", "instagram_manage_messages"].join(",");
+    const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&response_type=code&auth_type=rerequest&state=${encodeURIComponent(shopDomain)}`;
     return { oauthUrl: authUrl };
   } catch (error) {
-    console.error("[oauth] Error generating OAuth URL:", error);
-    return { error: error.message || "Failed to initiate Instagram connection" };
+    console.error("[home] Action error:", error);
+    return { error: error.message || "An error occurred" };
   }
 };
 
 export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts } = loaderData || {};
   const { hasAccess } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
+
+  const isConnected = !!metaAuth;
   const disconnected = searchParams.get("disconnected") === "true";
   const error = searchParams.get("error");
-  const isConnected = !!metaAuth;
-  
-  // Use separate fetchers for different actions to avoid conflicts
-  const automationFetcher = useFetcher();
-  const instagramFetcher = useFetcher();
 
+  // Separate fetchers so actions don't conflict
+  const connectFetcher = useFetcher();      // OAuth connect / disconnect
+  const automationFetcher = useFetcher();   // Automation settings + brand voice
+  const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
+
+  // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
 
-  // Update local state when settings change (e.g., on initial load or after page refresh)
+  // Instagram feed local state
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedVariant, setSelectedVariant] = useState("");
+
+  // Sync settings / brand voice when loader data refreshes
   useEffect(() => {
-      if (settings) {
-        setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
-        setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
-        setFollowupEnabled(settings.followup_enabled ?? false);
-      }
+    if (settings) {
+      setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
+      setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
+      setFollowupEnabled(settings.followup_enabled ?? false);
+    }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
       setBrandVoiceCustom(brandVoice.custom_instruction || "");
     }
   }, [settings, brandVoice]);
 
-  // Update state after successful submission (don't reload page)
+  // Revalidate after successful post actions (mapping save/delete, post toggle)
   useEffect(() => {
-    if (automationFetcher.data?.success) {
-      // State will be updated from loader data on next render
-      // No need to reload - the success message will show
-      console.log("Settings saved successfully");
+    if (postFetcher.state === "idle" && postFetcher.data?.success) {
+      setTimeout(() => revalidator.revalidate(), 100);
     }
-  }, [automationFetcher.data]);
+  }, [postFetcher.state, postFetcher.data, revalidator]);
 
-  // Debug: Log fetcher state and data
+  // OAuth redirect — must break out of Shopify iframe
   useEffect(() => {
-    console.log("Automation fetcher state:", automationFetcher.state);
-    if (automationFetcher.data) {
-      console.log("Automation fetcher data:", automationFetcher.data);
+    if (connectFetcher.data?.oauthUrl) {
+      try { window.top.location.href = connectFetcher.data.oauthUrl; }
+      catch { window.location.href = connectFetcher.data.oauthUrl; }
+    } else if (connectFetcher.data?.success && connectFetcher.data?.message?.includes("disconnected")) {
+      navigate("/app?disconnected=true");
     }
-  }, [automationFetcher.state, automationFetcher.data]);
+  }, [connectFetcher.data, navigate]);
 
-  // Handle OAuth URL redirect - break out of iframe for external OAuth
-  useEffect(() => {
-    if (fetcher.data?.oauthUrl) {
-      try {
-        window.top.location.href = fetcher.data.oauthUrl;
-      } catch (e) {
-        window.location.href = fetcher.data.oauthUrl;
-      }
-    } else if (fetcher.data?.error && !fetcher.data?.oauthUrl) {
-      // Only navigate on OAuth/connection errors, not on automation settings errors
-      // Automation settings errors will just show the banner
-      if (fetcher.data.error.includes("Instagram") || fetcher.data.error.includes("connection") || fetcher.data.error.includes("OAuth")) {
-        navigate(`/app?error=${encodeURIComponent(fetcher.data.error)}`);
-      }
-    } else if (fetcher.data?.success && fetcher.data?.message?.includes("disconnected")) {
-      // Only navigate on disconnect success, not on automation settings success
-      navigate(`/app?disconnected=true`);
-    }
-  }, [fetcher.data, navigate]);
-  
-  // Handle Instagram connection success/error (OAuth)
-  useEffect(() => {
-    if (instagramFetcher.data?.error) {
-      // Show error in URL params for display
-      navigate(`/app?error=${encodeURIComponent(instagramFetcher.data.error)}`);
-    }
-  }, [instagramFetcher.data, navigate]);
+  // Feed helpers
+  const mappingsMap = new Map((productMappings || []).map((m) => [m.ig_media_id, m]));
+  const enabledPostIds = settings?.enabled_post_ids || [];
+  const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
+
+  const handleTogglePost = (postId, currentlyEnabled) => {
+    const fd = new FormData();
+    fd.append("action", "toggle-post-automation");
+    fd.append("postId", postId);
+    fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
+    postFetcher.submit(fd, { method: "post" });
+  };
+
+  const handleSaveMapping = (mediaId) => {
+    if (!selectedProduct) { alert("Please select a product"); return; }
+    const fd = new FormData();
+    fd.append("action", "save-mapping");
+    fd.append("igMediaId", mediaId);
+    fd.append("productId", selectedProduct);
+    if (selectedVariant) fd.append("variantId", selectedVariant);
+    postFetcher.submit(fd, { method: "post" });
+    setSelectedMedia(null);
+    setSelectedProduct("");
+    setSelectedVariant("");
+  };
+
+  const handleDeleteMapping = (mediaId) => {
+    if (!confirm("Remove this product mapping?")) return;
+    const fd = new FormData();
+    fd.append("action", "delete-mapping");
+    fd.append("igMediaId", mediaId);
+    postFetcher.submit(fd, { method: "post" });
+  };
+
+  const selectedProductData = (shopifyProducts || []).find((p) => p.id === selectedProduct);
+  const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
     <s-page heading="DM Checkout AI">
+
+      {/* ── Banners ────────────────────────────────────────────────────── */}
       {error && (
         <s-banner tone="critical">
           <s-text variant="strong">Connection error</s-text>
           <s-text>{error}</s-text>
         </s-banner>
       )}
-      {instagramFetcher.data?.success && instagramFetcher.data?.message?.includes("connected") && (
-        <s-banner tone="success">
-          <s-text>{instagramFetcher.data.message}</s-text>
-        </s-banner>
-      )}
-      {instagramFetcher.data?.error && (
-        <s-banner tone="critical">
-          <s-text>{instagramFetcher.data.error}</s-text>
-        </s-banner>
-      )}
       {disconnected && !error && !isConnected && (
-        <s-banner tone="info">
-          <s-text>Instagram account disconnected.</s-text>
-        </s-banner>
+        <s-banner tone="info"><s-text>Instagram account disconnected.</s-text></s-banner>
+      )}
+      {connectFetcher.data?.error && (
+        <s-banner tone="critical"><s-text>{connectFetcher.data.error}</s-text></s-banner>
       )}
       {automationFetcher.data?.success && (
-        <s-banner tone="success">
-          <s-text>{automationFetcher.data.message}</s-text>
-        </s-banner>
+        <s-banner tone="success"><s-text>{automationFetcher.data.message}</s-text></s-banner>
       )}
       {automationFetcher.data?.error && (
-        <s-banner tone="critical">
-          <s-text>{automationFetcher.data.error}</s-text>
-        </s-banner>
+        <s-banner tone="critical"><s-text>{automationFetcher.data.error}</s-text></s-banner>
+      )}
+      {postFetcher.data?.success && (
+        <s-banner tone="success"><s-text>{postFetcher.data.message}</s-text></s-banner>
+      )}
+      {postFetcher.data?.error && (
+        <s-banner tone="critical"><s-text>{postFetcher.data.error}</s-text></s-banner>
       )}
 
-      {/* Plan & Instagram — full width, two-column interior */}
+      {/* ── Plan & Instagram ───────────────────────────────────────────── */}
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
           <div className="srPlanIGRow">
@@ -307,7 +363,8 @@ export default function Index() {
                         </s-badge>
                       )}
                       {shop.usage_count >= plan.cap * 0.8 && (
-                        <s-box padding="tight" borderWidth="base" borderRadius="base" background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                        <s-box padding="tight" borderWidth="base" borderRadius="base"
+                          background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
                           <s-stack direction="block" gap="tight">
                             <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
                               {shop.usage_count >= plan.cap
@@ -322,11 +379,8 @@ export default function Index() {
                       )}
                       <progress
                         className={`srProgress srProgress--${
-                          shop.usage_count >= plan.cap
-                            ? "critical"
-                            : shop.usage_count >= plan.cap * 0.8
-                              ? "warning"
-                              : "ok"
+                          shop.usage_count >= plan.cap ? "critical"
+                            : shop.usage_count >= plan.cap * 0.8 ? "warning" : "ok"
                         }`}
                         value={shop.usage_count}
                         max={plan.cap}
@@ -337,7 +391,6 @@ export default function Index() {
               </div>
             )}
 
-            {/* Vertical divider */}
             <div className="srPlanIGDivider" />
 
             {/* Right: Instagram connection */}
@@ -352,17 +405,15 @@ export default function Index() {
                       )}
                     </s-stack>
                     <s-button
-                      variant="secondary"
-                      size="slim"
-                      className="srBtnCompact"
+                      variant="secondary" size="slim" className="srBtnCompact"
                       onClick={() => {
                         if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
-                          instagramFetcher.submit({ action: "disconnect" }, { method: "post" });
+                          connectFetcher.submit({ action: "disconnect" }, { method: "post" });
                         }
                       }}
-                      disabled={instagramFetcher.state === "submitting"}
+                      disabled={connectFetcher.state === "submitting"}
                     >
-                      {instagramFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                      {connectFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
                     </s-button>
                   </s-stack>
                   {(instagramInfo?.id || metaAuth?.ig_business_id) && (
@@ -379,12 +430,11 @@ export default function Index() {
                     Connect your Instagram Business or Creator account to enable automation.
                   </s-text>
                   <s-button
-                    variant="primary"
-                    className="srBtnCompact"
-                    onClick={() => fetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
-                    disabled={fetcher.state === "submitting"}
+                    variant="primary" className="srBtnCompact"
+                    onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                    disabled={connectFetcher.state === "submitting"}
                   >
-                    {fetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
+                    {connectFetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
                   </s-button>
                 </s-stack>
               )}
@@ -393,7 +443,7 @@ export default function Index() {
         </s-box>
       </s-section>
 
-      {/* Automation — two equal columns, both styled like toggle rows */}
+      {/* ── Automation ────────────────────────────────────────────────── */}
       <PlanGate requiredPlan="PRO" feature="Automation Controls">
         <s-section heading="Automation">
           <automationFetcher.Form method="post">
@@ -405,7 +455,7 @@ export default function Index() {
             <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
 
             <div className="srAutoTwoCol">
-              {/* Left: automation toggles */}
+              {/* Left: toggles */}
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="none" className="srToggleStack">
                   <div className="srToggleRow">
@@ -447,7 +497,7 @@ export default function Index() {
                 </s-stack>
               </s-box>
 
-              {/* Right: brand voice — same row/divider pattern as left */}
+              {/* Right: brand voice */}
               <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                   <s-stack direction="block" gap="none" className="srToggleStack">
@@ -490,10 +540,177 @@ export default function Index() {
           </automationFetcher.Form>
         </s-section>
       </PlanGate>
+
+      {/* ── Your Instagram Posts ───────────────────────────────────────── */}
+      {isConnected && (
+        <s-section heading="Your Instagram Posts">
+          <s-stack direction="block" gap="base">
+            <s-text variant="subdued" className="srCardDesc">
+              Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the checkboxes to enable or disable automation per post.
+            </s-text>
+
+            {metaAuth?.auth_type === "instagram" && (
+              <s-callout variant="info" title="Comment replies require Facebook Login">
+                <s-paragraph>
+                  Instagram Login supports DMs but cannot send private comment replies. Connect via Facebook on this page to enable comment automation.
+                </s-paragraph>
+              </s-callout>
+            )}
+
+            {!mediaData ? (
+              <s-text variant="subdued" className="srCardDesc">Fetching your Instagram posts…</s-text>
+            ) : mediaData.data?.length > 0 ? (
+              <div className="srMediaGrid">
+                {mediaData.data.map((media) => {
+                  const mapping = mappingsMap.get(media.id);
+                  const mappedProduct = mapping ? (shopifyProducts || []).find((p) => p.id === mapping.product_id) : null;
+                  const mappedVariant = mapping && mappedProduct && mapping.variant_id
+                    ? mappedProduct.variants?.nodes?.find((v) => v.id === mapping.variant_id)
+                    : null;
+                  const automationEnabled = isPostEnabled(media.id);
+
+                  return (
+                    <s-box key={media.id} padding="base" borderWidth="base" borderRadius="base">
+                      <s-stack direction="block" gap="base">
+                        {media.media_url && (
+                          <img src={media.media_url} alt={media.caption || "Instagram post"} className="srMediaImage" />
+                        )}
+                        {media.caption && (
+                          <s-text variant="subdued" className="srClamp2">{media.caption}</s-text>
+                        )}
+                        <s-stack direction="inline" gap="tight">
+                          {media.like_count !== undefined && <s-text variant="subdued">❤️ {media.like_count}</s-text>}
+                          {media.comments_count !== undefined && <s-text variant="subdued">💬 {media.comments_count}</s-text>}
+                        </s-stack>
+
+                        {/* Per-post automation toggle */}
+                        <s-box padding="tight" borderWidth="base" borderRadius="base"
+                          background={automationEnabled ? "success-subdued" : "subdued"}>
+                          <s-stack direction="inline" gap="base" alignment="space-between">
+                            <s-stack direction="block" gap="tight">
+                              <s-text variant="strong">
+                                {automationEnabled ? "✅ Automation Enabled" : "❌ Automation Disabled"}
+                              </s-text>
+                              <s-text variant="subdued">
+                                {automationEnabled
+                                  ? "AI will respond to comments/DMs on this post"
+                                  : "AI will NOT respond to comments/DMs on this post"}
+                              </s-text>
+                            </s-stack>
+                            <label className="srCheckboxLabel">
+                              <input
+                                type="checkbox"
+                                checked={automationEnabled}
+                                onChange={() => handleTogglePost(media.id, automationEnabled)}
+                                disabled={postFetcher.state !== "idle"}
+                              />
+                            </label>
+                          </s-stack>
+                        </s-box>
+
+                        {/* Product mapping */}
+                        {mapping ? (
+                          <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
+                            <s-stack direction="block" gap="tight">
+                              <s-text variant="strong" tone="success">✅ Mapped to Product</s-text>
+                              <s-text variant="subdued">
+                                {mappedProduct?.title || "Product"}
+                                {mappedVariant && ` (${mappedVariant.title})`}
+                              </s-text>
+                              <s-button
+                                variant="secondary" size="small"
+                                onClick={() => handleDeleteMapping(media.id)}
+                                disabled={postFetcher.state !== "idle"}
+                              >
+                                Remove Mapping
+                              </s-button>
+                            </s-stack>
+                          </s-box>
+                        ) : (
+                          <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
+                            <s-stack direction="block" gap="tight">
+                              <s-text variant="subdued">Not mapped</s-text>
+                              <s-button
+                                variant="primary" size="small"
+                                onClick={() => setSelectedMedia(media.id)}
+                                disabled={postFetcher.state !== "idle"}
+                              >
+                                Map to Product
+                              </s-button>
+                            </s-stack>
+                          </s-box>
+                        )}
+
+                        {/* Product picker — shown inline when Map is clicked */}
+                        {selectedMedia === media.id && (
+                          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                            <s-stack direction="block" gap="base">
+                              <label htmlFor={`product-${media.id}`}>
+                                <s-text variant="strong">Select Product:</s-text>
+                              </label>
+                              <select
+                                id={`product-${media.id}`}
+                                value={selectedProduct}
+                                onChange={(e) => { setSelectedProduct(e.target.value); setSelectedVariant(""); }}
+                                className="srSelect"
+                              >
+                                <option value="">-- Select Product --</option>
+                                {(shopifyProducts || []).map((p) => (
+                                  <option key={p.id} value={p.id}>{p.title}</option>
+                                ))}
+                              </select>
+
+                              {selectedProduct && selectedProductVariants.length > 1 && (
+                                <>
+                                  <label htmlFor={`variant-${media.id}`}>
+                                    <s-text variant="strong">Select Variant (Optional):</s-text>
+                                  </label>
+                                  <select
+                                    id={`variant-${media.id}`}
+                                    value={selectedVariant}
+                                    onChange={(e) => setSelectedVariant(e.target.value)}
+                                    className="srSelect"
+                                  >
+                                    <option value="">-- Default Variant --</option>
+                                    {selectedProductVariants.map((v) => (
+                                      <option key={v.id} value={v.id}>{v.title} - ${v.price}</option>
+                                    ))}
+                                  </select>
+                                </>
+                              )}
+
+                              <s-stack direction="inline" gap="tight">
+                                <s-button
+                                  variant="primary" size="small"
+                                  onClick={() => handleSaveMapping(media.id)}
+                                  disabled={!selectedProduct || postFetcher.state !== "idle"}
+                                >
+                                  Save Mapping
+                                </s-button>
+                                <s-button
+                                  variant="secondary" size="small"
+                                  onClick={() => { setSelectedMedia(null); setSelectedProduct(""); setSelectedVariant(""); }}
+                                >
+                                  Cancel
+                                </s-button>
+                              </s-stack>
+                            </s-stack>
+                          </s-box>
+                        )}
+                      </s-stack>
+                    </s-box>
+                  );
+                })}
+              </div>
+            ) : (
+              <s-text variant="subdued" className="srCardDesc">No Instagram posts found.</s-text>
+            )}
+          </s-stack>
+        </s-section>
+      )}
+
     </s-page>
   );
 }
 
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
+export const headers = (headersArgs) => boundary.headers(headersArgs);

@@ -120,7 +120,7 @@ export default function ProductContextPreview() {
         <s-section>
           <s-text tone="subdued">
             No product mappings yet. Map a product to an Instagram post on the{" "}
-            <s-link href="/app/instagram-feed">Instagram Feed</s-link> page,
+            <s-link href="/app">Home</s-link> page,
             then return here.
           </s-text>
         </s-section>
