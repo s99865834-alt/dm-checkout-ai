@@ -345,100 +345,88 @@ export default function Index() {
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
           <div className="srPlanIGRow">
-            {/* Left: plan badge + usage + progress */}
+
+            {/* Left: plan badge inline with usage count, progress bar below */}
             {shop && plan && (
               <div className="srPlanSide">
-                <s-stack direction="block" gap="tight">
+                <div className="srPlanBadgeRow">
                   <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
                     {plan.name}
                   </s-badge>
                   {shop.usage_count !== undefined && (
-                    <s-stack direction="block" gap="tight" className="srUsageBlock">
-                      <s-text variant="subdued" className="srCardDesc">
-                        {shop.usage_count}/{plan.cap} messages this month
-                      </s-text>
-                      {shop.usage_count >= plan.cap * 0.8 && (
-                        <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                          {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
-                        </s-badge>
-                      )}
-                      {shop.usage_count >= plan.cap * 0.8 && (
-                        <s-box padding="tight" borderWidth="base" borderRadius="base"
-                          background={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                          <s-stack direction="block" gap="tight">
-                            <s-text variant="strong" tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
-                              {shop.usage_count >= plan.cap
-                                ? "You've reached your monthly message limit!"
-                                : "You're approaching your monthly message limit"}
-                            </s-text>
-                            <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact">
-                              Upgrade
-                            </s-button>
-                          </s-stack>
-                        </s-box>
-                      )}
-                      <progress
-                        className={`srProgress srProgress--${
-                          shop.usage_count >= plan.cap ? "critical"
-                            : shop.usage_count >= plan.cap * 0.8 ? "warning" : "ok"
-                        }`}
-                        value={shop.usage_count}
-                        max={plan.cap}
-                      />
-                    </s-stack>
+                    <s-text variant="subdued" className="srCardDesc">
+                      {shop.usage_count}/{plan.cap} messages this month
+                    </s-text>
                   )}
-                </s-stack>
+                  {shop.usage_count >= plan.cap * 0.8 && (
+                    <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
+                      {shop.usage_count >= plan.cap ? "Limit Reached" : "Approaching Limit"}
+                    </s-badge>
+                  )}
+                </div>
+                {shop.usage_count !== undefined && (
+                  <progress
+                    className={`srProgress srProgress--${
+                      shop.usage_count >= plan.cap ? "critical"
+                        : shop.usage_count >= plan.cap * 0.8 ? "warning" : "ok"
+                    } srProgressSlim`}
+                    value={shop.usage_count}
+                    max={plan.cap}
+                  />
+                )}
+                {shop.usage_count >= plan.cap && (
+                  <s-button href="/app/billing/select" variant="primary" size="slim" className="srBtnCompact srUpgradeBtn">
+                    Upgrade plan
+                  </s-button>
+                )}
               </div>
             )}
 
             <div className="srPlanIGDivider" />
 
-            {/* Right: Instagram connection */}
+            {/* Right: Instagram status + action on one line, details below */}
             <div className="srIGSide">
               {isConnected ? (
-                <s-stack direction="block" gap="base">
-                  <s-stack direction="inline" gap="base" alignment="space-between">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong" className="srCardTitle">Connected</s-text>
-                      {instagramInfo?.username && (
-                        <s-text variant="subdued" className="srCardDesc">@{instagramInfo.username}</s-text>
-                      )}
-                    </s-stack>
-                    <s-button
-                      variant="secondary" size="slim" className="srBtnCompact"
-                      onClick={() => {
-                        if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
-                          connectFetcher.submit({ action: "disconnect" }, { method: "post" });
-                        }
-                      }}
-                      disabled={connectFetcher.state === "submitting"}
-                    >
-                      {connectFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
-                    </s-button>
-                  </s-stack>
-                  {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                    <s-text variant="subdued" className="srCardDesc">
-                      Account ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                      {metaAuth.token_expires_at && ` · Token expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
+                <div className="srIGConnectedRow">
+                  <div className="srIGConnectedInfo">
+                    <s-text variant="strong" className="srCardTitle">
+                      Connected{instagramInfo?.username ? ` · @${instagramInfo.username}` : ""}
                     </s-text>
-                  )}
-                </s-stack>
+                    {(instagramInfo?.id || metaAuth?.ig_business_id) && (
+                      <s-text variant="subdued" className="srCardDesc">
+                        ID: {instagramInfo?.id || metaAuth.ig_business_id}
+                        {metaAuth.token_expires_at && ` · Expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
+                      </s-text>
+                    )}
+                  </div>
+                  <s-button
+                    variant="secondary" size="slim" className="srBtnCompact"
+                    onClick={() => {
+                      if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
+                        connectFetcher.submit({ action: "disconnect" }, { method: "post" });
+                      }
+                    }}
+                    disabled={connectFetcher.state === "submitting"}
+                  >
+                    {connectFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                  </s-button>
+                </div>
               ) : (
-                <s-stack direction="block" gap="base">
-                  <s-text variant="strong" className="srCardTitle">Not connected</s-text>
+                <div className="srIGConnectedRow">
                   <s-text variant="subdued" className="srCardDesc">
-                    Connect your Instagram Business or Creator account to enable automation.
+                    Connect your Instagram Business account to enable automation.
                   </s-text>
                   <s-button
-                    variant="primary" className="srBtnCompact"
+                    variant="primary" size="slim" className="srBtnCompact"
                     onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
                     disabled={connectFetcher.state === "submitting"}
                   >
                     {connectFetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
                   </s-button>
-                </s-stack>
+                </div>
               )}
             </div>
+
           </div>
         </s-box>
       </s-section>

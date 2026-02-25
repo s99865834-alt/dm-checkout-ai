@@ -372,14 +372,36 @@ s-page s-box.srCardCompact {
 /* Plan & Instagram: two-column interior layout */
 .srPlanIGRow {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0;
 }
 
 .srPlanSide {
-  flex: 0 0 220px;
+  flex: 0 0 260px;
   min-width: 0;
   padding-right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Badge + usage count on one line */
+.srPlanBadgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Progress bar: slim top margin only */
+.srProgressSlim {
+  margin-top: 2px;
+}
+
+/* Upgrade button: compact and flush left */
+.srUpgradeBtn {
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .srPlanIGDivider {
@@ -395,23 +417,42 @@ s-page s-box.srCardCompact {
   min-width: 0;
 }
 
+/* Connected row: status+details left, button right */
+.srIGConnectedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.srIGConnectedInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 @media (max-width: 600px) {
   .srPlanIGRow {
     flex-direction: column;
+    align-items: flex-start;
   }
   .srPlanSide {
     flex: none;
     width: 100%;
     padding-right: 0;
-    padding-bottom: 14px;
+    padding-bottom: 12px;
   }
   .srPlanIGDivider {
     width: 100%;
     height: 1px;
-    margin: 0 0 14px 0;
+    margin: 0 0 12px 0;
   }
   .srIGSide {
     width: 100%;
+  }
+  .srIGConnectedRow {
+    flex-wrap: wrap;
   }
 }
 
