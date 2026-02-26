@@ -1,14 +1,12 @@
 import { redirect, useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan } from "../lib/db.server";
 import { getCurrentSubscription } from "../lib/billing.server";
 import { getPlanConfig } from "../lib/plans";
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const { shop } = await getShopWithPlan(request);
+  const { admin, session, shop } = await getShopWithPlan(request);
 
   if (!shop) {
     throw new Response("Shop not found", { status: 404 });

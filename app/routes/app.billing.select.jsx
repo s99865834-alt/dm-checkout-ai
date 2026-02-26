@@ -1,20 +1,17 @@
 import { useOutletContext, useLoaderData, useRouteError, redirect, Form, useSearchParams, useFetcher } from "react-router";
 import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
 import { createChargeViaAPI } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
   return { shop, plan };
 };
 
 export const action = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const { shop } = await getShopWithPlan(request);
+  const { admin, session, shop } = await getShopWithPlan(request);
 
   if (!shop) {
     throw new Response("Shop not found", { status: 404 });

@@ -2,22 +2,70 @@ import supabase from "./supabase.server";
 import { getMetaAuthWithRefresh, getInstagramUserIdFromToken, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 
 const MAX_PER_MINUTE = 120;
-const WINDOW_MS = 60 * 1000;
 const MAX_ATTEMPTS = 3;
 
-const rateBuckets = new Map();
+/**
+ * Check and increment the per-shop sliding-window rate limit using the shared
+ * dm_rate_limit Supabase table. Safe across multiple Railway instances.
+ *
+ * Returns true if the send is allowed (and counts it), false if the limit is reached.
+ */
+export async function canSendForShop(shopId) {
+  // Truncate to the current minute so all instances in the same minute share a row.
+  const now = new Date();
+  const windowStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes(), 0, 0)
+  ).toISOString();
 
-export function canSendForShop(shopId) {
-  const now = Date.now();
-  const bucket = rateBuckets.get(shopId) || [];
-  const recent = bucket.filter((ts) => now - ts < WINDOW_MS);
-  if (recent.length >= MAX_PER_MINUTE) {
-    rateBuckets.set(shopId, recent);
-    return false;
+  // Upsert: insert row with count=1, or increment if it already exists.
+  // We check the resulting count to decide whether to allow the send.
+  const { data, error } = await supabase
+    .from("dm_rate_limit")
+    .upsert(
+      { shop_id: shopId, window_start: windowStart, count: 1 },
+      { onConflict: "shop_id,window_start" }
+    )
+    .select("count")
+    .single();
+
+  if (error) {
+    // If the upsert fails (e.g. race condition on first insert), fall back to increment.
+    const { data: inc, error: incErr } = await supabase.rpc("increment_dm_rate_limit", {
+      p_shop_id: shopId,
+      p_window_start: windowStart,
+    });
+    if (incErr) {
+      // On any DB error, allow the send so we don't silently drop messages.
+      console.warn("[queue] canSendForShop: rate-limit DB error, allowing send:", incErr.message);
+      return true;
+    }
+    return (inc ?? 1) <= MAX_PER_MINUTE;
   }
-  recent.push(now);
-  rateBuckets.set(shopId, recent);
-  return true;
+
+  // If the row was freshly inserted, count will be 1 (always allowed).
+  // For an existing row the count was NOT incremented by the upsert above — we need to
+  // do that ourselves via a second call only when we're within the limit.
+  if (!data || data.count == null) return true;
+
+  if (data.count < MAX_PER_MINUTE) {
+    // Increment the existing row.
+    await supabase
+      .from("dm_rate_limit")
+      .update({ count: data.count + 1 })
+      .eq("shop_id", shopId)
+      .eq("window_start", windowStart);
+    return true;
+  }
+
+  // Limit reached — do not increment.
+  return false;
+}
+
+// Periodically clean up old rate-limit rows (older than 2 minutes).
+// Called opportunistically from processDmQueue so no separate cron is needed.
+async function cleanOldRateLimitRows() {
+  const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  await supabase.from("dm_rate_limit").delete().lt("window_start", cutoff);
 }
 
 export async function sendDmNow(shopId, igUserId, text) {
@@ -87,6 +135,10 @@ function backoffMs(attempts) {
 
 export async function processDmQueue() {
   const now = new Date();
+
+  // Opportunistically clean old rate-limit rows (fire-and-forget).
+  cleanOldRateLimitRows().catch(() => {});
+
   const { data: rows, error } = await supabase
     .from("outbound_dm_queue")
     .select("id, shop_id, ig_user_id, text, status, attempts")
@@ -107,11 +159,13 @@ export async function processDmQueue() {
   for (const row of rows || []) {
     processed += 1;
 
-    if (!canSendForShop(row.shop_id)) {
-      const deferUntil = new Date(Date.now() + WINDOW_MS).toISOString();
+    const allowed = await canSendForShop(row.shop_id);
+    if (!allowed) {
+      // Defer to the next minute window
+      const nextMinute = new Date(Date.now() + 60 * 1000).toISOString();
       await supabase
         .from("outbound_dm_queue")
-        .update({ not_before: deferUntil, status: "pending", updated_at: new Date().toISOString() })
+        .update({ not_before: nextMinute, status: "pending", updated_at: new Date().toISOString() })
         .eq("id", row.id);
       continue;
     }

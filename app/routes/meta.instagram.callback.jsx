@@ -7,7 +7,7 @@ const META_APP_SECRET = process.env.META_APP_SECRET;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 // Always use production URL for OAuth callback (must match what was sent to Meta)
 const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
-const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL;
+const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL).trim();
 
 /**
  * Instagram OAuth Callback

@@ -1,14 +1,12 @@
 import { useState } from "react";
 import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
 
   // Parse query parameters for filters
   const url = new URL(request.url);
@@ -32,21 +30,17 @@ export const loader = async ({ request }) => {
   const analyticsStartDate = url.searchParams.get("analytics_start_date") || null;
   const analyticsEndDate = url.searchParams.get("analytics_end_date") || null;
 
-  // Fetch attribution records with filters
-  const attributionRecords = await getAttributionRecords(shop.id, {
-    channel,
-    orderId,
-    startDate,
-    endDate,
-    limit,
-  });
-
-  // Fetch messages with filters
-  let messages = [];
-  let messageTotalCount = 0;
-  let messageTotalPages = 0;
-  if (shop?.id) {
-    messages = await getMessages(shop.id, {
+  // Fetch all independent data in parallel
+  const analyticsDateRange = { startDate: analyticsStartDate, endDate: analyticsEndDate };
+  const [
+    attributionRecords,
+    messages,
+    messageTotalCount,
+    analytics,
+    proAnalytics,
+  ] = await Promise.all([
+    getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit }),
+    getMessages(shop.id, {
       channel: messageChannel,
       limit: messageLimit,
       offset: messageOffset,
@@ -54,34 +48,17 @@ export const loader = async ({ request }) => {
       endDate: messageEndDate,
       orderBy: messageOrderBy,
       orderDirection: messageOrderDirection,
-    });
-
-    messageTotalCount = await getMessageCount(shop.id, {
+    }),
+    getMessageCount(shop.id, {
       channel: messageChannel,
       startDate: messageStartDate,
       endDate: messageEndDate,
-    });
+    }),
+    plan?.name ? getAnalytics(shop.id, plan.name, analyticsDateRange) : Promise.resolve(null),
+    plan?.name === "PRO" ? getProAnalytics(shop.id, analyticsDateRange) : Promise.resolve(null),
+  ]);
 
-    messageTotalPages = Math.ceil(messageTotalCount / messageLimit);
-  }
-
-  // Fetch analytics data
-  let analytics = null;
-  let proAnalytics = null;
-  if (shop?.id && plan?.name) {
-    analytics = await getAnalytics(shop.id, plan.name, {
-      startDate: analyticsStartDate,
-      endDate: analyticsEndDate,
-    });
-
-    // Fetch Pro analytics if PRO plan
-    if (plan.name === "PRO") {
-      proAnalytics = await getProAnalytics(shop.id, {
-        startDate: analyticsStartDate,
-        endDate: analyticsEndDate,
-      });
-    }
-  }
+  const messageTotalPages = Math.ceil(messageTotalCount / messageLimit);
 
   return {
     shop,

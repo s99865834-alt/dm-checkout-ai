@@ -8,19 +8,19 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { createOrUpdateShop } from "./lib/db.server";
 
-// Build scopes: ensure read_products and read_legal_policies for product/store context
+// Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
+// Using env var with hardcoded fallback so it's never accidentally empty.
+const REQUIRED_SCOPES = ["write_products", "read_products", "read_orders", "read_legal_policies", "read_content"];
 const scopesFromEnv = process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
-const hasReadProducts = scopesFromEnv.some((s) => s === "read_products");
-const hasReadLegalPolicies = scopesFromEnv.some((s) => s === "read_legal_policies");
-let scopes = hasReadProducts ? scopesFromEnv : [...scopesFromEnv, "read_products"];
-if (!hasReadLegalPolicies) scopes = [...scopes, "read_legal_policies"];
+const merged = new Set([...scopesFromEnv, ...REQUIRED_SCOPES]);
+const scopes = [...merged];
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
   scopes,
-  appUrl: process.env.SHOPIFY_APP_URL || "",
+  appUrl: (process.env.SHOPIFY_APP_URL || "").trim(),
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuth } from "../lib/meta.server";
 import { getProductMappings, getSettings } from "../lib/db.server";
@@ -9,7 +8,6 @@ import supabase from "../lib/supabase.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
 
   let metaAuth = null;
   let recentMessages = [];
@@ -19,7 +17,7 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     productMappings = await getProductMappings(shop.id);
-    settings = await getSettings(shop.id);
+    settings = await getSettings(shop.id, plan?.name);
 
     // Get recent messages for display with links_sent (to get reply text)
     if (metaAuth?.ig_business_id) {

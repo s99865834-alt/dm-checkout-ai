@@ -645,15 +645,21 @@ export async function getAttributionRecords(shopId, filters = {}) {
 /**
  * Get settings for a shop.
  */
-export async function getSettings(shopId) {
-  // First get the shop to determine plan
-  const { data: shop, error: shopError } = await supabase
-    .from("shops")
-    .select("plan")
-    .eq("id", shopId)
-    .single();
-
-  const plan = shop?.plan || "FREE";
+/**
+ * @param {string} shopId
+ * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
+ */
+export async function getSettings(shopId, planName) {
+  // Only query the shop for its plan when the caller hasn't provided it
+  let plan = planName || null;
+  if (!plan) {
+    const { data: shop } = await supabase
+      .from("shops")
+      .select("plan")
+      .eq("id", shopId)
+      .single();
+    plan = shop?.plan || "FREE";
+  }
 
   const { data, error } = await supabase
     .from("settings")
@@ -692,20 +698,25 @@ export async function getSettings(shopId) {
 /**
  * Update settings for a shop.
  */
-export async function updateSettings(shopId, settings) {
-  // First get the shop to determine plan
-  const { data: shop, error: shopError } = await supabase
-    .from("shops")
-    .select("plan")
-    .eq("id", shopId)
-    .single();
-
-  if (shopError) {
-    console.error("updateSettings: Could not fetch shop", shopError);
-    throw shopError;
+/**
+ * @param {string} shopId
+ * @param {Object} settings
+ * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
+ */
+export async function updateSettings(shopId, settings, planName) {
+  let plan = planName || null;
+  if (!plan) {
+    const { data: shop, error: shopError } = await supabase
+      .from("shops")
+      .select("plan")
+      .eq("id", shopId)
+      .single();
+    if (shopError) {
+      console.error("updateSettings: Could not fetch shop", shopError);
+      throw shopError;
+    }
+    plan = shop?.plan || "FREE";
   }
-
-  const plan = shop?.plan || "FREE";
   const planConfig = getPlanConfig(plan);
 
   // Enforce plan restrictions: FREE/GROWTH can use DM automation; only PRO gets comments + followup
@@ -1726,4 +1737,52 @@ async function buildAdminStoresResult(shops) {
     messages_sent: messagesByShop.get(s.id) || 0,
     revenue: revenueByShop.get(s.id) || 0,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Store context cache (used by DM automation for store_question replies)
+// ---------------------------------------------------------------------------
+
+const STORE_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Return the cached store context for a shop, or null if missing / stale.
+ * @param {string} shopId
+ * @param {number} [ttlMs] - How old (in ms) a cached value can be before it's considered stale.
+ *   Defaults to 24 hours. Pass 0 to always return the cached value regardless of age.
+ * @returns {Promise<Object|null>}
+ */
+export async function getStoredStoreContext(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
+  if (!shopId) return null;
+  const { data, error } = await supabase
+    .from("shops")
+    .select("store_context_json, store_context_updated_at")
+    .eq("id", shopId)
+    .single();
+  if (error || !data?.store_context_json) return null;
+  if (ttlMs > 0 && data.store_context_updated_at) {
+    const age = Date.now() - new Date(data.store_context_updated_at).getTime();
+    if (age > ttlMs) return null; // stale — caller should refresh
+  }
+  return data.store_context_json;
+}
+
+/**
+ * Persist the store context object returned by getShopifyStoreInfo() onto the shops row.
+ * Called in the background from getShopWithPlan whenever the cached value is missing or stale.
+ * @param {string} shopId
+ * @param {Object} storeInfo - Result of getShopifyStoreInfo()
+ */
+export async function saveStoredStoreContext(shopId, storeInfo) {
+  if (!shopId || !storeInfo) return;
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      store_context_json: storeInfo,
+      store_context_updated_at: new Date().toISOString(),
+    })
+    .eq("id", shopId);
+  if (error) {
+    console.error("[db] saveStoredStoreContext error:", error.message);
+  }
 }

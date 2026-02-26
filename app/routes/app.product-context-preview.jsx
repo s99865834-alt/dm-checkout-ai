@@ -4,7 +4,6 @@
  * Uses the current request's admin session so it works when opened in the app.
  */
 import { useLoaderData, useSearchParams } from "react-router";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getProductMappings } from "../lib/db.server";
 import { buildProductContextForAI } from "../lib/shopify-data.server";
@@ -45,7 +44,7 @@ const PRODUCT_CONTEXT_QUERY = `
 `;
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
   const url = new URL(request.url);
   const productIdParam = url.searchParams.get("product_id");
 
@@ -62,7 +61,6 @@ export const loader = async ({ request }) => {
     }
     if (selectedProductId) {
       try {
-        const { admin } = await authenticate.admin(request);
         const response = await admin.graphql(PRODUCT_CONTEXT_QUERY, {
           variables: { productId: selectedProductId },
         });
@@ -122,7 +120,7 @@ export default function ProductContextPreview() {
         <s-section>
           <s-text tone="subdued">
             No product mappings yet. Map a product to an Instagram post on the{" "}
-            <s-link href="/app/instagram-feed">Instagram Feed</s-link> page,
+            <s-link href="/app">Home</s-link> page,
             then return here.
           </s-text>
         </s-section>

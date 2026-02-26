@@ -1,23 +1,93 @@
 /*
-  Global UI spacing
-
-  The app uses Shopify UI web components (s-page / s-section / etc).
-  Many routes render multiple <s-section> siblings back-to-back.
-  Add consistent vertical spacing between adjacent sections without
-  changing the existing border/radius styling inside each section.
+  Global UI: type scale, spacing, and cohesive controls.
+  Uses Shopify UI web components (s-page / s-section / etc).
 */
+
+/* Type scale & spacing (reuse on any page) */
+:root {
+  --sr-font-title: 1.0625rem;
+  --sr-font-body: 0.875rem;
+  --sr-font-caption: 0.8125rem;
+  --sr-space-tight: 6px;
+  --sr-space-base: 12px;
+  --sr-space-loose: 20px;
+}
 
 s-page {
   display: block;
+  padding-bottom: 18px;
 }
 
 s-page > s-section {
   display: block;
 }
 
-/* Consistent spacing between adjacent sections */
+/* Section spacing: compact */
 s-page > s-section + s-section {
-  margin-top: 16px;
+  margin-top: 14px;
+}
+
+/* Two-column layout (legacy — kept for any other uses) */
+.srTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .srTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Automation section: two equal columns (toggles | brand voice) */
+.srAutoTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .srAutoTwoCol {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Brand voice card when it fills the full column (no top margin needed) */
+.srBrandVoiceBlockFull {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* Section headings: larger so titles read as titles (if component exposes them) */
+s-page > s-section {
+  --s-section-heading-font-size: 1.125rem;
+  --s-section-heading-font-weight: 600;
+}
+
+/* Card titles (e.g. "Connected", "DM automation") */
+s-page .srCardTitle {
+  font-size: var(--sr-font-title);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Body / description text */
+s-page .srCardDesc {
+  font-size: var(--sr-font-body);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Card inner spacing: compact padding */
+s-page s-box[background="subdued"] {
+  padding: 12px 14px;
+}
+
+s-page s-box.srCardCompact {
+  padding: 12px 14px;
 }
 
 /* Generic helpers (avoid inline styles) */
@@ -47,27 +117,40 @@ s-page > s-section + s-section {
   font-style: italic;
 }
 
-/* Form controls used alongside Shopify web components */
-.srTextarea,
+/* Form controls: compact, match aesthetic */
 .srSelect {
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  height: 32px;
+  border-radius: 6px;
   border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
   font: inherit;
+  box-sizing: border-box;
 }
 
 .srInput {
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  height: 32px;
+  border-radius: 6px;
   border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
   font: inherit;
+  line-height: 1.25;
+  box-sizing: border-box;
 }
 
 .srTextarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #e1e3e5;
+  font-size: var(--sr-font-body);
+  font: inherit;
   resize: vertical;
   min-height: 72px;
+  box-sizing: border-box;
 }
 
 .srChoiceRow {
@@ -95,6 +178,54 @@ s-page > s-section + s-section {
 .srCheckboxLabel input[type="checkbox"] {
   width: 20px;
   height: 20px;
+}
+
+/* Toggle switch: compact, matches button/input scale */
+.srToggle {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.srToggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.srToggleTrack {
+  display: inline-flex;
+  align-items: center;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #e1e3e5;
+  transition: background 0.15s ease;
+}
+
+.srToggle input:checked + .srToggleTrack {
+  background: #008060;
+}
+
+.srToggleThumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease;
+}
+
+.srToggle input:checked + .srToggleTrack .srToggleThumb {
+  transform: translateX(16px);
 }
 
 /* Progress (usage) */
@@ -225,15 +356,180 @@ s-page > s-section + s-section {
 }
 
 .srDividerTop {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid #e1e3e5;
+}
+
+.srFlexWrap {
+  flex-wrap: wrap;
+}
+
+.srUsageBlock {
+  min-width: 0;
+}
+
+/* Plan & Instagram: two-column interior layout */
+.srPlanIGRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.srPlanSide {
+  flex: 0 0 260px;
+  min-width: 0;
+  padding-right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Badge + usage count on one line */
+.srPlanBadgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Progress bar: slim top margin only */
+.srProgressSlim {
+  margin-top: 2px;
+}
+
+/* Upgrade button: compact and flush left */
+.srUpgradeBtn {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.srPlanIGDivider {
+  width: 1px;
+  align-self: stretch;
+  background: #e1e3e5;
+  flex-shrink: 0;
+  margin: 0 20px 0 0;
+}
+
+.srIGSide {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Connected row: status+details left, button right */
+.srIGConnectedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.srIGConnectedInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .srPlanIGRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .srPlanSide {
+    flex: none;
+    width: 100%;
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+  .srPlanIGDivider {
+    width: 100%;
+    height: 1px;
+    margin: 0 0 12px 0;
+  }
+  .srIGSide {
+    width: 100%;
+  }
+  .srIGConnectedRow {
+    flex-wrap: wrap;
+  }
+}
+
+/* Inline select inside a toggle row (brand voice tone) */
+.srSelectInline {
+  flex-shrink: 0;
+}
+
+/* Full-width text input inside a toggle row */
+.srInputRow {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* Toggle rows: more space and clear separation */
+.srToggleStack {
+  display: flex;
+  flex-direction: column;
+}
+
+.srToggleRow {
+  padding: 10px 14px;
+  margin: 0 -14px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.srToggleRow:first-child {
+  margin-top: -2px;
+}
+
+.srToggleRowLast {
+  border-bottom: none;
+  margin-bottom: -2px;
+}
+
+/* Brand voice: clear separator and consistent typography */
+.srBrandVoiceBlock {
+  margin: 0 -14px;
+  padding: 12px 14px 0;
+  border-top: 1px solid #e1e3e5;
+  margin-top: 2px;
+}
+
+.srBrandVoiceBlock .srCardTitle,
+.srBrandVoiceBlock .srCardDesc {
+  display: block;
+}
+
+.srBrandVoiceBlock .srCardDesc {
+  margin-bottom: 8px;
+}
+
+.srBrandVoiceFields {
+  margin-top: 10px;
+}
+
+.srBrandVoiceFields .srFieldLabel + .srFieldLabel {
+  margin-top: 10px;
+}
+
+/* Space between custom instruction and Save button */
+.srSaveBtnWrap {
+  margin-top: 14px;
 }
 
 .srFieldLabel {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Compact buttons: match toggle/input scale */
+s-page s-button.srBtnCompact,
+s-page .srBtnCompact {
+  padding: 6px 12px;
+  font-size: var(--sr-font-body);
+  min-height: 32px;
 }
 
 /* Legal pages */
@@ -301,5 +597,177 @@ s-page > s-section + s-section {
   color: #666;
   text-align: center;
   margin: 8px 0 0;
+}
+
+/* Marketing landing page (public index) */
+.srMarketingLanding {
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333;
+  background: #fff;
+}
+
+.srMarketingLanding .srMarketingHero {
+  text-align: center;
+  padding: 48px 24px 40px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.srMarketingLanding .srMarketingHero h1 {
+  font-size: clamp(32px, 5vw, 42px);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 12px;
+}
+
+.srMarketingLanding .srMarketingHero p {
+  font-size: 18px;
+  color: #555;
+  line-height: 1.5;
+  margin: 0 0 28px;
+}
+
+.srMarketingLanding .srMarketingCta {
+  display: inline-block;
+  padding: 14px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #008060;
+  border: none;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.srMarketingLanding .srMarketingCta:hover {
+  background: #006e52;
+}
+
+.srMarketingLanding .srMarketingSection {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.srMarketingLanding .srMarketingSection h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.srMarketingLanding .srMarketingFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.srMarketingLanding .srMarketingFeatures li {
+  padding: 12px 16px;
+  background: #f6f6f7;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.srMarketingLanding .srMarketingPricing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.srMarketingLanding .srMarketingPricingCard {
+  padding: 16px;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.srMarketingLanding .srMarketingPricingCard strong {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.srMarketingLanding .srMarketingPricingCard span {
+  font-size: 14px;
+  color: #666;
+}
+
+.srMarketingLanding .srMarketingVideo {
+  aspect-ratio: 16/9;
+  max-width: 640px;
+  margin: 0 auto 24px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 14px;
+}
+
+.srMarketingLanding .srMarketingEmail {
+  max-width: 400px;
+  margin: 24px auto 0;
+  padding: 24px;
+  background: #f6f6f7;
+  border-radius: 8px;
+}
+
+.srMarketingLanding .srMarketingEmail h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.srMarketingLanding .srMarketingEmail input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #c9c9c9;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.srMarketingLanding .srMarketingEmail button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: #008060;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.srMarketingLanding .srMarketingEmail button:hover {
+  background: #006e52;
+}
+
+.srMarketingLanding .srMarketingEmail .srMarketingEmailSuccess {
+  font-size: 14px;
+  color: #008060;
+  margin-top: 8px;
+}
+
+.srMarketingLanding .srMarketingFooter {
+  text-align: center;
+  padding: 24px;
+  font-size: 14px;
+  color: #666;
+  border-top: 1px solid #e1e3e5;
+}
+
+.srMarketingLanding .srMarketingFooter a {
+  color: #008060;
+  text-decoration: none;
 }
 

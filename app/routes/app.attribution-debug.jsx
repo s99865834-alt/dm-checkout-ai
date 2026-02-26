@@ -1,12 +1,10 @@
 import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getAttributionRecords } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
-  await authenticate.admin(request);
 
   // Parse query parameters for filters
   const url = new URL(request.url);
