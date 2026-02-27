@@ -46,13 +46,10 @@ function getClickTrackingUrl(linkId) {
  * (Railway routes traffic from the custom domain to the same app).
  */
 function getClickTrackingUrlForMessage(linkId) {
-  const shortBase = (process.env.SHORT_LINK_DOMAIN || "").trim().replace(/\/$/, "");
-  if (shortBase) {
-    return `${shortBase}/c/${linkId}`;
-  }
-  const fallback = getClickTrackingUrl(linkId);
-  if (linkId) console.warn("[automation] SHORT_LINK_DOMAIN empty or unset, using fallback:", fallback?.substring(0, 50) + "...");
-  return fallback;
+  let shortBase = (process.env.SHORT_LINK_DOMAIN || "").trim().replace(/\/$/, "");
+  // Fallback for Railway env not being available (e.g. webhook handler context)
+  if (!shortBase) shortBase = "https://www.srai.link";
+  return `${shortBase}/c/${linkId}`;
 }
 
 function getShopDomainHost(shop) {
