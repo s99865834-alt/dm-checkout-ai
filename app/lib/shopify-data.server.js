@@ -407,8 +407,9 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
 
     const api = getShopifyApi();
     const client = new api.clients.Graphql({ session });
-    const query = `
-      query getProductInfo($productId: ID!, $variantId: ID) {
+    const query = variantId
+      ? `
+      query getProductInfo($productId: ID!, $variantId: ID!) {
         product(id: $productId) {
           title
           priceRangeV2 {
@@ -422,8 +423,22 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
           price
         }
       }
+    `
+      : `
+      query getProductInfo($productId: ID!) {
+        product(id: $productId) {
+          title
+          priceRangeV2 {
+            minVariantPrice {
+              amount
+              currencyCode
+            }
+          }
+        }
+      }
     `;
-    const response = await client.request(query, { variables: { productId, variantId } });
+    const variables = variantId ? { productId, variantId } : { productId };
+    const response = await client.request(query, { variables });
 
     const product = response?.data?.product || null;
     const variant = response?.data?.productVariant || null;
