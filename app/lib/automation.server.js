@@ -46,9 +46,13 @@ function getClickTrackingUrl(linkId) {
  * (Railway routes traffic from the custom domain to the same app).
  */
 function getClickTrackingUrlForMessage(linkId) {
-  const shortBase = (process.env.SHORT_LINK_DOMAIN || "").replace(/\/$/, "");
-  if (shortBase) return `${shortBase}/c/${linkId}`;
-  return getClickTrackingUrl(linkId);
+  const shortBase = (process.env.SHORT_LINK_DOMAIN || "").trim().replace(/\/$/, "");
+  if (shortBase) {
+    return `${shortBase}/c/${linkId}`;
+  }
+  const fallback = getClickTrackingUrl(linkId);
+  if (linkId) console.warn("[automation] SHORT_LINK_DOMAIN empty or unset, using fallback:", fallback?.substring(0, 50) + "...");
+  return fallback;
 }
 
 function getShopDomainHost(shop) {
