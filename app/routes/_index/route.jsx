@@ -1,14 +1,74 @@
 import { redirect } from "react-router";
 import { useState } from "react";
 
-// Replace with your actual Shopify App Store listing URL once live (e.g. https://apps.shopify.com/dm-checkout-ai)
 const SHOPIFY_APP_STORE_URL =
   typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL
     ? process.env.SHOPIFY_APP_STORE_URL
     : "https://apps.shopify.com/";
 
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "SocialRepl.ai — DM Checkout AI",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: "https://www.socialrepl.ai",
+  description:
+    "AI-powered Instagram DM and comment automation for Shopify stores. Automatically responds to customer messages with personalized, brand-voiced replies and one-click checkout links.",
+  featureList: [
+    "Instagram DM automation with AI-powered replies",
+    "Comment-to-DM automation with checkout links",
+    "AI message classification (purchase intent, product questions, price requests)",
+    "Brand voice customization for every reply",
+    "One-click Shopify checkout link generation",
+    "Product-to-Instagram-post mapping",
+    "Click and revenue attribution tracking",
+    "Timed follow-up messages",
+  ],
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Free",
+      price: "0",
+      priceCurrency: "USD",
+      description: "25 messages/mo, DM automation, basic analytics",
+    },
+    {
+      "@type": "Offer",
+      name: "Growth",
+      price: "29",
+      priceCurrency: "USD",
+      billingIncrement: "P1M",
+      description:
+        "100 messages/mo, comment-to-DM automation, brand voice customization",
+    },
+    {
+      "@type": "Offer",
+      name: "Pro",
+      price: "99",
+      priceCurrency: "USD",
+      billingIncrement: "P1M",
+      description:
+        "Unlimited messages, follow-ups, revenue attribution, clarifying questions",
+    },
+  ],
+  creator: {
+    "@type": "Organization",
+    name: "SocialRepl.ai",
+    url: "https://www.socialrepl.ai",
+  },
+};
+
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
+  const host = url.hostname;
+
+  const shortDomain = (process.env.SHORT_LINK_DOMAIN || "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
+  if (shortDomain && host === shortDomain) {
+    return redirect("https://www.socialrepl.ai", 301);
+  }
 
   if (url.searchParams.get("shop")) {
     if (url.searchParams.get("instagram_connected")) {
@@ -18,8 +78,29 @@ export const loader = async ({ request }) => {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
-  return {};
+  if (host === "www.socialrepl.ai" || host === "socialrepl.ai") {
+    return {};
+  }
+
+  return redirect("/app", 302);
 };
+
+export const meta = () => [
+  { title: "SocialRepl.ai — Turn Instagram DMs into Shopify Sales" },
+  {
+    name: "description",
+    content:
+      "AI-powered Instagram DM and comment automation for Shopify stores. Sends personalized replies with one-click checkout links so you never miss a sale.",
+  },
+  { property: "og:title", content: "SocialRepl.ai — DM Checkout AI" },
+  {
+    property: "og:description",
+    content:
+      "Automatically respond to Instagram DMs and comments with AI-generated checkout links. Built for Shopify merchants.",
+  },
+  { property: "og:type", content: "website" },
+  { property: "og:url", content: "https://www.socialrepl.ai" },
+];
 
 export default function LandingPage() {
   const [email, setEmail] = useState("");
@@ -34,6 +115,10 @@ export default function LandingPage() {
 
   return (
     <div className="srMarketingLanding">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       <section className="srMarketingHero">
         <h1>Transform Instagram DMs and comments into sales</h1>
         <p>
