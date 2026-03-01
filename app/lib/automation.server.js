@@ -266,8 +266,16 @@ export async function sendDmReply(shopId, igUserId, text) {
       await sendDmNow(shopId, igUserId, text);
       return { sent: true };
     } catch (error) {
+      const msg = error?.message || "";
+      const isPermanent =
+        msg.includes("cannot be found") ||
+        msg.includes("not exist") ||
+        msg.includes("does not have permission");
+      if (isPermanent) {
+        console.warn("[automation] Permanent send failure, skipping queue:", msg);
+        return { sent: false, reason: msg };
+      }
       console.error("[automation] Error sending DM immediately, queueing:", error);
-      // Fall through to queue
     }
   }
 
@@ -461,7 +469,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
         return { sent: false, reason: "Already replied to this message" };
       }
-      await sendDmReply(shop.id, message.from_user_id, replyText);
+      const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
+      if (sendResult?.sent === false) {
+        return sendResult;
+      }
       await incrementUsage(shop.id, 1);
 
       console.log(`[automation] ✅ Automated DM sent for store question ${message.id}`);
@@ -529,7 +540,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
-        await sendDmReply(shop.id, message.from_user_id, replyText);
+        const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
+        if (sendResult?.sent === false) {
+          return sendResult;
+        }
         await incrementUsage(shop.id, 1);
 
         await logLinkSent({
@@ -597,7 +611,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
-        await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
+        const sendResult = await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
+        if (sendResult?.sent === false) {
+          return sendResult;
+        }
         await incrementUsage(shop.id, 1);
 
         await logLinkSent({
@@ -606,7 +623,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           productId: null,
           variantId: null,
           url: null,
-          linkId: null,
+          linkId: `clarify_${message.id}`,
           replyText: clarifyingReply,
         });
 
