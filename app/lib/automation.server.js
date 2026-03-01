@@ -3,7 +3,7 @@
  * Handles checkout link generation, DM sending, and message processing
  */
 
-import { randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import OpenAI from "openai";
 import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply } from "./db.server";
 import { getProductMappings } from "./db.server";
@@ -21,35 +21,39 @@ import shopify from "../shopify.server";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
+/** Base62 alphabet for URL-safe short IDs (62^8 ≈ 218T combinations) */
+const ID_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
 /**
- * Generate a unique link_id (UUID format, stored as TEXT)
+ * Generate an 8-character link_id (base62, low collision risk)
  */
 function generateLinkId() {
-  return randomUUID();
+  const bytes = randomBytes(8);
+  let id = "";
+  for (let i = 0; i < 8; i++) {
+    id += ID_CHARS[bytes[i] % 62];
+  }
+  return id;
 }
 
 /**
  * URL for click tracking: user hits this, we log the click and redirect to the real URL.
- * Used so analytics "clicks" count works (links_sent.url is the destination; we store it and redirect).
- * Always uses the main app domain so the /c/ route is always reachable regardless of SHORT_LINK_DOMAIN.
+ * Root path /{linkId} (no /c/) for shorter URLs.
  */
 function getClickTrackingUrl(linkId) {
   const base = (process.env.SHOPIFY_APP_URL || process.env.APP_URL || "").replace(/\/$/, "");
   if (!base) return null;
-  return `${base}/c/${linkId}`;
+  return `${base}/${linkId}`;
 }
 
 /**
  * Branded short URL shown in DMs.
- * Uses SHORT_LINK_DOMAIN (e.g. https://socialrepl.ai) when set, falling back to the
- * main app domain. The /c/{linkId} route lives on the main app and handles both domains
- * (Railway routes traffic from the custom domain to the same app).
+ * Root path /{linkId} (no /c/) for shorter URLs. Uses SHORT_LINK_DOMAIN when set.
  */
 function getClickTrackingUrlForMessage(linkId) {
   let shortBase = (process.env.SHORT_LINK_DOMAIN || "").trim().replace(/\/$/, "");
-  // Fallback for Railway env not being available (e.g. webhook handler context)
   if (!shortBase) shortBase = "https://www.srai.link";
-  return `${shortBase}/c/${linkId}`;
+  return `${shortBase}/${linkId}`;
 }
 
 function getShopDomainHost(shop) {
@@ -72,7 +76,7 @@ function getShopHomepageUrl(shop) {
 }
 
 // External URL shortener removed from the webhook hot path.
-// The app's own /c/{linkId} tracking URL is used in DMs instead.
+// The app's own /{linkId} tracking URL is used in DMs instead.
 // If you want branded short links, shorten asynchronously after the message is sent
 // and update links_sent.url — do not block the webhook response on an external fetch.
 
@@ -289,20 +293,22 @@ export async function sendDmReply(shopId, igUserId, text) {
  * @param {Object} plan - Plan object
  * @returns {Promise<{sent: boolean, reason?: string}>} - Whether message was sent and reason
  */
-export async function handleIncomingDm(message, shop, plan) {
+export async function handleIncomingDm(message, shop, plan, ctx = {}) {
   try {
     // 0. Meta compliance: only one automated reply per incoming message
-    if (message.external_id && (await alreadyRepliedToExternalMessage(shop.id, message.external_id))) {
-      console.log(`[automation] Already replied to external message ${message.external_id}, skipping`);
-      return { sent: false, reason: "Already replied to this external message" };
-    }
-    if (await alreadyRepliedToMessage(message.id)) {
-      console.log(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
-      return { sent: false, reason: "Already replied to this message" };
+    if (!ctx.alreadyRepliedChecked) {
+      if (message.external_id && (await alreadyRepliedToExternalMessage(shop.id, message.external_id))) {
+        console.log(`[automation] Already replied to external message ${message.external_id}, skipping`);
+        return { sent: false, reason: "Already replied to this external message" };
+      }
+      if (await alreadyRepliedToMessage(message.id)) {
+        console.log(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
+        return { sent: false, reason: "Already replied to this message" };
+      }
     }
 
     // 1. Check publish mode: if dm_automation_enabled = false, skip automation
-    const settings = await getSettings(shop.id);
+    const settings = ctx.settings ?? await getSettings(shop.id);
     if (settings?.dm_automation_enabled === false) {
       console.log(`[automation] DM automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "DM automation disabled" };
@@ -333,7 +339,7 @@ export async function handleIncomingDm(message, shop, plan) {
     }
 
     // 2. Enforce usage cap for all plans
-    const usageData = await getShopPlanAndUsage(shop.id);
+    const usageData = ctx.usageData ?? await getShopPlanAndUsage(shop.id);
     if (usageData.usage >= plan.cap) {
       console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
       return { sent: false, reason: "Usage cap exceeded" };
@@ -405,29 +411,21 @@ export async function handleIncomingDm(message, shop, plan) {
 
     // 5. Handle store_question (general store questions) - doesn't need product mapping
     if (intent === "store_question") {
-      // Get brand voice and generate reply message for store questions
-      const brandVoiceData = await getBrandVoice(shop.id);
+      // Fetch brand voice and store context in parallel (independent calls)
+      const [brandVoiceData, storeInfoResult] = await Promise.all([
+        getBrandVoice(shop.id),
+        getStoredStoreContext(shop.id, 0).catch(() => null),
+      ]);
       
-      // Read store context from the DB cache (refreshed in the background by getShopWithPlan
-      // whenever a merchant uses the embedded app, so it's always fresh and never requires a
-      // live Shopify Admin API call on the critical webhook path).
-      let storeInfo = null;
-      try {
-        storeInfo = await getStoredStoreContext(shop.id, 0); // 0 = accept any age
-        if (storeInfo) {
-          console.log(`[automation] Using cached store context for shop ${shop.id}:`, {
-            hasRefundPolicy: !!storeInfo.refundPolicy,
-            storeEmail: storeInfo.email,
-          });
-        } else {
-          // Cache miss — attempt a live fetch as a best-effort fallback (may fail at webhook time)
-          console.log(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
-          if (shop.shopify_domain) {
-            storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
-          }
-        }
-      } catch (error) {
-        console.warn(`[automation] Could not load store context for shop ${shop.id}:`, error?.message);
+      let storeInfo = storeInfoResult;
+      if (storeInfo) {
+        console.log(`[automation] Using cached store context for shop ${shop.id}:`, {
+          hasRefundPolicy: !!storeInfo.refundPolicy,
+          storeEmail: storeInfo.email,
+        });
+      } else if (shop.shopify_domain) {
+        console.log(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
+        storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
       }
       
       const replyText = await generateReplyMessage(
@@ -481,50 +479,24 @@ export async function handleIncomingDm(message, shop, plan) {
           product_handle: null,
         };
 
-        // Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
-        let productPageUrl = null;
-        let checkoutUrl = null;
-        let linkId = null;
+        // Build links, brand voice, and product info in parallel (all independent)
+        const needsPdp = intent === "product_question" || intent === "variant_inquiry";
+        const [pdpResult, checkoutLink, brandVoiceData, productInfo] = await Promise.all([
+          needsPdp
+            ? buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productMapping.product_handle)
+            : Promise.resolve(null),
+          buildCheckoutLink(shop, productMapping.product_id, productMapping.variant_id, 1),
+          getBrandVoice(shop.id),
+          shop.shopify_domain && productMapping.product_id
+            ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
+            : Promise.resolve({ productName: null, productPrice: null }),
+        ]);
 
-        if (intent === "product_question" || intent === "variant_inquiry") {
-          productPageUrl = await buildProductPageLink(
-            shop,
-            productMapping.product_id,
-            productMapping.variant_id,
-            productMapping.product_handle
-          );
-          const checkoutLink = await buildCheckoutLink(
-            shop,
-            productMapping.product_id,
-            productMapping.variant_id,
-            1
-          );
-          checkoutUrl = checkoutLink.url;
-          linkId = checkoutLink.linkId;
-        } else {
-          const checkoutLink = await buildCheckoutLink(
-            shop,
-            productMapping.product_id,
-            productMapping.variant_id,
-            1
-          );
-          checkoutUrl = checkoutLink.url;
-          linkId = checkoutLink.linkId;
-        }
-
-        // Get brand voice and generate reply message
-        const brandVoiceData = await getBrandVoice(shop.id);
-        let productName = null;
-        let productPrice = null;
-        if (shop.shopify_domain && productMapping.product_id) {
-          const info = await getShopifyProductInfo(
-            shop.shopify_domain,
-            productMapping.product_id,
-            productMapping.variant_id || null
-          );
-          productName = info.productName;
-          productPrice = info.productPrice;
-        }
+        const productPageUrl = pdpResult;
+        const checkoutUrl = checkoutLink.url;
+        const linkId = checkoutLink.linkId;
+        const productName = productInfo.productName;
+        const productPrice = productInfo.productPrice;
 
         const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
         const replyText = await generateReplyMessage(
@@ -687,7 +659,7 @@ async function hasCommentBeenReplied(commentId, shopId) {
  * @param {Object} plan - Plan object
  * @returns {Promise<{sent: boolean, reason?: string}>} - Whether DM was sent and reason
  */
-export async function handleIncomingComment(message, mediaId, shop, plan) {
+export async function handleIncomingComment(message, mediaId, shop, plan, ctx = {}) {
   try {
     // 1. Only for Growth/Pro plans
     if (plan.name === "FREE") {
@@ -696,7 +668,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
     }
 
     // 2. Check publish mode: comment_automation_enabled must be true
-    const settings = await getSettings(shop.id);
+    const settings = ctx.settings ?? await getSettings(shop.id);
     if (settings?.comment_automation_enabled === false) {
       console.log(`[automation] Comment automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "Comment automation disabled" };
@@ -704,7 +676,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
 
 
     // 3. Enforce usage cap for all plans
-    const usageData = await getShopPlanAndUsage(shop.id);
+    const usageData = ctx.usageData ?? await getShopPlanAndUsage(shop.id);
     if (usageData.usage >= plan.cap) {
       console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
       return { sent: false, reason: "Usage cap exceeded" };
@@ -733,12 +705,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
 
     // Support both Supabase snake_case (external_id) and camelCase
     const commentExternalId = message.external_id ?? message.externalId;
-    const alreadyReplied = commentExternalId
-      ? await hasCommentBeenReplied(commentExternalId, shop.id)
-      : await alreadyRepliedToMessage(message.id);
-    if (alreadyReplied) {
-      console.log(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
-      return { sent: false, reason: "Already replied to this comment" };
+    if (!ctx.alreadyRepliedChecked) {
+      const alreadyReplied = commentExternalId
+        ? await hasCommentBeenReplied(commentExternalId, shop.id)
+        : await alreadyRepliedToMessage(message.id);
+      if (alreadyReplied) {
+        console.log(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
+        return { sent: false, reason: "Already replied to this comment" };
+      }
     }
 
     // 6. Find product mapping for this media
@@ -799,70 +773,44 @@ export async function handleIncomingComment(message, mediaId, shop, plan) {
       return { sent: true };
     }
 
-    // 7. Generate links - use PDP link for product_question and variant_inquiry, checkout link for others
+    // 7-8. Build links, brand voice, product info, and product context in parallel
+    const needsPdpComment = message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry";
+    const needsProductContext = needsPdpComment && shop.shopify_domain && productMapping.product_id;
+
+    const [rawProductContext, checkoutLinkResult, brandVoiceData, productInfo] = await Promise.all([
+      needsProductContext
+        ? getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id)
+        : Promise.resolve(null),
+      buildCheckoutLink(shop, productMapping.product_id, productMapping.variant_id, 1),
+      getBrandVoice(shop.id),
+      shop.shopify_domain && productMapping.product_id
+        ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
+        : Promise.resolve({ productName: null, productPrice: null }),
+    ]);
+
+    const checkoutUrl = checkoutLinkResult.url;
+    const linkId = checkoutLinkResult.linkId;
+    const productName = productInfo.productName;
+    const productPrice = productInfo.productPrice;
+
+    // Build PDP URL (needs rawProductContext for handle, so runs after parallel batch)
     let productPageUrl = null;
-    let checkoutUrl = null;
-    let linkId = null;
-
-    // For product/variant questions: fetch product context first (so we have handle + variant info), then build full PDP URL (no shortening)
-    let rawProductContext = null;
-    if (shop.shopify_domain && productMapping.product_id && (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry")) {
-      rawProductContext = await getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id);
-    }
-
-    if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-      // Prefer stored product_handle so PDP URL works in webhooks without calling Shopify Admin API
+    if (needsPdpComment) {
       const productHandle = (productMapping.product_handle || rawProductContext?.handle || "").trim() || null;
-      productPageUrl = await buildProductPageLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        productHandle,
-        true
-      );
-      const checkoutLink = await buildCheckoutLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        1
-      );
-      checkoutUrl = checkoutLink.url;
-      linkId = checkoutLink.linkId;
-    } else {
-      const checkoutLink = await buildCheckoutLink(
-        shop,
-        productMapping.product_id,
-        productMapping.variant_id,
-        1
-      );
-      checkoutUrl = checkoutLink.url;
-      linkId = checkoutLink.linkId;
+      productPageUrl = await buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productHandle, true);
     }
 
-    // 8. Get brand voice, product info, and product context (for variant/product questions)
-    const brandVoiceData = await getBrandVoice(shop.id);
-    let productName = null;
-    let productPrice = null;
     let productContextForReply = null;
-    if (shop.shopify_domain && productMapping.product_id) {
-      const info = await getShopifyProductInfo(
-        shop.shopify_domain,
-        productMapping.product_id,
-        productMapping.variant_id || null
+    if (rawProductContext) {
+      productContextForReply = buildProductContextForAI(rawProductContext);
+      const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
+      console.log(
+        `[automation] Product context attached for comment reply: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0} preview=${(productContextForReply?.text ?? "").substring(0, 120).replace(/\n/g, " ")}...`
       );
-      productName = info.productName;
-      productPrice = info.productPrice;
-      if (rawProductContext) {
-        productContextForReply = buildProductContextForAI(rawProductContext);
-        const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
-        console.log(
-          `[automation] Product context attached for comment reply: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0} preview=${(productContextForReply?.text ?? "").substring(0, 120).replace(/\n/g, " ")}...`
-        );
-      } else if (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") {
-        productContextForReply = {
-          text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
-        };
-      }
+    } else if (needsPdpComment) {
+      productContextForReply = {
+        text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
+      };
     }
     const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
     const replyText = await generateReplyMessage(

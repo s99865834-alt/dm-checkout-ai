@@ -4,6 +4,7 @@
  */
 
 import OpenAI from "openai";
+import { incCounter, recordTiming } from "./metrics.server";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -76,6 +77,7 @@ async function retryWithBackoff(fn, maxRetries = 3, delayMs = 1000) {
       
       // If it's a rate limit error, wait longer
       if (error.status === 429) {
+        incCounter("openai_429s");
         const retryAfter = error.headers?.["retry-after"] 
           ? parseInt(error.headers["retry-after"]) * 1000 
           : delayMs * Math.pow(2, attempt);
@@ -168,9 +170,11 @@ Sentiment: Overall tone of the message
 Entities: Extract any product details mentioned (size, color, product name)`;
 
   try {
+    const _aiStart = Date.now();
+    incCounter("openai_requests");
     const response = await retryWithBackoff(async () => {
       return await openai.chat.completions.create({
-        model: "gpt-4o-mini", // Using gpt-4o-mini for cost efficiency
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
@@ -181,11 +185,12 @@ Entities: Extract any product details mentioned (size, color, product name)`;
             content: prompt,
           },
         ],
-        temperature: 0.3, // Lower temperature for more consistent classifications
+        temperature: 0.3,
         max_tokens: 200,
-        response_format: { type: "json_object" }, // Force JSON response
+        response_format: { type: "json_object" },
       });
     });
+    recordTiming("openai_latency_ms", Date.now() - _aiStart);
 
     const content = response.choices[0]?.message?.content;
     if (!content) {

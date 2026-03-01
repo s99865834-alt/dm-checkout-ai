@@ -21,10 +21,32 @@ import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
+import { incCounter, recordTiming } from "../lib/metrics.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
 const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET;
+
+/**
+ * In-process semaphore: caps concurrent background automation chains so a burst
+ * of webhooks doesn't overwhelm downstream APIs (OpenAI, Shopify, Meta, DB).
+ */
+const MAX_CONCURRENT_AUTOMATIONS = 30;
+let _activeAutomations = 0;
+const _automationWaiters = [];
+
+async function withAutomationLimit(fn) {
+  if (_activeAutomations >= MAX_CONCURRENT_AUTOMATIONS) {
+    await new Promise((resolve) => _automationWaiters.push(resolve));
+  }
+  _activeAutomations++;
+  try {
+    return await fn();
+  } finally {
+    _activeAutomations--;
+    if (_automationWaiters.length > 0) _automationWaiters.shift()();
+  }
+}
 
 /**
  * GET handler for webhook verification
@@ -236,6 +258,7 @@ export const action = async ({ request }) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  const _webhookStart = Date.now();
   try {
     let hadProcessingError = false;
     // Read body as text first for HMAC verification
@@ -394,6 +417,7 @@ export const action = async ({ request }) => {
                 console.log(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
                 continue;
               }
+              incCounter("dm_messages_processed");
               console.log(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
               
               try {
@@ -415,69 +439,49 @@ export const action = async ({ request }) => {
                 if (result?.id && (await alreadyRepliedToMessage(result.id))) {
                   console.log(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
                 } else if (result?.id && parsed.messageText) {
-                  classifyMessage(parsed.messageText, { shopId })
-                    .then(async (classification) => {
-                      if (classification.intent !== null && !classification.error) {
-                        // Update message with AI classification
-                        await updateMessageAI(
-                          result.id,
-                          classification.intent,
-                          classification.confidence,
-                          classification.sentiment
-                        );
+                  withAutomationLimit(async () => {
+                    const classification = await classifyMessage(parsed.messageText, { shopId });
+                    if (classification.intent === null || classification.error) return;
 
-                        // Fetch updated message with AI data for automation
-                        const { data: updatedMessage } = await supabase
-                          .from("messages")
-                          .select("*")
-                          .eq("id", result.id)
-                          .single();
+                    await updateMessageAI(
+                      result.id,
+                      classification.intent,
+                      classification.confidence,
+                      classification.sentiment
+                    );
 
-                        if (updatedMessage) {
-                          // Get shop and plan for automation
-                          try {
-                            const usageData = await getShopPlanAndUsage(shopId);
-                            if (usageData) {
-                              // Get shop data from Supabase
-                              const { data: shopData } = await supabase
-                                .from("shops")
-                                .select("*")
-                                .eq("id", shopId)
-                                .single();
+                    const { data: updatedMessage } = await supabase
+                      .from("messages")
+                      .select("*")
+                      .eq("id", result.id)
+                      .single();
 
-                              if (shopData) {
-                                const shop = shopData;
-                                const plan = getPlanConfig(shop.plan || "FREE");
+                    if (!updatedMessage) return;
 
-                                // Process automation (send DM reply if conditions are met)
-                                handleIncomingDm(updatedMessage, shop, plan)
-                                  .then((automationResult) => {
-                                    if (automationResult.sent) {
-                                      console.log(`[webhook] ✅ Automated DM sent for message ${result.id}`);
-                                    } else {
-                                      console.log(`[webhook] Automation skipped for message ${result.id}: ${automationResult.reason}`);
-                                    }
-                                  })
-                                  .catch((error) => {
-                                    console.error(`[webhook] Error in automation:`, error);
-                                    hadProcessingError = true;
-                                    // Don't throw - automation failure shouldn't break webhook
-                                  });
-                              }
-                            }
-                          } catch (error) {
-                            console.error(`[webhook] Error getting shop/plan for automation:`, error);
-                            hadProcessingError = true;
-                            // Don't throw - continue processing
-                          }
-                        }
-                      }
-                    })
-                    .catch((error) => {
-                      console.error(`[webhook] Error classifying message:`, error);
-                      hadProcessingError = true;
-                      // Don't throw - classification failure shouldn't break webhook
-                    });
+                    const usageData = await getShopPlanAndUsage(shopId);
+                    if (!usageData) return;
+
+                    const { data: shopData } = await supabase
+                      .from("shops")
+                      .select("*")
+                      .eq("id", shopId)
+                      .single();
+
+                    if (!shopData) return;
+
+                    const plan = getPlanConfig(shopData.plan || "FREE");
+                    const automationResult = await handleIncomingDm(updatedMessage, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
+                    if (automationResult.sent) {
+                      incCounter("automations_sent");
+                      console.log(`[webhook] ✅ Automated DM sent for message ${result.id}`);
+                    } else {
+                      incCounter("automations_skipped");
+                      console.log(`[webhook] Automation skipped for message ${result.id}: ${automationResult.reason}`);
+                    }
+                  }).catch((error) => {
+                    console.error(`[webhook] Error in DM automation chain:`, error);
+                    hadProcessingError = true;
+                  });
                 }
               } catch (error) {
                 console.error(`[webhook] Error logging DM:`, error);
@@ -546,75 +550,56 @@ export const action = async ({ request }) => {
                   sentiment: null,
                   lastUserMessageAt: null, // Comments don't use last_user_message_at
                 });
+                incCounter("comment_messages_processed");
                 console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
                 
                 // Skip classification + automation if we already replied to this comment (stops API loop on duplicate webhooks)
                 if (result?.id && (await alreadyRepliedToComment(shopId, parsed.commentId))) {
                   console.log(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
                 } else if (result?.id && parsed.commentText) {
-                  classifyMessage(parsed.commentText, { shopId })
-                    .then(async (classification) => {
-                      if (classification.intent !== null && !classification.error) {
-                        // Update message with AI classification
-                        await updateMessageAI(
-                          result.id,
-                          classification.intent,
-                          classification.confidence,
-                          classification.sentiment
-                        );
+                  withAutomationLimit(async () => {
+                    const classification = await classifyMessage(parsed.commentText, { shopId });
+                    if (classification.intent === null || classification.error) return;
 
-                        // Fetch updated message with AI data for automation
-                        const { data: updatedMessage } = await supabase
-                          .from("messages")
-                          .select("*")
-                          .eq("id", result.id)
-                          .single();
+                    await updateMessageAI(
+                      result.id,
+                      classification.intent,
+                      classification.confidence,
+                      classification.sentiment
+                    );
 
-                        if (updatedMessage && parsed.mediaId) {
-                          // Get shop and plan for automation
-                          try {
-                            const usageData = await getShopPlanAndUsage(shopId);
-                            if (usageData) {
-                              // Get shop data from Supabase
-                              const { data: shopData } = await supabase
-                                .from("shops")
-                                .select("*")
-                                .eq("id", shopId)
-                                .single();
+                    const { data: updatedMessage } = await supabase
+                      .from("messages")
+                      .select("*")
+                      .eq("id", result.id)
+                      .single();
 
-                              if (shopData) {
-                                const shop = shopData;
-                                const plan = getPlanConfig(shop.plan || "FREE");
+                    if (!updatedMessage || !parsed.mediaId) return;
 
-                                // Process comment private reply automation (Growth/Pro only)
-                                handleIncomingComment(updatedMessage, parsed.mediaId, shop, plan)
-                                  .then((automationResult) => {
-                                    if (automationResult.sent) {
-                                      console.log(`[webhook] ✅ Comment private reply sent for comment ${result.id}`);
-                                    } else {
-                                      console.log(`[webhook] Comment private reply skipped for comment ${result.id}: ${automationResult.reason}`);
-                                    }
-                                  })
-                                  .catch((error) => {
-                                    console.error(`[webhook] Error in comment automation:`, error);
-                                    hadProcessingError = true;
-                                    // Don't throw - automation failure shouldn't break webhook
-                                  });
-                              }
-                            }
-                          } catch (error) {
-                            console.error(`[webhook] Error getting shop/plan for comment automation:`, error);
-                            hadProcessingError = true;
-                            // Don't throw - continue processing
-                          }
-                        }
-                      }
-                    })
-                    .catch((error) => {
-                      console.error(`[webhook] Error classifying comment:`, error);
-                      hadProcessingError = true;
-                      // Don't throw - classification failure shouldn't break webhook
-                    });
+                    const usageData = await getShopPlanAndUsage(shopId);
+                    if (!usageData) return;
+
+                    const { data: shopData } = await supabase
+                      .from("shops")
+                      .select("*")
+                      .eq("id", shopId)
+                      .single();
+
+                    if (!shopData) return;
+
+                    const plan = getPlanConfig(shopData.plan || "FREE");
+                    const automationResult = await handleIncomingComment(updatedMessage, parsed.mediaId, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
+                    if (automationResult.sent) {
+                      incCounter("automations_sent");
+                      console.log(`[webhook] ✅ Comment private reply sent for comment ${result.id}`);
+                    } else {
+                      incCounter("automations_skipped");
+                      console.log(`[webhook] Comment private reply skipped for comment ${result.id}: ${automationResult.reason}`);
+                    }
+                  }).catch((error) => {
+                    console.error(`[webhook] Error in comment automation chain:`, error);
+                    hadProcessingError = true;
+                  });
                 }
                 } catch (error) {
                   console.error(`[webhook] Error logging comment:`, error);
@@ -676,6 +661,9 @@ export const action = async ({ request }) => {
     } else {
       console.log(`[webhook] Unknown webhook object type: ${body.object}`);
     }
+
+    incCounter("webhooks_received");
+    recordTiming("webhook_response_ms", Date.now() - _webhookStart);
 
     // Return 200 if processing succeeded, 500 if any internal error occurred
     return new Response(hadProcessingError ? "ERROR" : "OK", {
