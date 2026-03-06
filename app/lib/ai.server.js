@@ -5,6 +5,7 @@
 
 import OpenAI from "openai";
 import { incCounter, recordTiming } from "./metrics.server";
+import logger from "./logger.server";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -238,7 +239,7 @@ Entities: Extract any product details mentioned (size, color, product name)`;
       },
     };
 
-    console.log(`[ai] Classification result:`, result);
+    logger.debug(`[ai] Classification result:`, result);
     return result;
   } catch (error) {
     console.error("[ai] Error classifying message:", error);

@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 import { createOrUpdateShop } from "./lib/db.server";
+import logger from "./lib/logger.server";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
 // Using env var with hardcoded fallback so it's never accidentally empty.
@@ -29,14 +30,14 @@ const shopify = shopifyApp({
     : {}),
   afterAuth: async ({ session }) => {
     // Create or update shop in database when OAuth completes
-    console.log(`[afterAuth] OAuth completed for shop: ${session.shop}`);
+    logger.debug(`[afterAuth] OAuth completed for shop: ${session.shop}`);
     try {
       const result = await createOrUpdateShop(session.shop, {
         plan: "FREE",
         monthly_cap: 25,
         active: true,
       });
-      console.log(`[afterAuth] Shop ${session.shop} created/updated in database - active: ${result.active}, usage_count: ${result.usage_count}`);
+      logger.debug(`[afterAuth] Shop ${session.shop} created/updated in database - active: ${result.active}, usage_count: ${result.usage_count}`);
     } catch (error) {
       console.error(`[afterAuth] Error creating/updating shop ${session.shop}:`, error);
       // Don't throw - allow OAuth to complete even if DB update fails

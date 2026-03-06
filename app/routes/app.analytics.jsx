@@ -565,7 +565,7 @@ export default function AnalyticsPage() {
                 <form onSubmit={handleFilterSubmit}>
                   <s-stack direction="block" gap="base">
                     <s-stack direction="inline" gap="base">
-                      <s-box padding="tight" border="base" borderRadius="base" className="srFlex1">
+                      <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="channel">
                           <s-text variant="strong">Channel</s-text>
@@ -583,7 +583,7 @@ export default function AnalyticsPage() {
                       </s-stack>
                     </s-box>
 
-                    <s-box padding="tight" border="base" borderRadius="base" className="srFlex1">
+                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="order_id">
                           <s-text variant="strong">Order ID</s-text>
@@ -599,7 +599,7 @@ export default function AnalyticsPage() {
                       </s-stack>
                     </s-box>
 
-                    <s-box padding="tight" border="base" borderRadius="base" className="srFlex1">
+                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="start_date">
                           <s-text variant="strong">Start Date</s-text>
@@ -614,7 +614,7 @@ export default function AnalyticsPage() {
                       </s-stack>
                     </s-box>
 
-                    <s-box padding="tight" border="base" borderRadius="base" className="srFlex1">
+                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="end_date">
                           <s-text variant="strong">End Date</s-text>
@@ -629,7 +629,7 @@ export default function AnalyticsPage() {
                       </s-stack>
                     </s-box>
 
-                    <s-box padding="tight" border="base" borderRadius="base" className="srFlex1">
+                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="limit">
                           <s-text variant="strong">Limit</s-text>
@@ -661,7 +661,7 @@ export default function AnalyticsPage() {
             </s-box>
 
           {/* Attribution Records Table */}
-          <s-box padding="base" border="base" borderRadius="base">
+          <s-box padding="base" borderWidth="base" borderRadius="base">
             <s-stack direction="block" gap="base">
               <s-text variant="headingMd">Attribution Records ({attributionRecords.length})</s-text>
               {attributionRecords.length === 0 ? (

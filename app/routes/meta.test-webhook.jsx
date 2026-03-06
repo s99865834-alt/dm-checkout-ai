@@ -11,7 +11,12 @@
  * This should be removed or secured before production.
  */
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 export const action = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) {
+    return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+  }
   // Require either shared secret (for scripts) or authenticated Shopify admin (for in-app Webhook Demo).
   const secret = process.env.META_TEST_WEBHOOK_SECRET;
   const provided = request.headers.get("x-test-webhook-secret");
@@ -536,18 +541,8 @@ export const action = async ({ request }) => {
 };
 
 export const loader = async () => {
-  const secret = process.env.META_TEST_WEBHOOK_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: "Test endpoint disabled",
-      }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+  if (!DEV_ROUTES_ENABLED) {
+    return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { "Content-Type": "application/json" } });
   }
   return new Response(
     JSON.stringify({

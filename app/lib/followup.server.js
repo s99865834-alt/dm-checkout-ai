@@ -7,6 +7,7 @@ import { getShopPlanAndUsage, getSettings, getBrandVoice } from "./db.server";
 import { sendDmReply } from "./automation.server";
 import supabase from "./supabase.server";
 import { logError } from "./error-handler.server";
+import logger from "./logger.server";
 
 /**
  * Check if a follow-up has already been sent for a message/link combination
@@ -68,7 +69,7 @@ async function hasLinkBeenClicked(linkId) {
  * This should be called by a scheduled job (cron) every hour
  */
 export async function processFollowups() {
-  console.log("[followup] Starting follow-up processing...");
+  logger.debug("[followup] Starting follow-up processing...");
 
   try {
     // Calculate time window: 23-24 hours ago
@@ -89,7 +90,7 @@ export async function processFollowups() {
     }
 
     if (!proShops || proShops.length === 0) {
-      console.log("[followup] No PRO shops found");
+      logger.debug("[followup] No PRO shops found");
       return;
     }
 
@@ -99,7 +100,7 @@ export async function processFollowups() {
         const settings = await getSettings(shop.id);
         
         if (!settings?.followup_enabled) {
-          console.log(`[followup] Follow-up disabled for shop ${shop.id}`);
+          logger.debug(`[followup] Follow-up disabled for shop ${shop.id}`);
           continue;
         }
 
@@ -194,7 +195,7 @@ export async function processFollowups() {
             // Mark follow-up as sent
             await markFollowupSent(shop.id, message.id, linkId);
 
-            console.log(`[followup] ✅ Follow-up sent for message ${message.id} in shop ${shop.id}`);
+            logger.debug(`[followup] ✅ Follow-up sent for message ${message.id} in shop ${shop.id}`);
           } catch (error) {
             logError("processFollowups - message", error, { shopId: shop.id, messageId: message.id });
           }
@@ -204,7 +205,7 @@ export async function processFollowups() {
       }
     }
 
-    console.log("[followup] Follow-up processing completed");
+    logger.debug("[followup] Follow-up processing completed");
   } catch (error) {
     logError("processFollowups", error);
   }

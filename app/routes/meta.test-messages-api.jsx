@@ -14,7 +14,12 @@
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, metaGraphAPI, metaGraphAPIInstagram } from "../lib/meta.server";
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 export const loader = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) {
+    return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+  }
   try {
     const { shop } = await getShopWithPlan(request);
 

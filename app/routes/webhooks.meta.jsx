@@ -22,6 +22,7 @@ import { handleIncomingDm, handleIncomingComment } from "../lib/automation.serve
 import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
 import { incCounter, recordTiming } from "../lib/metrics.server";
+import logger from "../lib/logger.server";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
@@ -58,7 +59,7 @@ async function withAutomationLimit(fn) {
  * 3. We return the challenge string to prove we control the endpoint
  */
 export const loader = async ({ request }) => {
-  console.log(`[webhook] Meta webhook verification request received`);
+  logger.debug(`[webhook] Meta webhook verification request received`);
   
   try {
     const url = new URL(request.url);
@@ -66,7 +67,7 @@ export const loader = async ({ request }) => {
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
 
-    console.log(`[webhook] Verification params:`, {
+    logger.debug(`[webhook] Verification params:`, {
       mode,
       token: token ? "***" : null,
       challenge: challenge ? "***" : null,
@@ -74,7 +75,7 @@ export const loader = async ({ request }) => {
 
     // Verify the token matches
     if (mode === "subscribe" && token === META_WEBHOOK_VERIFY_TOKEN) {
-      console.log(`[webhook] Meta webhook verified successfully`);
+      logger.debug(`[webhook] Meta webhook verified successfully`);
       return new Response(challenge, {
         status: 200,
         headers: { "Content-Type": "text/plain" },
@@ -109,14 +110,14 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
       // For Facebook Page events
       query = query.eq("page_id", pageId);
     } else {
-      console.log(`[webhook] No page_id or ig_business_id provided`);
+      logger.debug(`[webhook] No page_id or ig_business_id provided`);
       return null;
     }
     
     let { data, error } = await query.maybeSingle();
     
     if (error || !data) {
-      console.log(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+      logger.debug(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
       // Fallback: if one Instagram-connected shop exists, attribute this event to that shop.
       // Do NOT overwrite ig_business_id with the webhook's entry.id: our token is for the stored
       // account. Overwriting caused Code 100 (object does not exist) because we then called the
@@ -130,7 +131,7 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
           const shopId = fallbackRows[0].shop_id;
           const { data: shop } = await supabase.from("shops").select("id, active").eq("id", shopId).single();
           if (shop?.active) {
-            console.log(`[webhook] Using single Instagram shop fallback: shop_id=${shopId} (keeping stored ig_business_id for API calls)`);
+            logger.debug(`[webhook] Using single Instagram shop fallback: shop_id=${shopId} (keeping stored ig_business_id for API calls)`);
             return shopId;
           }
         }
@@ -146,11 +147,11 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
       .single();
     
     if (shopError || !shop || !shop.active) {
-      console.log(`[webhook] Shop ${data.shop_id} not found or inactive`);
+      logger.debug(`[webhook] Shop ${data.shop_id} not found or inactive`);
       return null;
     }
     
-    console.log(`[webhook] Resolved shop ${shop.id} for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+    logger.debug(`[webhook] Resolved shop ${shop.id} for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
     return shop.id;
   } catch (error) {
     console.error(`[webhook] Error resolving shop:`, error);
@@ -251,7 +252,7 @@ function parseMessageEvent(message) {
  * when your business account sends a reply. Each is a separate POST.
  */
 export const action = async ({ request }) => {
-  console.log(`[webhook] Meta webhook event received`);
+  logger.debug(`[webhook] Meta webhook event received`);
   
   if (request.method !== "POST") {
     console.error(`[webhook] Invalid method: ${request.method}`);
@@ -269,7 +270,7 @@ export const action = async ({ request }) => {
     // Verify HMAC signature: Meta signs with the app that owns the webhook (main or Instagram app). Skip for internal test-webhook.
     const secrets = [META_APP_SECRET, META_INSTAGRAM_APP_SECRET].filter(Boolean);
     if (isTestWebhook) {
-      console.log(`[webhook] Test webhook request – skipping HMAC verification`);
+      logger.debug(`[webhook] Test webhook request – skipping HMAC verification`);
     } else if (signature && secrets.length > 0) {
       const expectedSignatures = secrets.map((secret) =>
         `sha256=${crypto.createHmac("sha256", secret).update(bodyText).digest("hex")}`
@@ -279,13 +280,13 @@ export const action = async ({ request }) => {
         console.error(`[webhook] Invalid HMAC signature (tried ${secrets.length} secret(s))`);
         return new Response("Invalid signature", { status: 403 });
       }
-      console.log(`[webhook] HMAC signature verified`);
+      logger.debug(`[webhook] HMAC signature verified`);
     } else {
       if (secrets.length > 0) {
         console.error("[webhook] Missing HMAC signature");
         return new Response("Invalid signature", { status: 403 });
       }
-      console.log(`[webhook] HMAC verification skipped (no app secret or signature)`);
+      logger.debug(`[webhook] HMAC verification skipped (no app secret or signature)`);
     }
 
     // Parse JSON body
@@ -298,7 +299,7 @@ export const action = async ({ request }) => {
     }
     const entryCount = body.entry?.length ?? 0;
     const firstEntryKeys = body.entry?.[0] ? Object.keys(body.entry[0]).join(", ") : "";
-    console.log(`[webhook] POST object=${body.object} entries=${entryCount} keys=[${firstEntryKeys}]`);
+    logger.debug(`[webhook] POST object=${body.object} entries=${entryCount} keys=[${firstEntryKeys}]`);
 
     // Handle different webhook event types
     if (body.object === "instagram") {
@@ -310,14 +311,14 @@ export const action = async ({ request }) => {
           const nMessaging = entry.messaging?.length ?? 0;
           const nStandby = entry.standby?.length ?? 0;
           const nChangeMsg = entry.changes?.filter((c) => c.field === "messages").length ?? 0;
-          console.log(`[webhook] entry id=${igBusinessId} messaging=${nMessaging} standby=${nStandby} change_messages=${nChangeMsg}`);
+          logger.debug(`[webhook] entry id=${igBusinessId} messaging=${nMessaging} standby=${nStandby} change_messages=${nChangeMsg}`);
 
           const shopId = await resolveShopFromEvent(null, igBusinessId);
           if (!shopId) {
             console.warn(`[webhook] No shop for ig_business_id=${igBusinessId}, skipping`);
             continue;
           }
-          console.log(`[webhook] shop_id=${shopId}`);
+          logger.debug(`[webhook] shop_id=${shopId}`);
 
           let settings = null;
           try {
@@ -334,7 +335,7 @@ export const action = async ({ request }) => {
             messagingEvents = entry.messaging;
           }
           if (entry.standby && Array.isArray(entry.standby)) {
-            console.log(`[webhook] Including ${entry.standby.length} event(s) from entry.standby (app was not thread owner)`);
+            logger.debug(`[webhook] Including ${entry.standby.length} event(s) from entry.standby (app was not thread owner)`);
             messagingEvents = messagingEvents.concat(entry.standby);
           }
           if (entry.changes && Array.isArray(entry.changes)) {
@@ -347,43 +348,43 @@ export const action = async ({ request }) => {
 
           if (messagingEvents.length === 0) {
             const changeFields = entry.changes?.map((c) => c.field).join(", ") || "(none)";
-            console.log(`[webhook] No messaging events in this entry. entry keys=[${Object.keys(entry).join(", ")}] changes.fields=[${changeFields}]`);
+            logger.debug(`[webhook] No messaging events in this entry. entry keys=[${Object.keys(entry).join(", ")}] changes.fields=[${changeFields}]`);
           }
 
           // Handle messaging events (DMs)
           if (messagingEvents.length > 0) {
             // Check if DM automation is enabled
             if (settings?.dm_automation_enabled === false) {
-              console.log(`[webhook] DM automation is disabled for shop ${shopId}, skipping DM processing`);
+              logger.debug(`[webhook] DM automation is disabled for shop ${shopId}, skipping DM processing`);
             } else if (settings?.channel_preference === "comment") {
               // Pro plan: check channel preference
-              console.log(`[webhook] Channel preference is "comment only", skipping DM processing`);
+              logger.debug(`[webhook] Channel preference is "comment only", skipping DM processing`);
             } else {
-            console.log(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
+            logger.debug(`[webhook] Found ${messagingEvents.length} messaging event(s)`);
             for (const message of messagingEvents) {
               const senderId = message.sender?.id ?? message.from?.id ?? "?";
               const recipientId = message.recipient?.id ?? message.to?.id ?? null;
               const isEcho = message.is_echo === true || message.message?.is_echo === true;
               const hasEditMid = !!message.message_edit?.mid;
-              console.log(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
+              logger.debug(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
               if (igBusinessId && recipientId && String(recipientId) !== String(igBusinessId)) {
-                console.log(`[webhook] Skipping message not addressed to this IG business id: recipient=${recipientId}`);
+                logger.debug(`[webhook] Skipping message not addressed to this IG business id: recipient=${recipientId}`);
                 continue;
               }
               if (igBusinessId && String(senderId) === String(igBusinessId)) {
-                console.log(`[webhook] Skipping outbound message from IG business ID ${igBusinessId}`);
+                logger.debug(`[webhook] Skipping outbound message from IG business ID ${igBusinessId}`);
                 continue;
               }
               if (recipientId && String(senderId) === String(recipientId)) {
-                console.log(`[webhook] Skipping message where sender equals recipient (${senderId})`);
+                logger.debug(`[webhook] Skipping message where sender equals recipient (${senderId})`);
                 continue;
               }
               if (isEcho) {
-                console.log(`[webhook] Skipping is_echo (outbound) message`);
+                logger.debug(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
               if (message.message_edit?.mid) {
-                console.log(`[webhook] Skipping message_edit event to prevent duplicate automation`);
+                logger.debug(`[webhook] Skipping message_edit event to prevent duplicate automation`);
                 continue;
               }
               // Process: message with text/attachments, or message_edit with text (edited message content)
@@ -392,13 +393,13 @@ export const action = async ({ request }) => {
               let hasMessageEditText = message.message_edit?.text;
 
               if (!hasMessageText && !hasMessageEditText && message.message_edit?.mid) {
-                console.log(`[webhook] Skipping message_edit (no text in payload)`);
+                logger.debug(`[webhook] Skipping message_edit (no text in payload)`);
                 continue;
               } else if (!hasMessageText && !hasMessageEditText) {
                 if (message.message_edit) {
-                  console.log(`[webhook] Skip: message_edit (no text in payload)`);
+                  logger.debug(`[webhook] Skip: message_edit (no text in payload)`);
                 } else {
-                  console.log(`[webhook] Skip: non-message event (reaction/read)`);
+                  logger.debug(`[webhook] Skip: non-message event (reaction/read)`);
                 }
                 continue;
               }
@@ -409,16 +410,16 @@ export const action = async ({ request }) => {
                 continue;
               }
               if (processedDmExternalIds.has(parsed.messageId)) {
-                console.log(`[webhook] Skip: duplicate message mid ${parsed.messageId}`);
+                logger.debug(`[webhook] Skip: duplicate message mid ${parsed.messageId}`);
                 continue;
               }
               processedDmExternalIds.add(parsed.messageId);
               if (igBusinessId && String(parsed.igUserId) === String(igBusinessId)) {
-                console.log(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
+                logger.debug(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
                 continue;
               }
               incCounter("dm_messages_processed");
-              console.log(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
+              logger.debug(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
               
               try {
                 const result = await logMessage({
@@ -433,11 +434,11 @@ export const action = async ({ request }) => {
                   sentiment: null,
                   lastUserMessageAt: parsed.timestamp,
                 });
-                console.log(`[webhook] DM logged db_id=${result?.id}`);
+                logger.debug(`[webhook] DM logged db_id=${result?.id}`);
                 
                 // Skip classification + automation if we already replied (stops API loop on duplicate webhooks)
                 if (result?.id && (await alreadyRepliedToMessage(result.id))) {
-                  console.log(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
+                  logger.debug(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
                 } else if (result?.id && parsed.messageText) {
                   withAutomationLimit(async () => {
                     const classification = await classifyMessage(parsed.messageText, { shopId });
@@ -473,10 +474,10 @@ export const action = async ({ request }) => {
                     const automationResult = await handleIncomingDm(updatedMessage, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
                     if (automationResult.sent) {
                       incCounter("automations_sent");
-                      console.log(`[webhook] ✅ Automated DM sent for message ${result.id}`);
+                      logger.debug(`[webhook] ✅ Automated DM sent for message ${result.id}`);
                     } else {
                       incCounter("automations_skipped");
-                      console.log(`[webhook] Automation skipped for message ${result.id}: ${automationResult.reason}`);
+                      logger.debug(`[webhook] Automation skipped for message ${result.id}: ${automationResult.reason}`);
                     }
                   }).catch((error) => {
                     console.error(`[webhook] Error in DM automation chain:`, error);
@@ -492,7 +493,7 @@ export const action = async ({ request }) => {
             }
             }
           } else {
-            console.log(`[webhook] No messaging events in entry (keys: ${Object.keys(entry).join(", ")})`);
+            logger.debug(`[webhook] No messaging events in entry (keys: ${Object.keys(entry).join(", ")})`);
           }
           
           // Handle comment events (from entry.changes)
@@ -501,18 +502,18 @@ export const action = async ({ request }) => {
               if (change.field === "comments" && change.value) {
                 // Check if comment automation is enabled
                 if (settings?.comment_automation_enabled === false) {
-                  console.log(`[webhook] Comment automation is disabled for shop ${shopId}, skipping comment processing`);
+                  logger.debug(`[webhook] Comment automation is disabled for shop ${shopId}, skipping comment processing`);
                   continue;
                 }
                 
                 // Check channel preference (Pro only)
                 if (settings?.channel_preference === "dm") {
-                  console.log(`[webhook] Channel preference is "DM only", skipping comment processing`);
+                  logger.debug(`[webhook] Channel preference is "DM only", skipping comment processing`);
                   continue;
                 }
                 
                 const comment = change.value;
-                console.log(`[webhook] Instagram comment event:`, comment);
+                logger.debug(`[webhook] Instagram comment event:`, comment);
                 
                 const parsed = parseCommentEvent(comment);
                 if (!parsed || !parsed.commentId) {
@@ -520,7 +521,7 @@ export const action = async ({ request }) => {
                   continue;
                 }
                 if (processedCommentExternalIds.has(parsed.commentId)) {
-                  console.log(`[webhook] Skip: duplicate comment id ${parsed.commentId}`);
+                  logger.debug(`[webhook] Skip: duplicate comment id ${parsed.commentId}`);
                   continue;
                 }
                 processedCommentExternalIds.add(parsed.commentId);
@@ -532,7 +533,7 @@ export const action = async ({ request }) => {
                 // Check if post filtering is enabled and if this post is in the allowed list
                 if (settings?.enabled_post_ids && Array.isArray(settings.enabled_post_ids) && settings.enabled_post_ids.length > 0) {
                   if (!parsed.mediaId || !settings.enabled_post_ids.includes(parsed.mediaId)) {
-                    console.log(`[webhook] Comment on media ${parsed.mediaId} not in enabled_post_ids list, skipping`);
+                    logger.debug(`[webhook] Comment on media ${parsed.mediaId} not in enabled_post_ids list, skipping`);
                     continue;
                   }
                 }
@@ -551,11 +552,11 @@ export const action = async ({ request }) => {
                   lastUserMessageAt: null, // Comments don't use last_user_message_at
                 });
                 incCounter("comment_messages_processed");
-                console.log(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
+                logger.debug(`[webhook] ✅ Comment logged: ${parsed.commentId}`);
                 
                 // Skip classification + automation if we already replied to this comment (stops API loop on duplicate webhooks)
                 if (result?.id && (await alreadyRepliedToComment(shopId, parsed.commentId))) {
-                  console.log(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
+                  logger.debug(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
                 } else if (result?.id && parsed.commentText) {
                   withAutomationLimit(async () => {
                     const classification = await classifyMessage(parsed.commentText, { shopId });
@@ -591,10 +592,10 @@ export const action = async ({ request }) => {
                     const automationResult = await handleIncomingComment(updatedMessage, parsed.mediaId, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
                     if (automationResult.sent) {
                       incCounter("automations_sent");
-                      console.log(`[webhook] ✅ Comment private reply sent for comment ${result.id}`);
+                      logger.debug(`[webhook] ✅ Comment private reply sent for comment ${result.id}`);
                     } else {
                       incCounter("automations_skipped");
-                      console.log(`[webhook] Comment private reply skipped for comment ${result.id}: ${automationResult.reason}`);
+                      logger.debug(`[webhook] Comment private reply skipped for comment ${result.id}: ${automationResult.reason}`);
                     }
                   }).catch((error) => {
                     console.error(`[webhook] Error in comment automation chain:`, error);
@@ -612,11 +613,11 @@ export const action = async ({ request }) => {
         }
       }
     } else if (body.object === "page") {
-      console.log(`[webhook] Facebook Page webhook event`);
+      logger.debug(`[webhook] Facebook Page webhook event`);
       
       if (body.entry) {
         for (const entry of body.entry) {
-          console.log(`[webhook] Processing page entry:`, entry.id);
+          logger.debug(`[webhook] Processing page entry:`, entry.id);
           
           // Resolve shop from page_id
           const shopId = await resolveShopFromEvent(entry.id, null);
@@ -628,7 +629,7 @@ export const action = async ({ request }) => {
           
           if (entry.messaging) {
             for (const message of entry.messaging) {
-              console.log(`[webhook] Facebook message event:`, message);
+              logger.debug(`[webhook] Facebook message event:`, message);
               
               const parsed = parseMessageEvent(message);
               if (!parsed || !parsed.messageId) {
@@ -649,7 +650,7 @@ export const action = async ({ request }) => {
                   sentiment: null,
                   lastUserMessageAt: parsed.timestamp,
                 });
-                console.log(`[webhook] ✅ Facebook DM logged: ${parsed.messageId}`);
+                logger.debug(`[webhook] ✅ Facebook DM logged: ${parsed.messageId}`);
               } catch (error) {
                 console.error(`[webhook] Error logging Facebook DM:`, error);
                 // Continue processing other messages
@@ -659,7 +660,7 @@ export const action = async ({ request }) => {
         }
       }
     } else {
-      console.log(`[webhook] Unknown webhook object type: ${body.object}`);
+      logger.debug(`[webhook] Unknown webhook object type: ${body.object}`);
     }
 
     incCounter("webhooks_received");

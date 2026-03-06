@@ -8,6 +8,8 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getProductMappings } from "../lib/db.server";
 import { buildProductContextForAI } from "../lib/shopify-data.server";
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 const PRODUCT_CONTEXT_QUERY = `
   query getProductContext($productId: ID!) {
     product(id: $productId) {
@@ -44,6 +46,7 @@ const PRODUCT_CONTEXT_QUERY = `
 `;
 
 export const loader = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) throw new Response("Not Found", { status: 404 });
   const { shop, plan, admin } = await getShopWithPlan(request);
   const url = new URL(request.url);
   const productIdParam = url.searchParams.get("product_id");

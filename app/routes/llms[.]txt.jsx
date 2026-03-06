@@ -17,7 +17,7 @@ SocialRepl.ai (DM Checkout AI) is a Shopify app that automatically responds to I
 - **Product-to-Post Mapping**: Merchants map Shopify products to Instagram posts via a visual grid, so the app knows which product each post is about.
 - **Click and Revenue Attribution**: Tracks which Instagram interactions lead to clicks and purchases.
 - **Follow-Up Messages**: Sends timed follow-ups to customers who haven't completed checkout.
-- **Multi-Tier Plans**: Free (25 messages/mo), Growth ($29/mo, 100 messages, comment-to-DM, brand voice), Pro ($99/mo, unlimited, follow-ups, revenue attribution, clarifying questions).
+- **Multi-Tier Plans**: Free (25 messages/mo), Growth ($29/mo, 500 messages, comment-to-DM, brand voice), Pro ($99/mo, 50,000 messages, follow-ups, priority support).
 
 ## Who it's for
 

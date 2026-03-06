@@ -3,12 +3,16 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan } from "../lib/db.server";
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 export const loader = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) throw new Response("Not Found", { status: 404 });
   const { shop, plan } = await getShopWithPlan(request);
   return { shop, plan };
 };
 
 export const action = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) throw new Response("Not Found", { status: 404 });
   const { shop } = await getShopWithPlan(request);
 
   if (!shop) {

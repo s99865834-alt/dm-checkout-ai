@@ -14,26 +14,27 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import supabase from "../lib/supabase.server";
 import { updateShopPlan } from "../lib/db.server";
+import logger from "../lib/logger.server";
 
 export const action = async ({ request }) => {
-  console.log(`[webhook] app/uninstalled webhook received`);
+  logger.debug(`[webhook] app/uninstalled webhook received`);
   
   try {
     const { shop, session, topic } = await authenticate.webhook(request);
-    console.log(`[webhook] Authenticated webhook for shop: ${shop}, topic: ${topic}`);
+    logger.debug(`[webhook] Authenticated webhook for shop: ${shop}, topic: ${topic}`);
 
     // Webhook requests can trigger multiple times and after an app has already been uninstalled.
     // If this webhook already ran, the session may have been deleted previously.
     if (session) {
-      console.log(`[webhook] Deleting session for shop: ${shop}`);
+      logger.debug(`[webhook] Deleting session for shop: ${shop}`);
       await db.session.deleteMany({ where: { shop } });
-      console.log(`[webhook] Session deleted`);
+      logger.debug(`[webhook] Session deleted`);
     } else {
-      console.log(`[webhook] No session found (may have been deleted already)`);
+      logger.debug(`[webhook] No session found (may have been deleted already)`);
     }
 
     // Get shop from database to check if they have an active subscription
-    console.log(`[webhook] Fetching shop data from database for: ${shop}`);
+    logger.debug(`[webhook] Fetching shop data from database for: ${shop}`);
     const { data: shopData, error: fetchError } = await supabase
       .from("shops")
       .select("id, plan")
@@ -43,7 +44,7 @@ export const action = async ({ request }) => {
     if (fetchError) {
       console.error(`[webhook] Error fetching shop data:`, fetchError);
     } else {
-      console.log(`[webhook] Shop data found:`, shopData);
+      logger.debug(`[webhook] Shop data found:`, shopData);
     }
 
     // Note: Shopify automatically cancels subscriptions when an app is uninstalled,
@@ -54,16 +55,16 @@ export const action = async ({ request }) => {
     
     // Mark shop as inactive and reset to FREE plan in Supabase
     if (shopData) {
-      console.log(`[webhook] Resetting plan to FREE for shop ID: ${shopData.id}`);
+      logger.debug(`[webhook] Resetting plan to FREE for shop ID: ${shopData.id}`);
       try {
         await updateShopPlan(shopData.id, "FREE");
-        console.log(`[webhook] Plan reset to FREE`);
+        logger.debug(`[webhook] Plan reset to FREE`);
       } catch (planError) {
         console.error(`[webhook] Error resetting plan:`, planError);
       }
     }
 
-    console.log(`[webhook] Updating shop active status to false for: ${shop}`);
+    logger.debug(`[webhook] Updating shop active status to false for: ${shop}`);
     const { data: updateData, error: updateError } = await supabase
       .from("shops")
       .update({ active: false })
@@ -77,7 +78,7 @@ export const action = async ({ request }) => {
         headers: { "Content-Type": "application/json" },
       });
     } else {
-      console.log(`[webhook] Shop ${shop} marked as inactive successfully. Updated rows:`, updateData);
+      logger.debug(`[webhook] Shop ${shop} marked as inactive successfully. Updated rows:`, updateData);
       return new Response(JSON.stringify({ success: true, updated: updateData }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

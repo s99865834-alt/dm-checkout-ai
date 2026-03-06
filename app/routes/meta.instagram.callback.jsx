@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import { getShopByDomain } from "../lib/db.server";
 import { saveMetaAuth, metaGraphAPI, subscribeToWebhooks } from "../lib/meta.server";
+import logger from "../lib/logger.server";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
@@ -14,11 +15,11 @@ const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTIO
  * Handles the authorization code from Meta and exchanges it for tokens
  */
 export async function loader({ request }) {
-  console.log(`[oauth] ========================================`);
-  console.log(`[oauth] Instagram OAuth callback received`);
-  console.log(`[oauth] Request URL: ${request.url}`);
-  console.log(`[oauth] Request method: ${request.method}`);
-  console.log(`[oauth] Route is being hit - this is good!`);
+  logger.debug(`[oauth] ========================================`);
+  logger.debug(`[oauth] Instagram OAuth callback received`);
+  logger.debug(`[oauth] Request URL: ${request.url}`);
+  logger.debug(`[oauth] Request method: ${request.method}`);
+  logger.debug(`[oauth] Route is being hit - this is good!`);
   
   try {
     const url = new URL(request.url);
@@ -28,7 +29,7 @@ export async function loader({ request }) {
     const errorReason = url.searchParams.get("error_reason");
     const errorDescription = url.searchParams.get("error_description");
     
-    console.log(`[oauth] Callback parameters:`, {
+    logger.debug(`[oauth] Callback parameters:`, {
       hasCode: !!code,
       shopParam,
       error,
@@ -39,7 +40,7 @@ export async function loader({ request }) {
     
     // Early return for testing - remove this after verifying route works
     if (!code && !error) {
-      console.log(`[oauth] No code or error - this might be a test request`);
+      logger.debug(`[oauth] No code or error - this might be a test request`);
       return new Response("Meta OAuth callback endpoint is working. Waiting for OAuth redirect...", {
         status: 200,
         headers: { "Content-Type": "text/plain" },
@@ -68,9 +69,9 @@ export async function loader({ request }) {
       return redirect(`/app?error=${encodeURIComponent("Missing shop parameter. Please try connecting again.")}`);
     }
 
-    console.log(`[oauth] Processing callback for shop: ${targetShop}`);
+    logger.debug(`[oauth] Processing callback for shop: ${targetShop}`);
 
-    console.log(`[oauth] Exchanging code for access token for shop: ${targetShop}`);
+    logger.debug(`[oauth] Exchanging code for access token for shop: ${targetShop}`);
 
     // Build redirect URI using production HTTPS URL (must match what was sent to Meta)
     // Ensure we use production URL, never tunnel URL
@@ -78,9 +79,9 @@ export async function loader({ request }) {
     const finalAppUrl = APP_URL.includes('railway.app') ? APP_URL : PRODUCTION_URL;
         const redirectUri = `${finalAppUrl}/meta/instagram/callback`;
     
-    console.log(`[oauth] Using finalAppUrl for callback: ${finalAppUrl}`);
-    console.log(`[oauth] Redirect URI (base only): ${redirectUri}`);
-    console.log(`[oauth] Shop from state parameter: ${targetShop}`);
+    logger.debug(`[oauth] Using finalAppUrl for callback: ${finalAppUrl}`);
+    logger.debug(`[oauth] Redirect URI (base only): ${redirectUri}`);
+    logger.debug(`[oauth] Shop from state parameter: ${targetShop}`);
 
     // Exchange code for access token
     const tokenUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` +
@@ -89,11 +90,11 @@ export async function loader({ request }) {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `code=${code}`;
 
-    console.log(`[oauth] Token exchange URL: ${tokenUrl.replace(META_APP_SECRET, '***SECRET***')}`);
+    logger.debug(`[oauth] Token exchange URL: ${tokenUrl.replace(META_APP_SECRET, '***SECRET***')}`);
     const tokenResponse = await fetch(tokenUrl);
     const tokenData = await tokenResponse.json();
     
-    console.log(`[oauth] Token exchange response (full):`, JSON.stringify({
+    logger.debug(`[oauth] Token exchange response (full):`, JSON.stringify({
       ...tokenData,
       access_token: tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : null,
       // Check for any additional tokens or data
@@ -103,7 +104,7 @@ export async function loader({ request }) {
     
     // Meta sometimes returns additional data in the token response
     if (tokenData.data) {
-      console.log(`[oauth] Token response includes data field:`, JSON.stringify(tokenData.data, null, 2));
+      logger.debug(`[oauth] Token response includes data field:`, JSON.stringify(tokenData.data, null, 2));
     }
 
     if (tokenData.error) {
@@ -117,20 +118,20 @@ export async function loader({ request }) {
       throw new Error("No access token received from Meta");
     }
     
-    console.log(`[oauth] Access token obtained, expires in: ${tokenData.expires_in || 'unknown'} seconds`);
-    console.log(`[oauth] Token type: ${tokenData.token_type || 'unknown'}`);
-    console.log(`[oauth] Full access token: ${userAccessToken.substring(0, 50)}...`);
+    logger.debug(`[oauth] Access token obtained, expires in: ${tokenData.expires_in || 'unknown'} seconds`);
+    logger.debug(`[oauth] Token type: ${tokenData.token_type || 'unknown'}`);
+    logger.debug(`[oauth] Full access token: ${userAccessToken.substring(0, 50)}...`);
 
     // Get user's Facebook Pages
-    console.log(`[oauth] Fetching user's Facebook Pages`);
-    console.log(`[oauth] Using access token (first 20 chars): ${userAccessToken?.substring(0, 20)}...`);
+    logger.debug(`[oauth] Fetching user's Facebook Pages`);
+    logger.debug(`[oauth] Using access token (first 20 chars): ${userAccessToken?.substring(0, 20)}...`);
     
     // First, verify the token works by calling /me
-    console.log(`[oauth] Verifying token by calling /me endpoint`);
+    logger.debug(`[oauth] Verifying token by calling /me endpoint`);
     let meData;
     try {
       meData = await metaGraphAPI("/me", userAccessToken);
-      console.log(`[oauth] /me API response:`, JSON.stringify(meData, null, 2));
+      logger.debug(`[oauth] /me API response:`, JSON.stringify(meData, null, 2));
     } catch (meError) {
       console.error(`[oauth] /me API call failed:`, meError);
       console.error(`[oauth] This suggests the access token is invalid`);
@@ -139,7 +140,7 @@ export async function loader({ request }) {
     
     // Check token permissions - use app access token for debug_token
     // Extract Page ID and Instagram ID from granular_scopes (Meta provides these when using granular permissions)
-    console.log(`[oauth] Checking token permissions to extract Page and Instagram IDs`);
+    logger.debug(`[oauth] Checking token permissions to extract Page and Instagram IDs`);
     let pageId = null;
     let igBusinessId = null;
     
@@ -151,18 +152,18 @@ export async function loader({ request }) {
           input_token: userAccessToken
         }
       });
-      console.log(`[oauth] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
+      logger.debug(`[oauth] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
       
       // Extract Page ID and Instagram ID from granular_scopes
       if (tokenInfo?.data?.granular_scopes) {
         for (const scope of tokenInfo.data.granular_scopes) {
           if (scope.scope === 'pages_show_list' && scope.target_ids && scope.target_ids.length > 0) {
             pageId = scope.target_ids[0]; // Use first Page ID
-            console.log(`[oauth] ✅ Found Page ID from granular_scopes: ${pageId}`);
+            logger.debug(`[oauth] ✅ Found Page ID from granular_scopes: ${pageId}`);
           }
           if (scope.scope === 'instagram_basic' && scope.target_ids && scope.target_ids.length > 0) {
             igBusinessId = scope.target_ids[0]; // Use first Instagram ID
-            console.log(`[oauth] ✅ Found Instagram Business ID from granular_scopes: ${igBusinessId}`);
+            logger.debug(`[oauth] ✅ Found Instagram Business ID from granular_scopes: ${igBusinessId}`);
           }
         }
       }
@@ -176,8 +177,8 @@ export async function loader({ request }) {
     let pageName = null;
     
     if (pageId && igBusinessId) {
-      console.log(`[oauth] Using Page ID and Instagram ID from granular_scopes`);
-      console.log(`[oauth] Page ID: ${pageId}, Instagram Business ID: ${igBusinessId}`);
+      logger.debug(`[oauth] Using Page ID and Instagram ID from granular_scopes`);
+      logger.debug(`[oauth] Page ID: ${pageId}, Instagram Business ID: ${igBusinessId}`);
       
       // Get Page info and access token by fetching the Page directly
       try {
@@ -186,7 +187,7 @@ export async function loader({ request }) {
             fields: "id,name,access_token"
           }
         });
-        console.log(`[oauth] Page info retrieved:`, JSON.stringify({
+        logger.debug(`[oauth] Page info retrieved:`, JSON.stringify({
           id: pageInfo.id,
           name: pageInfo.name,
           has_access_token: !!pageInfo.access_token
@@ -209,7 +210,7 @@ export async function loader({ request }) {
     
     // Fallback: try /me/accounts if we didn't get data from granular_scopes
     if (!pageId || !pageAccessToken) {
-      console.log(`[oauth] Falling back to /me/accounts`);
+      logger.debug(`[oauth] Falling back to /me/accounts`);
       let pagesData;
       try {
         pagesData = await metaGraphAPI("/me/accounts", userAccessToken, {
@@ -217,7 +218,7 @@ export async function loader({ request }) {
             fields: "id,name,access_token,instagram_business_account"
           }
         });
-        console.log(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
+        logger.debug(`[oauth] Pages API response:`, JSON.stringify(pagesData, null, 2));
         
         if (pagesData?.data && pagesData.data.length > 0) {
           const page = pagesData.data[0];
@@ -256,12 +257,12 @@ export async function loader({ request }) {
       return redirect(`/app/instagram?error=${encodeURIComponent("No Instagram Business account found. Please link an Instagram Business account to your Facebook Page in Page settings.")}&shop=${encodeURIComponent(targetShop)}`);
     }
 
-    console.log(`[oauth] ✅ Using Page: ${pageName || pageId} (ID: ${pageId})`);
-    console.log(`[oauth] ✅ Instagram Business ID: ${igBusinessId}`);
-    console.log(`[oauth] Instagram Business Account ID: ${igBusinessId}`);
+    logger.debug(`[oauth] ✅ Using Page: ${pageName || pageId} (ID: ${pageId})`);
+    logger.debug(`[oauth] ✅ Instagram Business ID: ${igBusinessId}`);
+    logger.debug(`[oauth] Instagram Business Account ID: ${igBusinessId}`);
 
     // Get long-lived token
-    console.log(`[oauth] Exchanging for long-lived token`);
+    logger.debug(`[oauth] Exchanging for long-lived token`);
     const longLivedTokenUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` +
       `grant_type=fb_exchange_token&` +
       `client_id=${META_APP_ID}&` +
@@ -274,7 +275,7 @@ export async function loader({ request }) {
     if (longLivedData.error) {
       console.error(`[oauth] Long-lived token exchange error:`, longLivedData.error);
       // Use short-lived token if long-lived exchange fails
-      console.log(`[oauth] Using short-lived token instead`);
+      logger.debug(`[oauth] Using short-lived token instead`);
     }
 
     const finalUserToken = longLivedData.access_token || userAccessToken;
@@ -282,7 +283,7 @@ export async function loader({ request }) {
       ? new Date(Date.now() + longLivedData.expires_in * 1000).toISOString()
       : null;
 
-    console.log(`[oauth] Token expires at: ${expiresAt || 'unknown'}`);
+    logger.debug(`[oauth] Token expires at: ${expiresAt || 'unknown'}`);
 
     // Get shop from database
     const shopData = await getShopByDomain(targetShop);
@@ -292,15 +293,15 @@ export async function loader({ request }) {
     }
 
     // Save Meta auth
-    console.log(`[oauth] ========================================`);
-    console.log(`[oauth] About to save Meta authentication data`);
-    console.log(`[oauth] Shop: ${targetShop}`);
-    console.log(`[oauth] Shop ID: ${shopData.id}`);
-    console.log(`[oauth] Page ID: ${pageId}`);
-    console.log(`[oauth] IG Business ID: ${igBusinessId}`);
-    console.log(`[oauth] Token expires at: ${expiresAt || 'unknown'}`);
-    console.log(`[oauth] User token length: ${finalUserToken?.length || 0}`);
-    console.log(`[oauth] Page token length: ${pageAccessToken?.length || 0}`);
+    logger.debug(`[oauth] ========================================`);
+    logger.debug(`[oauth] About to save Meta authentication data`);
+    logger.debug(`[oauth] Shop: ${targetShop}`);
+    logger.debug(`[oauth] Shop ID: ${shopData.id}`);
+    logger.debug(`[oauth] Page ID: ${pageId}`);
+    logger.debug(`[oauth] IG Business ID: ${igBusinessId}`);
+    logger.debug(`[oauth] Token expires at: ${expiresAt || 'unknown'}`);
+    logger.debug(`[oauth] User token length: ${finalUserToken?.length || 0}`);
+    logger.debug(`[oauth] Page token length: ${pageAccessToken?.length || 0}`);
     
     try {
       const savedData = await saveMetaAuth(
@@ -312,19 +313,19 @@ export async function loader({ request }) {
         pageAccessToken, // Use page token for IG API calls
         expiresAt
       );
-      console.log(`[oauth] ✅ Meta auth data saved successfully!`);
-      console.log(`[oauth] Saved record ID: ${savedData?.id || 'unknown'}`);
+      logger.debug(`[oauth] ✅ Meta auth data saved successfully!`);
+      logger.debug(`[oauth] Saved record ID: ${savedData?.id || 'unknown'}`);
       
       // Subscribe to webhooks after successful connection
       try {
-        console.log(`[oauth] Subscribing to webhooks for Page ${pageId} and IG ${igBusinessId}`);
+        logger.debug(`[oauth] Subscribing to webhooks for Page ${pageId} and IG ${igBusinessId}`);
         await subscribeToWebhooks(shopData.id, pageId, igBusinessId);
-        console.log(`[oauth] ✅ Webhook subscription completed`);
+        logger.debug(`[oauth] ✅ Webhook subscription completed`);
       } catch (webhookError) {
         // Don't fail the OAuth flow if webhook subscription fails
         console.error(`[oauth] ⚠️ Webhook subscription failed (non-critical):`, webhookError);
       }
-      console.log(`[oauth] ========================================`);
+      logger.debug(`[oauth] ========================================`);
     } catch (saveError) {
       console.error(`[oauth] ❌ ERROR saving Meta auth data`);
       console.error(`[oauth] Error type: ${saveError?.constructor?.name || 'Unknown'}`);
@@ -334,8 +335,8 @@ export async function loader({ request }) {
       throw saveError;
     }
 
-    console.log(`[oauth] Instagram connection successful for shop: ${targetShop}`);
-    console.log(`[oauth] ✅ Tokens saved successfully - Page ID: ${pageId}, IG Business ID: ${igBusinessId}`);
+    logger.debug(`[oauth] Instagram connection successful for shop: ${targetShop}`);
+    logger.debug(`[oauth] ✅ Tokens saved successfully - Page ID: ${pageId}, IG Business ID: ${igBusinessId}`);
     
     // Redirect to Shopify admin app URL to trigger Shopify OAuth
     // After Meta OAuth, we need to restore the Shopify session
@@ -347,7 +348,7 @@ export async function loader({ request }) {
     // This ensures we're in the Shopify admin context where authentication works
     const shopifyAdminAppUrl = `https://admin.shopify.com/store/${shopName}/apps/${appClientId}/app?connected=true`;
     
-    console.log(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
+    logger.debug(`[oauth] Redirecting to Shopify admin app: ${shopifyAdminAppUrl}`);
     
     // Use HTTP 302 redirect - most reliable method
     // This will immediately redirect the browser without needing JavaScript
@@ -382,7 +383,7 @@ export async function loader({ request }) {
 
 // Also handle POST requests (some OAuth flows use POST)
 export const action = async ({ request }) => {
-  console.log(`[oauth] Instagram OAuth callback received via POST`);
+  logger.debug(`[oauth] Instagram OAuth callback received via POST`);
   // Redirect to loader to handle it
   return loader({ request });
 }

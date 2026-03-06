@@ -14,6 +14,7 @@ import { useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopByDomain, recordAttribution } from "../lib/db.server";
+import logger from "../lib/logger.server";
 
 /**
  * Parse URL to extract link_id and UTM parameters
@@ -79,12 +80,12 @@ function inferChannel(utmMedium, utmSource) {
 }
 
 export const action = async ({ request }) => {
-  console.log(`[webhook] orders/create webhook received`);
+  logger.debug(`[webhook] orders/create webhook received`);
   
   try {
     // Authenticate and verify the webhook
     const { shop, topic, payload } = await authenticate.webhook(request);
-    console.log(`[webhook] Authenticated orders/create webhook for shop: ${shop}`);
+    logger.debug(`[webhook] Authenticated orders/create webhook for shop: ${shop}`);
 
     // Get shop from database to get shop_id
     const shopData = await getShopByDomain(shop);
@@ -104,7 +105,7 @@ export const action = async ({ request }) => {
     const landingSite = payload.landing_site;
     const referringSite = payload.referring_site;
 
-    console.log(`[webhook] Order data:`, {
+    logger.debug(`[webhook] Order data:`, {
       order_id: orderId,
       order_number: payload.order_number,
       total_price: totalPrice,
@@ -117,19 +118,19 @@ export const action = async ({ request }) => {
     let attributionData = null;
     if (landingSite) {
       attributionData = parseAttributionUrl(landingSite);
-      console.log(`[webhook] Parsed landing_site:`, attributionData);
+      logger.debug(`[webhook] Parsed landing_site:`, attributionData);
     }
 
     if (!attributionData?.linkId && referringSite) {
       attributionData = parseAttributionUrl(referringSite);
-      console.log(`[webhook] Parsed referring_site:`, attributionData);
+      logger.debug(`[webhook] Parsed referring_site:`, attributionData);
     }
 
     // If we found a link_id, record attribution
     if (attributionData?.linkId) {
       const channel = inferChannel(attributionData.utmMedium, attributionData.utmSource);
       
-      console.log(`[webhook] Recording attribution:`, {
+      logger.debug(`[webhook] Recording attribution:`, {
         shop_id: shopData.id,
         order_id: orderId,
         link_id: attributionData.linkId,
@@ -148,14 +149,14 @@ export const action = async ({ request }) => {
           currency: currency,
         });
 
-        console.log(`[webhook] Attribution recorded successfully for order ${orderId}`);
+        logger.debug(`[webhook] Attribution recorded successfully for order ${orderId}`);
       } catch (attributionError) {
         console.error(`[webhook] Error recording attribution:`, attributionError);
         // Don't throw - we still want to return success to Shopify
         // Attribution errors shouldn't cause webhook retries
       }
     } else {
-      console.log(`[webhook] No link_id found in order URLs - skipping attribution`);
+      logger.debug(`[webhook] No link_id found in order URLs - skipping attribution`);
     }
 
     // Return success response

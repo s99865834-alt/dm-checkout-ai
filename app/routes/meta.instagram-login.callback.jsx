@@ -16,6 +16,7 @@ import {
   META_INSTAGRAM_APP_ID,
   META_INSTAGRAM_APP_SECRET,
 } from "../lib/meta.server";
+import logger from "../lib/logger.server";
 
 const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
 const APP_URL = (process.env.APP_URL || process.env.SHOPIFY_APP_URL || PRODUCTION_URL).trim();
@@ -108,7 +109,7 @@ export async function loader({ request }) {
     const rawId = mePayload.id ?? meData.id;
     const rawUserId = mePayload.user_id ?? meData.user_id;
     const igBusinessId = rawId != null ? String(rawId) : (rawUserId != null ? String(rawUserId) : String(userId));
-    console.log("[instagram-login] GET /me ids:", { rawId, rawUserId, fromToken: userId, saved: igBusinessId });
+    logger.debug("[instagram-login] GET /me ids:", { rawId, rawUserId, fromToken: userId, saved: igBusinessId });
 
     // 4. Resolve shop and save auth (use IG business ID from /me for webhooks and API)
     const shopData = await getShopByDomain(targetShop);

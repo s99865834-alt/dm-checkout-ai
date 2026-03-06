@@ -15,6 +15,7 @@
  */
 
 import crypto from "crypto";
+import logger from "../lib/logger.server";
 
 const META_APP_SECRET = process.env.META_APP_SECRET;
 
@@ -150,7 +151,7 @@ async function deleteUserData(igUserId) {
       }
     }
 
-    console.log(`[data-deletion] Successfully deleted data for user ${igUserId}`);
+    logger.debug(`[data-deletion] Successfully deleted data for user ${igUserId}`);
     return {
       success: true,
       deletedMessages: messageIds.length,
@@ -166,7 +167,7 @@ async function deleteUserData(igUserId) {
  * POST handler for data deletion requests from Meta
  */
 export const action = async ({ request }) => {
-  console.log("[data-deletion] Meta data deletion request received");
+  logger.debug("[data-deletion] Meta data deletion request received");
 
   try {
     const formData = await request.formData();
@@ -220,7 +221,7 @@ export const action = async ({ request }) => {
       );
     }
 
-    console.log(`[data-deletion] Processing deletion request for user ${userId}`);
+    logger.debug(`[data-deletion] Processing deletion request for user ${userId}`);
 
     // Delete the user's data
     const result = await deleteUserData(userId);
