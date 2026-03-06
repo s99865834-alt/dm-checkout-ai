@@ -1,4 +1,5 @@
 import { encryptToken, decryptToken } from "./crypto.server";
+import logger from "./logger.server";
 import supabase from "./supabase.server";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -26,7 +27,7 @@ export async function saveMetaAuth(
   igToken,
   tokenExpiresAt
 ) {
-  console.log(`[meta] Saving Meta auth for shop_id: ${shopId}, page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
+  logger.debug(`[meta] Saving Meta auth for shop_id: ${shopId}, page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
   
   // First, check if a record exists
   const { data: existing, error: checkError } = await supabase
@@ -56,7 +57,7 @@ export async function saveMetaAuth(
   
   if (existing) {
     // Update existing record
-    console.log(`[meta] Updating existing meta_auth record: ${existing.id}`);
+    logger.debug(`[meta] Updating existing meta_auth record: ${existing.id}`);
     const result = await supabase
       .from("meta_auth")
       .update(recordData)
@@ -67,7 +68,7 @@ export async function saveMetaAuth(
     error = result.error;
   } else {
     // Insert new record
-    console.log(`[meta] Inserting new meta_auth record`);
+    logger.debug(`[meta] Inserting new meta_auth record`);
     const result = await supabase
       .from("meta_auth")
       .insert(recordData)
@@ -82,7 +83,7 @@ export async function saveMetaAuth(
     throw error;
   }
 
-  console.log(`[meta] Meta auth saved successfully: ${data?.id}`);
+  logger.debug(`[meta] Meta auth saved successfully: ${data?.id}`);
   return data;
 }
 
@@ -141,7 +142,7 @@ export async function getMetaAuth(shopId) {
  * Requires meta_auth.auth_type column (run migration if needed).
  */
 export async function saveMetaAuthForInstagram(shopId, igUserId, accessToken, tokenExpiresAt) {
-  console.log(`[meta] Saving Instagram Login auth for shop_id: ${shopId}, ig_user_id: ${igUserId}`);
+  logger.debug(`[meta] Saving Instagram Login auth for shop_id: ${shopId}, ig_user_id: ${igUserId}`);
 
   const { data: existing } = await supabase
     .from("meta_auth")
@@ -181,7 +182,7 @@ export async function saveMetaAuthForInstagram(shopId, igUserId, accessToken, to
     console.error("[meta] Error saving Instagram Login auth:", result.error);
     throw result.error;
   }
-  console.log("[meta] Instagram Login auth saved successfully");
+  logger.debug("[meta] Instagram Login auth saved successfully");
   return result.data;
 }
 
@@ -200,22 +201,22 @@ export async function refreshMetaToken(shopId) {
 
   // Check if token needs refresh (expiring in < 7 days or already expired)
   if (!auth.token_expires_at) {
-    console.log("[meta] Token has no expiration date, attempting refresh");
+    logger.debug("[meta] Token has no expiration date, attempting refresh");
   } else {
     const expiresAt = new Date(auth.token_expires_at);
     const now = new Date();
     const daysUntilExpiry = (expiresAt - now) / (1000 * 60 * 60 * 24);
 
     if (daysUntilExpiry > 7) {
-      console.log(`[meta] Token still valid for ${daysUntilExpiry.toFixed(1)} days`);
+      logger.debug(`[meta] Token still valid for ${daysUntilExpiry.toFixed(1)} days`);
       return auth;
     }
     if (expiresAt < now) {
-      console.log("[meta] Token has expired, refreshing immediately");
+      logger.debug("[meta] Token has expired, refreshing immediately");
     }
   }
 
-  console.log("[meta] Refreshing Meta (Facebook) access token");
+  logger.debug("[meta] Refreshing Meta (Facebook) access token");
 
   const response = await fetch(
     `${META_API_BASE}/oauth/access_token?` +
@@ -246,7 +247,7 @@ export async function refreshMetaToken(shopId) {
     newExpiresAt
   );
 
-  console.log("[meta] Token refreshed successfully");
+  logger.debug("[meta] Token refreshed successfully");
   return await getMetaAuth(shopId);
 }
 
@@ -263,7 +264,7 @@ async function refreshInstagramLoginToken(shopId, auth) {
     }
   }
 
-  console.log("[meta] Refreshing Instagram Login access token");
+  logger.debug("[meta] Refreshing Instagram Login access token");
   const url = `${INSTAGRAM_GRAPH_BASE}/refresh_access_token?` +
     `grant_type=ig_refresh_token&` +
     `access_token=${auth.page_access_token}`;
@@ -471,7 +472,7 @@ export async function getInstagramMessageByMid(shopId, mid) {
     const fromId = data.from?.id ?? null;
     const createdTime = data.created_time ?? null;
     if (text != null) {
-      console.log("[meta] getInstagramMessageByMid ok, text length:", text.length);
+      logger.debug("[meta] getInstagramMessageByMid ok, text length:", text.length);
       return { text, fromId, createdTime };
     }
     console.warn("[meta] getInstagramMessageByMid: API returned no message field");
@@ -509,7 +510,7 @@ export async function getMetaAuthWithRefresh(shopId) {
   // Refresh if expired or expiring in less than 7 days
   if (daysUntilExpiry < 7 || expiresAt < now) {
     if (expiresAt < now) {
-      console.log("[meta] Token has expired, refreshing immediately");
+      logger.debug("[meta] Token has expired, refreshing immediately");
     }
     try {
       return await refreshMetaToken(shopId);
@@ -527,7 +528,7 @@ export async function getMetaAuthWithRefresh(shopId) {
  * Extracts Page ID, Instagram Business ID, and exchanges for long-lived token
  */
 export async function processManualToken(shopId, userAccessToken) {
-  console.log(`[meta] Processing manual token for shop_id: ${shopId}`);
+  logger.debug(`[meta] Processing manual token for shop_id: ${shopId}`);
   
   // Clean and validate token
   const cleanToken = userAccessToken.trim().replace(/\s+/g, '');
@@ -535,7 +536,7 @@ export async function processManualToken(shopId, userAccessToken) {
     throw new Error("Invalid token format. Please check that you copied the entire token.");
   }
   
-  console.log(`[meta] Token length: ${cleanToken.length} characters`);
+  logger.debug(`[meta] Token length: ${cleanToken.length} characters`);
   
   // First, try to debug the token to see what's wrong
   let tokenInfo = null;
@@ -547,7 +548,7 @@ export async function processManualToken(shopId, userAccessToken) {
       }
     });
     
-    console.log(`[meta] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
+    logger.debug(`[meta] Token debug info:`, JSON.stringify(tokenInfo, null, 2));
     
     // Check if token is valid
     if (tokenInfo?.data?.is_valid === false) {
@@ -557,7 +558,7 @@ export async function processManualToken(shopId, userAccessToken) {
     
     // Check token type - test user tokens might not work the same way
     if (tokenInfo?.data?.type) {
-      console.log(`[meta] Token type: ${tokenInfo.data.type}`);
+      logger.debug(`[meta] Token type: ${tokenInfo.data.type}`);
       if (tokenInfo.data.type === "USER" && tokenInfo.data.app_id !== META_APP_ID) {
         throw new Error(`This token is for a different app (App ID: ${tokenInfo.data.app_id}). Make sure you're using a token for this app.`);
       }
@@ -570,12 +571,12 @@ export async function processManualToken(shopId, userAccessToken) {
       if (expiresAt < now) {
         throw new Error("Token has expired. The token Meta provided when you added the test account may have expired. You'll need to generate a new token.");
       }
-      console.log(`[meta] Token expires at: ${expiresAt.toISOString()}`);
+      logger.debug(`[meta] Token expires at: ${expiresAt.toISOString()}`);
     }
     
     // Check scopes and provide detailed feedback
     if (tokenInfo?.data?.scopes) {
-      console.log(`[meta] Token scopes:`, tokenInfo.data.scopes);
+      logger.debug(`[meta] Token scopes:`, tokenInfo.data.scopes);
       const requiredScopes = ['instagram_basic', 'pages_show_list', 'pages_read_engagement', 'pages_manage_metadata'];
       const missingScopes = requiredScopes.filter(scope => !tokenInfo.data.scopes.includes(scope));
       
@@ -585,7 +586,7 @@ export async function processManualToken(shopId, userAccessToken) {
         throw new Error(`The token Meta provided when you added the test account is missing required permissions: ${missingScopes.join(', ')}. The token needs ALL of these: ${requiredScopes.join(', ')}. You may need to generate a token manually with all permissions, or the test account token may not have the right permissions.`);
       }
       
-      console.log(`[meta] ✅ Token has all required scopes`);
+      logger.debug(`[meta] ✅ Token has all required scopes`);
     } else {
       console.warn(`[meta] Could not verify token scopes - token info may be incomplete`);
       // Don't throw here - let it try to proceed and see what happens
@@ -632,7 +633,7 @@ export async function processManualToken(shopId, userAccessToken) {
       }
     });
     userInfo = meData;
-    console.log(`[meta] Token verified successfully. User ID: ${meData.id}, Name: ${meData.name || 'N/A'}`);
+    logger.debug(`[meta] Token verified successfully. User ID: ${meData.id}, Name: ${meData.name || 'N/A'}`);
   } catch (error) {
     console.error(`[meta] Token verification failed:`, error);
     
@@ -665,11 +666,11 @@ export async function processManualToken(shopId, userAccessToken) {
       for (const scope of tokenInfo.data.granular_scopes) {
         if (scope.scope === 'pages_show_list' && scope.target_ids && scope.target_ids.length > 0) {
           pageId = scope.target_ids[0];
-          console.log(`[meta] Found Page ID from granular_scopes: ${pageId}`);
+          logger.debug(`[meta] Found Page ID from granular_scopes: ${pageId}`);
         }
         if (scope.scope === 'instagram_basic' && scope.target_ids && scope.target_ids.length > 0) {
           igBusinessId = scope.target_ids[0];
-          console.log(`[meta] Found Instagram Business ID from granular_scopes: ${igBusinessId}`);
+          logger.debug(`[meta] Found Instagram Business ID from granular_scopes: ${igBusinessId}`);
         }
       }
     }
@@ -739,8 +740,8 @@ export async function processManualToken(shopId, userAccessToken) {
     throw new Error("No Instagram Business account found. Please link an Instagram Business account to your Facebook Page.");
   }
   
-  console.log(`[meta] ✅ Using Page: ${pageName || pageId} (ID: ${pageId})`);
-  console.log(`[meta] ✅ Instagram Business ID: ${igBusinessId}`);
+  logger.debug(`[meta] ✅ Using Page: ${pageName || pageId} (ID: ${pageId})`);
+  logger.debug(`[meta] ✅ Instagram Business ID: ${igBusinessId}`);
   
   // Exchange for long-lived token
   const longLivedTokenUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?` +
@@ -773,7 +774,7 @@ export async function processManualToken(shopId, userAccessToken) {
     expiresAt
   );
   
-  console.log(`[meta] ✅ Manual token processed and saved successfully`);
+  logger.debug(`[meta] ✅ Manual token processed and saved successfully`);
   
   return {
     pageId,
@@ -817,7 +818,7 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
   }
 
   const fullUrl = `${url}?${params.toString()}`;
-  console.log(`[meta] Making API request to: ${fullUrl.replace(accessToken, '***TOKEN***')}`);
+  logger.debug(`[meta] Making API request to: ${fullUrl.replace(accessToken, '***TOKEN***')}`);
 
   const response = await fetch(fullUrl, {
     method: options.method || "GET",
@@ -937,7 +938,7 @@ export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
       return false;
     }
 
-    console.log(`[meta] Subscribing Page ${pageId} to webhooks programmatically`);
+    logger.debug(`[meta] Subscribing Page ${pageId} to webhooks programmatically`);
     
     // Subscribe the Page to webhooks using Graph API
     // This subscribes to messages and comments for Instagram
@@ -957,8 +958,8 @@ export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
     const result = await response.json();
     
     if (result.success || result.data) {
-      console.log(`[meta] ✅ Successfully subscribed Page ${pageId} to webhooks`);
-      console.log(`[meta] Subscription result:`, result);
+      logger.debug(`[meta] ✅ Successfully subscribed Page ${pageId} to webhooks`);
+      logger.debug(`[meta] Subscription result:`, result);
       return true;
     } else {
       console.warn(`[meta] Webhook subscription API call returned:`, result);
@@ -968,7 +969,7 @@ export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
         console.warn(`[meta] Error details:`, result.error);
         // Error code 200 means already subscribed, which is fine
         if (result.error.code === 200) {
-          console.log(`[meta] Page is already subscribed to webhooks`);
+          logger.debug(`[meta] Page is already subscribed to webhooks`);
           return true;
         }
       }
@@ -985,7 +986,7 @@ export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
  * Delete Meta authentication data for a shop (disconnect Instagram)
  */
 export async function deleteMetaAuth(shopId) {
-  console.log(`[meta] Deleting Meta auth for shop_id: ${shopId}`);
+  logger.debug(`[meta] Deleting Meta auth for shop_id: ${shopId}`);
   
   const { error } = await supabase
     .from("meta_auth")
@@ -997,7 +998,7 @@ export async function deleteMetaAuth(shopId) {
     throw error;
   }
 
-  console.log(`[meta] Meta auth deleted successfully for shop_id: ${shopId}`);
+  logger.debug(`[meta] Meta auth deleted successfully for shop_id: ${shopId}`);
   return true;
 }
 

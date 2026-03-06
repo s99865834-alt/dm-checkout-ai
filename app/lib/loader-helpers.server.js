@@ -2,6 +2,7 @@ import { authenticate } from "../shopify.server";
 import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
 import { getPlanConfig } from "./plans";
 import { getShopifyStoreInfo } from "./shopify-data.server";
+import logger from "./logger.server";
 
 const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
 
@@ -22,7 +23,7 @@ async function maybeRefreshStoreContext(shop, shopDomain) {
     const storeInfo = await getShopifyStoreInfo(shopDomain);
     if (storeInfo) {
       await saveStoredStoreContext(shop.id, storeInfo);
-      console.log(`[loader-helpers] Store context refreshed for ${shopDomain}`);
+      logger.debug(`[loader-helpers] Store context refreshed for ${shopDomain}`);
     }
   } catch (err) {
     console.warn(`[loader-helpers] Background store context refresh failed for ${shopDomain}:`, err?.message);
@@ -63,7 +64,7 @@ export async function getShopWithPlan(request) {
         monthly_cap: 25,
         active: true,
       });
-      console.log(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
+      logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
     } catch (error) {
       console.error(`[getShopWithPlan] Error creating shop ${shopDomain}:`, error);
       return { shop: null, plan: getPlanConfig("FREE"), session, admin };
@@ -76,7 +77,7 @@ export async function getShopWithPlan(request) {
         active: true,
         usage_count: 0,
       });
-      console.log(`[getShopWithPlan] Reactivated shop ${shopDomain} (fallback)`);
+      logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} (fallback)`);
     } catch (error) {
       console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
     }

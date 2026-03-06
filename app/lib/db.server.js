@@ -1,6 +1,7 @@
 import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
+import logger from "./logger.server";
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -86,7 +87,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
 
   if (existing) {
     // Shop exists - do an explicit UPDATE to ensure all fields are updated
-    console.log(`Updating existing shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
+    logger.debug(`Updating existing shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
     const { data, error } = await supabase
       .from("shops")
       .update({
@@ -106,11 +107,11 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
       throw error;
     }
 
-    console.log(`Shop ${shopifyDomain} updated successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    logger.debug(`Shop ${shopifyDomain} updated successfully: active=${data.active}, usage_count=${data.usage_count}`);
     return data;
   } else {
     // Shop doesn't exist - do an INSERT
-    console.log(`Creating new shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
+    logger.debug(`Creating new shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
     const { data, error } = await supabase
       .from("shops")
       .insert(shopData)
@@ -122,7 +123,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
       throw error;
     }
 
-    console.log(`Shop ${shopifyDomain} created successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    logger.debug(`Shop ${shopifyDomain} created successfully: active=${data.active}, usage_count=${data.usage_count}`);
     return data;
   }
 }
@@ -1014,7 +1015,7 @@ export async function updateNullVariantMappings(shopId, shopDomain) {
       return { updated: 0 };
     }
 
-    console.log(`[db] Found ${mappings.length} mappings with null variant_id, attempting to update...`);
+    logger.debug(`[db] Found ${mappings.length} mappings with null variant_id, attempting to update...`);
 
     // Note: This function requires Shopify admin access, which we don't have here
     // The caller should handle fetching variants and updating
@@ -1077,7 +1078,7 @@ export async function cleanupDuplicateProductMappings(shopId) {
       return { cleaned: 0, error: deleteError };
     }
 
-    console.log(`[db] Cleaned up ${toDelete.length} duplicate product mapping(s) for shop ${shopId}`);
+    logger.debug(`[db] Cleaned up ${toDelete.length} duplicate product mapping(s) for shop ${shopId}`);
     return { cleaned: toDelete.length };
   } catch (error) {
     console.error("[db] Error in cleanupDuplicateProductMappings:", error);

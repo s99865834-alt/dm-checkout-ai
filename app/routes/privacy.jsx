@@ -36,10 +36,10 @@ export default function PrivacyPolicy() {
         <h3>2.2 Information We Collect Automatically</h3>
         <p>When you use our Service, we automatically collect certain information, including:</p>
         <ul>
-          <li>Instagram messages and comments received by your account</li>
-          <li>Customer interaction data (message content, timestamps, channel type)</li>
-          <li>Click-through data from checkout links sent via our Service</li>
-          <li>Order attribution data when customers make purchases</li>
+          <li>Instagram messages and comments received by your account, including the message text, sender's Instagram user ID, and sender's username</li>
+          <li>Customer interaction data (message content, timestamps, channel type, AI-classified intent and sentiment)</li>
+          <li>Click-through data from checkout links sent via our Service, including IP addresses and user agent strings of visitors who click checkout links</li>
+          <li>Order attribution data when customers make purchases through our checkout links</li>
           <li>Analytics and usage statistics</li>
         </ul>
 
@@ -78,7 +78,7 @@ export default function PrivacyPolicy() {
           <li>Determining when to send automated checkout links</li>
         </ul>
         <p>
-          Message content may be processed by third-party AI services (such as OpenAI) to provide these features. We ensure that any third-party AI services we use comply with applicable data protection standards.
+          Message content is processed by OpenAI's API to provide these features. Message text is sent to OpenAI for classification and reply generation but is not used by OpenAI to train their models. We ensure that any third-party AI services we use comply with applicable data protection standards.
         </p>
       </section>
 
@@ -109,9 +109,12 @@ export default function PrivacyPolicy() {
       </section>
 
       <section>
-        <h2>7. Data Retention</h2>
+        <h2>7. Data Retention and Deletion</h2>
         <p>
           We retain your information for as long as necessary to provide our Service and fulfill the purposes outlined in this Privacy Policy, unless a longer retention period is required or permitted by law. When you delete your account or uninstall the app, we will delete or anonymize your data in accordance with our data retention policies.
+        </p>
+        <p>
+          We support Meta's data deletion callbacks. When an Instagram user requests deletion of their data through Meta, we automatically remove their messages, checkout links, click records, follow-up records, and attribution data from our systems. You can also request data deletion by contacting us directly.
         </p>
       </section>
 

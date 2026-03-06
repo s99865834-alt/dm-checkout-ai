@@ -3,7 +3,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getAttributionRecords } from "../lib/db.server";
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 export const loader = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) throw new Response("Not Found", { status: 404 });
   const { shop, plan } = await getShopWithPlan(request);
 
   // Parse query parameters for filters

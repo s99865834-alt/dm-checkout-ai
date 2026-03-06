@@ -16,6 +16,7 @@ import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
+import logger from "./logger.server";
 
 // Module-level singleton — one HTTP connection pool for the lifetime of the process.
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -185,7 +186,7 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
         const variants = json.data?.product?.variants?.nodes || [];
         if (variants.length > 0) {
           finalVariantId = variants[0].id;
-          console.log(`[buildCheckoutLink] Fetched first variant: ${finalVariantId}`);
+          logger.debug(`[buildCheckoutLink] Fetched first variant: ${finalVariantId}`);
         }
       }
     } catch (error) {
@@ -306,11 +307,11 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // 0. Meta compliance: only one automated reply per incoming message
     if (!ctx.alreadyRepliedChecked) {
       if (message.external_id && (await alreadyRepliedToExternalMessage(shop.id, message.external_id))) {
-        console.log(`[automation] Already replied to external message ${message.external_id}, skipping`);
+        logger.debug(`[automation] Already replied to external message ${message.external_id}, skipping`);
         return { sent: false, reason: "Already replied to this external message" };
       }
       if (await alreadyRepliedToMessage(message.id)) {
-        console.log(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
+        logger.debug(`[automation] Already replied to message ${message.id}, skipping (one reply per message)`);
         return { sent: false, reason: "Already replied to this message" };
       }
     }
@@ -318,7 +319,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // 1. Check publish mode: if dm_automation_enabled = false, skip automation
     const settings = ctx.settings ?? await getSettings(shop.id);
     if (settings?.dm_automation_enabled === false) {
-      console.log(`[automation] DM automation disabled for shop ${shop.id}`);
+      logger.debug(`[automation] DM automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "DM automation disabled" };
     }
 
@@ -329,7 +330,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     const optOutKeywords = ["stop", "unsubscribe", "opt out", "optout", "cancel", "no messages"];
     const messageTextLower = (message.text || "").toLowerCase();
     if (optOutKeywords.some(keyword => messageTextLower.includes(keyword))) {
-      console.log(`[automation] Opt-out keyword detected in message ${message.id}, skipping automation`);
+      logger.debug(`[automation] Opt-out keyword detected in message ${message.id}, skipping automation`);
       return { sent: false, reason: "User opted out of automated messages" };
     }
 
@@ -341,7 +342,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       const now = new Date();
       const hoursSinceLastMessage = (now - lastMessageTime) / (1000 * 60 * 60);
       if (hoursSinceLastMessage >= 24) {
-        console.log(`[automation] Message ${message.id} is outside 24-hour messaging window (${hoursSinceLastMessage.toFixed(1)} hours), skipping automation`);
+        logger.debug(`[automation] Message ${message.id} is outside 24-hour messaging window (${hoursSinceLastMessage.toFixed(1)} hours), skipping automation`);
         return { sent: false, reason: "Outside 24-hour messaging window" };
       }
     }
@@ -349,7 +350,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // 2. Enforce usage cap for all plans
     const usageData = ctx.usageData ?? await getShopPlanAndUsage(shop.id);
     if (usageData.usage >= plan.cap) {
-      console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
+      logger.debug(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
       return { sent: false, reason: "Usage cap exceeded" };
     }
 
@@ -358,7 +359,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
     // For FREE plan, only allow first reply (no follow-ups)
     if (plan.name === "FREE" && isFollowUp) {
-      console.log(`[automation] Follow-up DMs not available on FREE plan`);
+      logger.debug(`[automation] Follow-up DMs not available on FREE plan`);
       return { sent: false, reason: "Follow-up DMs not available on FREE plan" };
     }
 
@@ -413,7 +414,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     }
 
     if (!intent || !eligibleIntents.includes(intent)) {
-      console.log(`[automation] AI intent "${message.ai_intent}" not eligible for automation`);
+      logger.debug(`[automation] AI intent "${message.ai_intent}" not eligible for automation`);
       return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
     }
 
@@ -427,12 +428,12 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       
       let storeInfo = storeInfoResult;
       if (storeInfo) {
-        console.log(`[automation] Using cached store context for shop ${shop.id}:`, {
+        logger.debug(`[automation] Using cached store context for shop ${shop.id}:`, {
           hasRefundPolicy: !!storeInfo.refundPolicy,
           storeEmail: storeInfo.email,
         });
       } else if (shop.shopify_domain) {
-        console.log(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
+        logger.debug(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
         storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
       }
       
@@ -466,7 +467,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
       // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
       if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
-        console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+        logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
         return { sent: false, reason: "Already replied to this message" };
       }
       const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
@@ -475,7 +476,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       }
       await incrementUsage(shop.id, 1);
 
-      console.log(`[automation] ✅ Automated DM sent for store question ${message.id}`);
+      logger.debug(`[automation] ✅ Automated DM sent for store question ${message.id}`);
       return { sent: true };
     }
 
@@ -537,7 +538,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
-          console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+          logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
         const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
@@ -558,7 +559,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           replyText: replyText,
         });
 
-        console.log(
+        logger.debug(
           `[automation] ✅ Contextual DM reply sent for message ${message.id} (origin=${originChannel})`
         );
         return { sent: true };
@@ -584,7 +585,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             .eq("from_user_id", message.from_user_id);
 
           if (clarifyingMessages && clarifyingMessages.length >= 2) {
-            console.log(
+            logger.debug(
               `[automation] Loop prevention: Already sent ${clarifyingMessages.length} clarifying questions to user ${message.from_user_id} in last 24 hours, skipping`
             );
             return {
@@ -595,7 +596,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           }
         }
 
-        console.log(
+        logger.debug(
           `[automation] Direct DM without product context - PRO tier will ask for clarification for intent: ${intent}`
         );
 
@@ -608,7 +609,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         );
 
         if (!(await claimMessageReply(shop.id, message.id, clarifyingReply, message.external_id))) {
-          console.log(`[automation] Reply already claimed for message ${message.id}, skipping send`);
+          logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
         const sendResult = await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
@@ -627,11 +628,11 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           replyText: clarifyingReply,
         });
 
-        console.log(`[automation] ✅ Clarifying question sent for Direct DM ${message.id}`);
+        logger.debug(`[automation] ✅ Clarifying question sent for Direct DM ${message.id}`);
         return { sent: true, reason: "PRO tier: Asked customer which product they're referring to" };
       }
 
-      console.log(
+      logger.debug(
         `[automation] Direct DM without product context - skipping product-specific automation for intent: ${intent} (follow-up automation disabled or unavailable)`
       );
       return {
@@ -680,14 +681,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
   try {
     // 1. Only for Growth/Pro plans
     if (plan.name === "FREE") {
-      console.log(`[automation] Comment-to-DM automation only available for Growth/Pro plans`);
+      logger.debug(`[automation] Comment-to-DM automation only available for Growth/Pro plans`);
       return { sent: false, reason: "Feature not available on FREE plan" };
     }
 
     // 2. Check publish mode: comment_automation_enabled must be true
     const settings = ctx.settings ?? await getSettings(shop.id);
     if (settings?.comment_automation_enabled === false) {
-      console.log(`[automation] Comment automation disabled for shop ${shop.id}`);
+      logger.debug(`[automation] Comment automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "Comment automation disabled" };
     }
 
@@ -695,7 +696,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     // 3. Enforce usage cap for all plans
     const usageData = ctx.usageData ?? await getShopPlanAndUsage(shop.id);
     if (usageData.usage >= plan.cap) {
-      console.log(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
+      logger.debug(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
       return { sent: false, reason: "Usage cap exceeded" };
     }
 
@@ -703,12 +704,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     // Note: price_request indicates purchase intent, so we should respond with checkout link
     const eligibleIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
     if (!message.ai_intent || !eligibleIntents.includes(message.ai_intent)) {
-      console.log(`[automation] Comment AI intent "${message.ai_intent}" not eligible`);
+      logger.debug(`[automation] Comment AI intent "${message.ai_intent}" not eligible`);
       return { sent: false, reason: `AI intent "${message.ai_intent}" not eligible` };
     }
 
     if (!message.ai_confidence || message.ai_confidence < 0.7) {
-      console.log(`[automation] Comment confidence ${message.ai_confidence} below threshold (0.7)`);
+      logger.debug(`[automation] Comment confidence ${message.ai_confidence} below threshold (0.7)`);
       return { sent: false, reason: `Confidence ${message.ai_confidence} below threshold` };
     }
 
@@ -716,7 +717,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     const commentAge = new Date() - new Date(message.created_at);
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     if (commentAge > sevenDaysMs) {
-      console.log(`[automation] Comment is older than 7 days, cannot reply`);
+      logger.debug(`[automation] Comment is older than 7 days, cannot reply`);
       return { sent: false, reason: "Comment older than 7 days" };
     }
 
@@ -727,7 +728,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         ? await hasCommentBeenReplied(commentExternalId, shop.id)
         : await alreadyRepliedToMessage(message.id);
       if (alreadyReplied) {
-        console.log(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
+        logger.debug(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
         return { sent: false, reason: "Already replied to this comment" };
       }
     }
@@ -739,11 +740,11 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     if (!productMapping) {
       const homepageUrl = getShopHomepageUrl(shop);
       if (!homepageUrl) {
-        console.log(`[automation] No product mapping found for media ${mediaId} and no shop domain`);
+        logger.debug(`[automation] No product mapping found for media ${mediaId} and no shop domain`);
         return { sent: false, reason: "No product mapping found and no shop domain" };
       }
 
-      console.log(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
+      logger.debug(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
       const brandVoiceData = await getBrandVoice(shop.id);
       const replyText = await generateReplyMessage(
         brandVoiceData,
@@ -774,17 +775,17 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
         : await claimMessageReply(shop.id, message.id, replyText, message.external_id);
       if (!claimed) {
-        console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
+        logger.debug(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
         return { sent: false, reason: "Already replied to this comment" };
       }
       // Test webhook uses fake comment IDs (test_comment_*); send as DM to commenter so message appears in Instagram
       const fromUserId = message.from_user_id ?? message.fromUserId;
       if (commentExternalId.startsWith("test_comment_") && fromUserId) {
         await sendInstagramDm(shop.id, fromUserId, replyText);
-        console.log(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} (homepage link)`);
+        logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} (homepage link)`);
       } else {
         await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
-        console.log(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
+        logger.debug(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
       }
       await incrementUsage(shop.id, 1);
       return { sent: true };
@@ -821,7 +822,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     if (rawProductContext) {
       productContextForReply = buildProductContextForAI(rawProductContext);
       const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
-      console.log(
+      logger.debug(
         `[automation] Product context attached for comment reply: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0} preview=${(productContextForReply?.text ?? "").substring(0, 120).replace(/\n/g, " ")}...`
       );
     } else if (needsPdpComment) {
@@ -860,7 +861,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
       : await claimMessageReply(shop.id, message.id, replyText, message.external_id);
     if (!claimed) {
-      console.log(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
+      logger.debug(`[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`);
       return { sent: false, reason: "Already replied to this comment" };
     }
     // 9. Send private reply to the comment (within 7 days). Test webhook uses fake comment IDs; send as DM to commenter.
@@ -871,7 +872,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     const fromUserId = message.from_user_id ?? message.fromUserId;
     if (commentExternalId.startsWith("test_comment_") && fromUserId) {
       await sendInstagramDm(shop.id, fromUserId, replyText);
-      console.log(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} for comment ${message.id}`);
+      logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} for comment ${message.id}`);
     } else {
       await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
     }
@@ -890,7 +891,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       replyText: replyText,
     });
 
-    console.log(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
+    logger.debug(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
   } catch (error) {
     console.error(`[automation] Error processing comment ${message.id}:`, error);

@@ -6,7 +6,10 @@ import { getMetaAuth } from "../lib/meta.server";
 import { getProductMappings, getSettings } from "../lib/db.server";
 import supabase from "../lib/supabase.server";
 
+const DEV_ROUTES_ENABLED = process.env.NODE_ENV !== "production";
+
 export const loader = async ({ request }) => {
+  if (!DEV_ROUTES_ENABLED) throw new Response("Not Found", { status: 404 });
   const { shop, plan } = await getShopWithPlan(request);
 
   let metaAuth = null;

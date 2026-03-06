@@ -40,7 +40,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "100 messages/mo, comment-to-DM automation, brand voice customization",
+        "500 messages/mo, comment-to-DM automation, brand voice customization",
     },
     {
       "@type": "Offer",
@@ -49,7 +49,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "Unlimited messages, follow-ups, revenue attribution, clarifying questions",
+        "50,000 messages/mo, follow-ups, revenue attribution, priority support",
     },
   ],
   creator: {
@@ -161,11 +161,11 @@ export default function LandingPage() {
           </div>
           <div className="srMarketingPricingCard">
             <strong>Growth — $29/mo</strong>
-            <span>100 messages · Comment-to-DM · Brand voice</span>
+            <span>500 messages · Comment-to-DM · Brand voice</span>
           </div>
           <div className="srMarketingPricingCard">
             <strong>Pro — $99/mo</strong>
-            <span>Unlimited · Follow-ups · Revenue attribution</span>
+            <span>50,000 messages · Follow-ups · Priority support</span>
           </div>
         </div>
       </section>

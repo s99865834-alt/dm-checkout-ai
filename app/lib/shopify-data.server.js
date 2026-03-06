@@ -5,6 +5,7 @@
 
 import { shopifyApi, ApiVersion } from "@shopify/shopify-api";
 import { sessionStorage } from "../shopify.server";
+import logger from "./logger.server";
 
 // Lazy-initialized Admin API instance (same config as app, used when we have a session but no request)
 let _shopifyApiInstance = null;
@@ -65,7 +66,7 @@ const PAGE_BODY_MAX_PAGES = 5;
 export async function getShopifyStoreInfo(shopDomain) {
   try {
     if (!shopDomain) {
-      console.log("[shopify-data] No shop domain provided, skipping store info fetch");
+      logger.debug("[shopify-data] No shop domain provided, skipping store info fetch");
       return null;
     }
     

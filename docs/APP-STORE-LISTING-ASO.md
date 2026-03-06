@@ -62,16 +62,15 @@ Transform Instagram DMs and comments into sales with AI-powered automated respon
 - Order attribution tracking
 
 **Growth ($29/mo)**
-- 100 automated messages per month
+- 500 automated messages per month
 - Comment-to-DM automation
+- Multi-turn conversation support
 - Brand voice customization (Friendly, Expert, Casual)
-- Per-channel analytics and advanced message insights
 
 **Pro ($99/mo)**
-- Unlimited automated messages
-- Follow-up automation (23–24 hours after last message)
-- Customer segmentation and sentiment analysis
-- Revenue attribution by channel and follow-up performance metrics
+- 50,000 automated messages per month
+- Follow-up automation (abandoned checkout recovery)
+- All Growth features included
 - Priority support
 
 **Why DM Checkout AI**
@@ -113,8 +112,8 @@ Create 5–8 screenshots that tell the story in this order. Add short captions o
 ## 6. Pricing clarity (in listing and screenshots)
 
 - **Free tier:** Prominent—“Start free: 25 automated messages per month.”
-- **Growth:** $29/month—call out “100 messages, comment-to-DM, brand voice.”
-- **Pro:** $99/month—call out “Unlimited messages, follow-ups, revenue attribution, priority support.”
+- **Growth:** $29/month — 500 messages, comment-to-DM, multi-turn conversations, brand voice.
+- **Pro:** $99/month — 50,000 messages, follow-up automation, all Growth features, priority support.
 
 Ensure the pricing section in the App Store and any in-app billing screens clearly differentiate what each tier includes so merchants know before installing.
 
@@ -122,9 +121,9 @@ Ensure the pricing section in the App Store and any in-app billing screens clear
 
 ## 7. Interactive demo (if available)
 
-- **Goal:** “Try before you install”—show connect → map product → see automated reply with link.
-- **Length:** Under 2–3 minutes with clear callouts.
-- **Impact:** Can lift conversion ~20–40% when available.
+- **Goal:** Show connect, map product, see automated reply with link.
+- **Length:** Under 5 minutes with clear callouts.
+- See SHOPIFY-APP-STORE-SUBMISSION-GUIDE.md for detailed screencast requirements.
 
 ---
 

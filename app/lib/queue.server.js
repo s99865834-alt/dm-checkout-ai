@@ -1,6 +1,7 @@
 import supabase from "./supabase.server";
 import { getMetaAuthWithRefresh, getInstagramUserIdFromToken, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { incCounter } from "./metrics.server";
+import logger from "./logger.server";
 
 const MAX_PER_MINUTE = 120;
 const MAX_ATTEMPTS = 3;
@@ -209,11 +210,11 @@ async function resetStuckRows() {
       .lt("processing_since", cutoff)
       .select("id");
     if (stuck?.length) {
-      console.log(`[queue] Reset ${stuck.length} stuck processing rows (fallback)`);
+      logger.debug(`[queue] Reset ${stuck.length} stuck processing rows (fallback)`);
     }
     return;
   }
   if (data > 0) {
-    console.log(`[queue] Reset ${data} stuck processing rows`);
+    logger.debug(`[queue] Reset ${data} stuck processing rows`);
   }
 }

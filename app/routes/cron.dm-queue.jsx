@@ -3,6 +3,7 @@
  * Call every minute with ?secret=CRON_SECRET
  */
 import { processDmQueue } from "../lib/queue.server";
+import logger from "../lib/logger.server";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -16,9 +17,9 @@ export const loader = async ({ request }) => {
   }
 
   try {
-    console.log("[cron] Starting DM queue processing...");
+    logger.debug("[cron] Starting DM queue processing...");
     const result = await processDmQueue();
-    console.log("[cron] DM queue processing completed", result);
+    logger.debug("[cron] DM queue processing completed", result);
     return new Response(JSON.stringify({ success: true, result }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

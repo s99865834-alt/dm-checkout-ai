@@ -8,6 +8,8 @@
  *   Railway Pro ($20/mo)               → upgrade at memory >80% or response-time spikes
  */
 
+import logger from "./logger.server";
+
 const FLUSH_INTERVAL_MS = 60_000;
 
 const counters = {
@@ -74,7 +76,7 @@ function flushMetrics() {
   const openaiAvg = avg(timings.openai_latency_ms);
   const openaiP99 = p99(timings.openai_latency_ms);
 
-  console.log(
+  logger.debug(
     `[metrics] webhooks=${counters.webhooks_received}` +
     ` dms=${counters.dm_messages_processed}` +
     ` comments=${counters.comment_messages_processed}` +

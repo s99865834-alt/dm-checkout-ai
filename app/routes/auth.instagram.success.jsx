@@ -1,5 +1,6 @@
 import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
+import logger from "../lib/logger.server";
 
 /**
  * Success page after Instagram OAuth
@@ -14,18 +15,18 @@ export const loader = async ({ request }) => {
     return redirect("/auth/login");
   }
   
-  console.log(`[oauth] Success route - shop: ${shop}`);
+  logger.debug(`[oauth] Success route - shop: ${shop}`);
   
   // Try to authenticate first
   try {
     await authenticate.admin(request);
     // If authenticated, redirect to Instagram page
-    console.log(`[oauth] Already authenticated, redirecting to Instagram page`);
+    logger.debug(`[oauth] Already authenticated, redirecting to Instagram page`);
     return redirect(`/app?connected=true&shop=${encodeURIComponent(shop)}`);
   } catch (error) {
     // Not authenticated - redirect to our auth endpoint
     // This will trigger Shopify OAuth through our app's auth flow
-    console.log(`[oauth] Not authenticated, redirecting to auth endpoint`);
+    logger.debug(`[oauth] Not authenticated, redirecting to auth endpoint`);
     const url = new URL(request.url);
     const appUrl = url.origin;
     // Redirect to /auth with shop parameter - this will trigger Shopify OAuth

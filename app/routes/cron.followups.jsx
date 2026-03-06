@@ -9,6 +9,7 @@
  */
 
 import { processFollowups } from "../lib/followup.server";
+import logger from "../lib/logger.server";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -23,9 +24,9 @@ export const loader = async ({ request }) => {
   }
 
   try {
-    console.log("[cron] Starting follow-up processing...");
+    logger.debug("[cron] Starting follow-up processing...");
     await processFollowups();
-    console.log("[cron] Follow-up processing completed");
+    logger.debug("[cron] Follow-up processing completed");
     
     return new Response(JSON.stringify({ success: true, message: "Follow-ups processed" }), {
       status: 200,
