@@ -13,9 +13,9 @@ export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
 
   const url = new URL(request.url);
-  const betaCode = url.searchParams.get("code");
+  const betaCode = url.searchParams.get("beta_code");
   if (betaCode && betaCode.startsWith("BETA-")) {
-    throw redirect(`/app/beta?code=${encodeURIComponent(betaCode)}`);
+    throw redirect(`/app/beta?beta_code=${encodeURIComponent(betaCode)}`);
   }
 
   let metaAuth = null;

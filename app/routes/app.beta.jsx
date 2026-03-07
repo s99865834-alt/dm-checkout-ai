@@ -10,7 +10,7 @@ export const loader = async ({ request }) => {
   if (!shop) throw new Response("Shop not found", { status: 404 });
 
   const url = new URL(request.url);
-  const code = url.searchParams.get("code");
+  const code = url.searchParams.get("beta_code");
   const betaStatus = await getBetaTrialStatus(shop.id);
 
   return { code: code || null, betaStatus };
