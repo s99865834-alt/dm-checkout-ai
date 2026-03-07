@@ -84,7 +84,10 @@ export async function getShopWithPlan(request) {
   }
 
   shop = await ensureUsageMonthCurrent(shop);
-  const plan = getPlanConfig(shop.plan);
+
+  const isBetaActive = shop.beta_trial_expires_at &&
+    new Date(shop.beta_trial_expires_at) > new Date();
+  const plan = isBetaActive ? getPlanConfig("PRO") : getPlanConfig(shop.plan);
 
   // Keep store context fresh so DM automation can answer store_question DMs without
   // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.
