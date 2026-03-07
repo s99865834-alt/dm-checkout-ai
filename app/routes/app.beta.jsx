@@ -9,11 +9,8 @@ export const loader = async ({ request }) => {
   const { shop } = await getShopWithPlan(request);
   if (!shop) throw new Response("Shop not found", { status: 404 });
 
-  const url = new URL(request.url);
-  const code = url.searchParams.get("beta_code");
   const betaStatus = await getBetaTrialStatus(shop.id);
-
-  return { code: code || null, betaStatus };
+  return { betaStatus };
 };
 
 export const action = async ({ request }) => {
@@ -43,7 +40,7 @@ export const action = async ({ request }) => {
 };
 
 export default function BetaRedeem() {
-  const { code, betaStatus } = useLoaderData();
+  const { betaStatus } = useLoaderData();
   const fetcher = useFetcher();
 
   useEffect(() => {
@@ -52,9 +49,9 @@ export default function BetaRedeem() {
     }
   }, [fetcher.data]);
 
-  return (
-    <s-page heading="Beta Trial">
-      {betaStatus?.active && (
+  if (betaStatus?.active) {
+    return (
+      <s-page heading="Beta Trial">
         <s-section>
           <s-callout variant="success" title="Beta Trial Active">
             <s-stack direction="block" gap="tight">
@@ -72,15 +69,19 @@ export default function BetaRedeem() {
               </s-paragraph>
               <s-paragraph tone="subdued">
                 {betaStatus.daysRemaining} day
-                {betaStatus.daysRemaining !== 1 ? "s" : ""} remaining in your
-                free trial. After the trial, you'll be charged $99/month for the
-                PRO plan.
+                {betaStatus.daysRemaining !== 1 ? "s" : ""} remaining. After
+                the trial you will be billed $99/month for the PRO plan. You can
+                cancel anytime before the trial ends.
               </s-paragraph>
             </s-stack>
           </s-callout>
         </s-section>
-      )}
+      </s-page>
+    );
+  }
 
+  return (
+    <s-page heading="Beta Trial">
       {fetcher.data?.error && (
         <s-section>
           <s-callout variant="critical" title="Error">
@@ -93,25 +94,30 @@ export default function BetaRedeem() {
 
       {fetcher.data?.confirmationUrl && (
         <s-section>
-          <s-callout variant="info" title="Approve Your Trial">
-            <s-paragraph>
-              A new window should have opened for you to approve the 60-day free
-              trial. After the trial, billing starts at $99/month for the PRO
-              plan. You can cancel anytime.
-            </s-paragraph>
+          <s-callout variant="info" title="Approve Your Free Trial">
+            <s-stack direction="block" gap="tight">
+              <s-paragraph>
+                A new window should have opened for you to confirm the 60-day
+                free trial.
+              </s-paragraph>
+              <s-paragraph tone="subdued">
+                You will not be charged during the trial. After 60 days your
+                plan will automatically convert to PRO at $99/month. You can
+                cancel anytime before the trial ends to avoid being charged.
+              </s-paragraph>
+            </s-stack>
           </s-callout>
         </s-section>
       )}
 
-      {!betaStatus?.active && !fetcher.data?.confirmationUrl && (
-        <s-section heading="Activate Your Beta Trial">
+      {!fetcher.data?.confirmationUrl && (
+        <s-section>
           <s-card>
             <s-stack direction="block" gap="base">
-              <s-paragraph>
-                Enter your beta invitation code to start a{" "}
-                <s-text variant="strong">free 60-day PRO trial</s-text>. After
-                the trial period, you'll be billed $99/month. You can cancel
-                anytime before the trial ends.
+              <s-heading level="2">Enter your beta code</s-heading>
+              <s-paragraph tone="subdued">
+                Your 60-day free trial includes all PRO plan features. After the
+                trial you will be billed $99/month. Cancel anytime.
               </s-paragraph>
               <fetcher.Form method="post">
                 <s-stack direction="block" gap="base">
@@ -119,7 +125,6 @@ export default function BetaRedeem() {
                     label="Beta Code"
                     name="code"
                     placeholder="BETA-XXXX-XXXX"
-                    value={code || ""}
                     required
                   />
                   <s-button
@@ -135,27 +140,6 @@ export default function BetaRedeem() {
           </s-card>
         </s-section>
       )}
-
-      <s-section heading="What's Included">
-        <s-card>
-          <s-stack direction="block" gap="tight">
-            <s-paragraph>
-              Your beta trial includes all PRO plan features:
-            </s-paragraph>
-            <s-unordered-list>
-              <s-list-item>50,000 messages per month</s-list-item>
-              <s-list-item>DM + Comments automation</s-list-item>
-              <s-list-item>Conversational AI</s-list-item>
-              <s-list-item>Brand voice customization</s-list-item>
-              <s-list-item>Follow-up automation</s-list-item>
-              <s-list-item>Priority support</s-list-item>
-            </s-unordered-list>
-            <s-paragraph tone="subdued">
-              60 days free, then $99/month. Cancel anytime.
-            </s-paragraph>
-          </s-stack>
-        </s-card>
-      </s-section>
     </s-page>
   );
 }

@@ -1,22 +1,16 @@
 import { useEffect, useState } from "react";
-import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator, redirect } from "react-router";
+import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
-import { consumePendingBetaCode } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
-  const { shop, plan, admin, session } = await getShopWithPlan(request);
-
-  const pendingCode = await consumePendingBetaCode(session.shop);
-  if (pendingCode) {
-    throw redirect(`/app/beta?beta_code=${encodeURIComponent(pendingCode)}`);
-  }
+  const { shop, plan, admin } = await getShopWithPlan(request);
 
   let metaAuth = null;
   let instagramInfo = null;
@@ -405,6 +399,9 @@ export default function Index() {
                   <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
                     {plan.name}
                   </s-badge>
+                  {shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
+                    <s-badge tone="warning">BETA</s-badge>
+                  )}
                   {shop.usage_count !== undefined && (
                     <s-text variant="subdued" className="srCardDesc">
                       {shop.usage_count}/{plan.cap} messages this month
