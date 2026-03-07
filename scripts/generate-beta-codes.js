@@ -79,7 +79,7 @@ async function main() {
 
   console.log(`\nGenerated ${data.length} beta code(s) (${days}-day trial, PRO plan, ${uses} use(s) each):\n`);
   for (const row of data) {
-    const link = `${APP_URL}/app/beta?code=${row.code}`;
+    const link = `${APP_URL}/app/beta?beta_code=${row.code}`;
     console.log(`  ${row.code}    ${link}`);
   }
   console.log();
