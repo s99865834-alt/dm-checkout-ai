@@ -24,8 +24,8 @@ export const action = async ({ request }) => {
     throw new Response("Invalid plan", { status: 400 });
   }
 
-  const url = new URL(request.url);
-  const returnUrl = `${url.origin}/app/billing/activate?plan=${planName}`;
+  const storeHandle = session.shop.replace(".myshopify.com", "");
+  const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=${planName}`;
 
   try {
     // Create the recurring charge

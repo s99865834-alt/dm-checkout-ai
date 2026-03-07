@@ -14,7 +14,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { shop, admin } = await getShopWithPlan(request);
+  const { shop, admin, session } = await getShopWithPlan(request);
   if (!shop) throw new Response("Shop not found", { status: 404 });
 
   const formData = await request.formData();
@@ -25,8 +25,8 @@ export const action = async ({ request }) => {
     return { error: validation.message };
   }
 
-  const url = new URL(request.url);
-  const returnUrl = `${url.origin}/app/billing/activate?plan=PRO&beta_code=${encodeURIComponent(code.trim().toUpperCase())}`;
+  const storeHandle = session.shop.replace(".myshopify.com", "");
+  const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=PRO&beta_code=${encodeURIComponent(code.trim().toUpperCase())}`;
 
   try {
     const { confirmationUrl } = await createChargeViaAPI(admin, "PRO", returnUrl, {
