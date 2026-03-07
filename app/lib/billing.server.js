@@ -78,14 +78,16 @@ export async function createChargeViaAPI(admin, planName, returnUrl, options = {
     throw new Error(`Pricing not found for plan: ${plan}`);
   }
 
-  // Create recurring charge via GraphQL
+  const isTestCharge = process.env.SHOPIFY_BILLING_TEST === "true";
+
   const mutation = `
-    mutation appSubscriptionCreate($name: String!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int) {
+    mutation appSubscriptionCreate($name: String!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int, $test: Boolean) {
       appSubscriptionCreate(
         name: $name
         returnUrl: $returnUrl
         lineItems: $lineItems
         trialDays: $trialDays
+        test: $test
       ) {
         appSubscription {
           id
@@ -119,6 +121,7 @@ export async function createChargeViaAPI(admin, planName, returnUrl, options = {
       },
     ],
     trialDays: options.trialDays ?? null,
+    test: isTestCharge || null,
   };
 
   const response = await admin.graphql(mutation, {
