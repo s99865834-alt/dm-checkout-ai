@@ -78,9 +78,9 @@ async function main() {
   }
 
   console.log(`\nGenerated ${data.length} beta code(s) (${days}-day trial, PRO plan, ${uses} use(s) each):\n`);
+  console.log(`  Link format: ${APP_URL}/invite?beta_code=CODE&shop=STORE_HANDLE\n`);
   for (const row of data) {
-    const link = `${APP_URL}/app/beta?beta_code=${row.code}`;
-    console.log(`  ${row.code}    ${link}`);
+    console.log(`  ${row.code}`);
   }
   console.log();
 }
