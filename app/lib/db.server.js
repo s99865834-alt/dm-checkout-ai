@@ -1796,29 +1796,6 @@ export async function saveStoredStoreContext(shopId, storeInfo) {
 // ---------------------------------------------------------------------------
 
 /**
- * Check for a pending beta activation for this shop and consume it (delete).
- * Returns the beta code string if found, or null.
- */
-export async function consumePendingBetaCode(shopDomain) {
-  if (!shopDomain) return null;
-
-  const { data, error } = await supabase
-    .from("pending_beta_activations")
-    .select("beta_code")
-    .eq("shop_domain", shopDomain)
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  await supabase
-    .from("pending_beta_activations")
-    .delete()
-    .eq("shop_domain", shopDomain);
-
-  return data.beta_code;
-}
-
-/**
  * Validate a beta code WITHOUT redeeming it.
  * Returns { success, trialDays } or { success: false, message }.
  */

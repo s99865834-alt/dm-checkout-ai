@@ -143,7 +143,9 @@ export default function BillingSelect() {
           <s-callout variant="info" title={`Current Plan: ${currentPlanName}`}>
             <s-paragraph>
               You're currently on the <s-text variant="strong">{currentPlanName}</s-text> plan.
-              {currentPlanName !== "PRO" && " Upgrade to unlock more features!"}
+              {shop?.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date()
+                ? ` (BETA — ${Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)`
+                : currentPlanName !== "PRO" ? " Upgrade to unlock more features!" : ""}
             </s-paragraph>
           </s-callout>
         </s-section>
