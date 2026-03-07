@@ -24,7 +24,6 @@ export const action = async ({ request }) => {
     throw new Response("Invalid plan", { status: 400 });
   }
 
-  // Build return URL for billing confirmation
   const url = new URL(request.url);
   const returnUrl = `${url.origin}/app/billing/activate?plan=${planName}`;
 
@@ -49,12 +48,9 @@ export default function BillingSelect() {
   const error = searchParams.get("error");
   const fetcher = useFetcher();
 
-  // Handle redirect when confirmation URL is received
   useEffect(() => {
     if (fetcher.data?.confirmationUrl) {
-      // Open confirmation URL in a new window for billing approval
-      // This is the recommended approach for billing confirmations in embedded apps
-      window.open(fetcher.data.confirmationUrl, "_blank");
+      window.open(fetcher.data.confirmationUrl, "_top");
     }
   }, [fetcher.data]);
 
