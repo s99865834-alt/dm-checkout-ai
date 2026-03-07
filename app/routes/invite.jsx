@@ -1,10 +1,14 @@
 import { redirect } from "react-router";
 import supabase from "../lib/supabase.server";
 
+const APP_URL = (process.env.SHOPIFY_APP_URL || "https://dm-checkout-ai-production.up.railway.app").replace(/\/$/, "");
+const CLIENT_ID = process.env.SHOPIFY_API_KEY;
+
 /**
  * Public route (no auth required) that stores a pending beta code
- * and redirects the store owner into the Shopify admin where the
- * embedded app picks it up automatically.
+ * and redirects the store owner through the Shopify OAuth/install flow.
+ * After auth completes, the app home page picks up the pending code
+ * from Supabase and routes to the beta activation page.
  *
  * URL format:
  *   /invite?beta_code=BETA-XXXX-XXXX&shop=storename
@@ -46,8 +50,12 @@ export const loader = async ({ request }) => {
     .from("pending_beta_activations")
     .upsert({ shop_domain: shopDomain, beta_code: code }, { onConflict: "shop_domain" });
 
+  // Redirect through the Shopify install/OAuth flow.
+  // This works whether the app is installed or not:
+  //   - Not installed: prompts install → OAuth → creates session → lands in app
+  //   - Already installed: re-authenticates → creates fresh session → lands in app
   throw redirect(
-    `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app`
+    `https://admin.shopify.com/store/${storeHandle}/oauth/install?client_id=${CLIENT_ID}`
   );
 };
 
