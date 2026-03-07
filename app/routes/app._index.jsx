@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
+import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator, redirect } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
@@ -11,6 +11,12 @@ const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
+
+  const url = new URL(request.url);
+  const betaCode = url.searchParams.get("code");
+  if (betaCode && betaCode.startsWith("BETA-")) {
+    throw redirect(`/app/beta?code=${encodeURIComponent(betaCode)}`);
+  }
 
   let metaAuth = null;
   let instagramInfo = null;
