@@ -4,18 +4,18 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
+import { consumePendingBetaCode } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
 export const loader = async ({ request }) => {
-  const { shop, plan, admin } = await getShopWithPlan(request);
+  const { shop, plan, admin, session } = await getShopWithPlan(request);
 
-  const url = new URL(request.url);
-  const betaCode = url.searchParams.get("beta_code");
-  if (betaCode && betaCode.startsWith("BETA-")) {
-    throw redirect(`/app/beta?beta_code=${encodeURIComponent(betaCode)}`);
+  const pendingCode = await consumePendingBetaCode(session.shop);
+  if (pendingCode) {
+    throw redirect(`/app/beta?beta_code=${encodeURIComponent(pendingCode)}`);
   }
 
   let metaAuth = null;

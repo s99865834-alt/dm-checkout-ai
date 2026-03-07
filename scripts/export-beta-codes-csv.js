@@ -72,7 +72,7 @@ async function main() {
   const lines = [headers.map(escapeCsv).join(",")];
 
   for (const row of rows || []) {
-    const magicLink = `${APP_URL}/app/beta?beta_code=${encodeURIComponent(row.code)}`;
+    const magicLink = `${APP_URL}/invite?beta_code=${encodeURIComponent(row.code)}&shop=STORE_HANDLE`;
     lines.push(
       [
         escapeCsv(row.code),
