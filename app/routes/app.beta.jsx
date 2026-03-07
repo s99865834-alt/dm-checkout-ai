@@ -45,7 +45,7 @@ export default function BetaRedeem() {
 
   useEffect(() => {
     if (fetcher.data?.confirmationUrl) {
-      window.open(fetcher.data.confirmationUrl, "_blank");
+      window.open(fetcher.data.confirmationUrl, "_top");
     }
   }, [fetcher.data]);
 
