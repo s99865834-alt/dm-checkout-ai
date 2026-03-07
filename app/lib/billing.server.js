@@ -62,9 +62,11 @@ export async function createRecurringCharge(shopDomain, planName, returnUrl) {
  * @param {Object} admin - Authenticated Shopify admin API client
  * @param {string} planName - The plan name (GROWTH or PRO)
  * @param {string} returnUrl - The URL to redirect to after confirmation
- * @returns {Promise<{confirmationUrl: string, chargeId: string}>}
+ * @param {Object} [options]
+ * @param {number} [options.trialDays] - Number of free trial days (null = no trial)
+ * @returns {Promise<{confirmationUrl: string, subscriptionId: string}>}
  */
-export async function createChargeViaAPI(admin, planName, returnUrl) {
+export async function createChargeViaAPI(admin, planName, returnUrl, options = {}) {
   const plan = planName.toUpperCase();
   
   if (plan !== "GROWTH" && plan !== "PRO") {
@@ -116,7 +118,7 @@ export async function createChargeViaAPI(admin, planName, returnUrl) {
         },
       },
     ],
-    trialDays: null, // No trial period
+    trialDays: options.trialDays ?? null,
   };
 
   const response = await admin.graphql(mutation, {

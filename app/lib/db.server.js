@@ -164,7 +164,7 @@ export async function incrementUsage(shopId, delta) {
 export async function getShopPlanAndUsage(shopId) {
   const { data, error } = await supabase
     .from("shops")
-    .select("plan, usage_month, usage_count, monthly_cap")
+    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at")
     .eq("id", shopId)
     .single();
 
@@ -173,11 +173,14 @@ export async function getShopPlanAndUsage(shopId) {
     throw error;
   }
 
-  const planConfig = getPlanConfig(data.plan);
+  const isBetaActive = data.beta_trial_expires_at &&
+    new Date(data.beta_trial_expires_at) > new Date();
+  const planConfig = isBetaActive ? getPlanConfig("PRO") : getPlanConfig(data.plan);
+
   return {
     plan: planConfig,
     usage: data.usage_count,
-    cap: data.monthly_cap,
+    cap: isBetaActive ? planConfig.cap : data.monthly_cap,
   };
 }
 
@@ -1786,4 +1789,146 @@ export async function saveStoredStoreContext(shopId, storeInfo) {
   if (error) {
     console.error("[db] saveStoredStoreContext error:", error.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Beta Trial
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a beta code WITHOUT redeeming it.
+ * Returns { success, trialDays } or { success: false, message }.
+ */
+export async function validateBetaCode(shopId, code) {
+  const trimmed = (code || "").trim().toUpperCase();
+  if (!trimmed) return { success: false, message: "No code provided." };
+
+  const { data: betaCode, error: fetchErr } = await supabase
+    .from("beta_codes")
+    .select("*")
+    .eq("code", trimmed)
+    .single();
+
+  if (fetchErr || !betaCode) {
+    return { success: false, message: "Invalid beta code." };
+  }
+  if (!betaCode.active) {
+    return { success: false, message: "This beta code has been deactivated." };
+  }
+  if (betaCode.expires_at && new Date(betaCode.expires_at) < new Date()) {
+    return { success: false, message: "This beta code has expired." };
+  }
+  if (betaCode.times_used >= betaCode.max_uses) {
+    return { success: false, message: "This beta code has already been fully redeemed." };
+  }
+
+  const { data: existing } = await supabase
+    .from("beta_redemptions")
+    .select("id")
+    .eq("beta_code_id", betaCode.id)
+    .eq("shop_id", shopId)
+    .maybeSingle();
+
+  if (existing) {
+    return { success: false, message: "You have already redeemed this beta code." };
+  }
+
+  return { success: true, trialDays: betaCode.trial_days };
+}
+
+/**
+ * Validate a beta code and redeem it for a shop.
+ * Returns { success, message, trialExpiresAt } or { success: false, message }.
+ */
+export async function validateAndRedeemBetaCode(shopId, code) {
+  const trimmed = (code || "").trim().toUpperCase();
+  if (!trimmed) return { success: false, message: "No code provided." };
+
+  const { data: betaCode, error: fetchErr } = await supabase
+    .from("beta_codes")
+    .select("*")
+    .eq("code", trimmed)
+    .single();
+
+  if (fetchErr || !betaCode) {
+    return { success: false, message: "Invalid beta code." };
+  }
+
+  if (!betaCode.active) {
+    return { success: false, message: "This beta code has been deactivated." };
+  }
+
+  if (betaCode.expires_at && new Date(betaCode.expires_at) < new Date()) {
+    return { success: false, message: "This beta code has expired." };
+  }
+
+  if (betaCode.times_used >= betaCode.max_uses) {
+    return { success: false, message: "This beta code has already been fully redeemed." };
+  }
+
+  const { data: existing } = await supabase
+    .from("beta_redemptions")
+    .select("id")
+    .eq("beta_code_id", betaCode.id)
+    .eq("shop_id", shopId)
+    .maybeSingle();
+
+  if (existing) {
+    return { success: false, message: "You have already redeemed this beta code." };
+  }
+
+  const trialExpiresAt = new Date();
+  trialExpiresAt.setDate(trialExpiresAt.getDate() + betaCode.trial_days);
+  const expiresIso = trialExpiresAt.toISOString();
+
+  const { error: redemptionErr } = await supabase
+    .from("beta_redemptions")
+    .insert({
+      beta_code_id: betaCode.id,
+      shop_id: shopId,
+      trial_expires_at: expiresIso,
+    });
+
+  if (redemptionErr) {
+    console.error("beta redemption insert error", redemptionErr);
+    return { success: false, message: "Failed to redeem code. Please try again." };
+  }
+
+  await supabase
+    .from("beta_codes")
+    .update({ times_used: betaCode.times_used + 1 })
+    .eq("id", betaCode.id);
+
+  await supabase
+    .from("shops")
+    .update({ beta_trial_expires_at: expiresIso })
+    .eq("id", shopId);
+
+  return {
+    success: true,
+    message: `Beta trial activated! You have full PRO access until ${trialExpiresAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.`,
+    trialExpiresAt: expiresIso,
+  };
+}
+
+/**
+ * Return beta trial status for a shop (or null if none).
+ */
+export async function getBetaTrialStatus(shopId) {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("beta_trial_expires_at")
+    .eq("id", shopId)
+    .single();
+
+  if (error || !data?.beta_trial_expires_at) return null;
+
+  const expires = new Date(data.beta_trial_expires_at);
+  const now = new Date();
+  const active = expires > now;
+  const daysRemaining = active
+    ? Math.ceil((expires - now) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  return { active, expiresAt: data.beta_trial_expires_at, daysRemaining };
 }

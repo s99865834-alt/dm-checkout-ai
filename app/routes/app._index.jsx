@@ -376,6 +376,16 @@ export default function Index() {
       {postFetcher.data?.error && (
         <s-banner tone="critical"><s-text>{postFetcher.data.error}</s-text></s-banner>
       )}
+      {shop?.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
+        <s-banner tone="success">
+          <s-text variant="strong">Beta Trial Active</s-text>
+          <s-text>
+            {" "}Full PRO access until{" "}
+            {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+            {" "}({Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)
+          </s-text>
+        </s-banner>
+      )}
 
       {/* ── Plan & Instagram ───────────────────────────────────────────── */}
       <s-section heading="Plan & Instagram">

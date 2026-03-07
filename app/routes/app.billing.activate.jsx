@@ -1,7 +1,7 @@
 import { redirect, useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { updateShopPlan } from "../lib/db.server";
+import { updateShopPlan, validateAndRedeemBetaCode } from "../lib/db.server";
 import { getCurrentSubscription } from "../lib/billing.server";
 import { getPlanConfig } from "../lib/plans";
 
@@ -12,37 +12,40 @@ export const loader = async ({ request }) => {
     throw new Response("Shop not found", { status: 404 });
   }
 
-  // Get the charge_id from query params (Shopify redirects with this)
   const url = new URL(request.url);
   const chargeId = url.searchParams.get("charge_id");
   const planParam = url.searchParams.get("plan");
+  const betaCode = url.searchParams.get("beta_code");
 
-  // If no charge_id, check if we have an active subscription
   if (!chargeId) {
     try {
       const subscription = await getCurrentSubscription(admin);
       if (subscription && subscription.status === "ACTIVE") {
-        // Subscription is active, update the plan based on subscription name or plan param
         const planToSet = planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
         const config = getPlanConfig(planToSet);
         
         await updateShopPlan(shop.id, planToSet);
+
+        if (betaCode) {
+          await validateAndRedeemBetaCode(shop.id, betaCode);
+        }
         
         return {
           success: true,
           plan: planToSet,
-          message: `Successfully upgraded to ${planToSet} plan!`,
+          isBeta: !!betaCode,
+          message: betaCode
+            ? `Beta trial activated! You have full PRO access for 60 days free.`
+            : `Successfully upgraded to ${planToSet} plan!`,
         };
       }
     } catch (error) {
       console.error("Error checking subscription:", error);
     }
 
-    // No charge_id and no active subscription - redirect to billing select
     throw redirect("/app/billing/select?error=no_charge");
   }
 
-  // Verify the charge is active
   try {
     const subscription = await getCurrentSubscription(admin);
     
@@ -54,17 +57,22 @@ export const loader = async ({ request }) => {
       };
     }
 
-    // Determine plan from subscription or query param
     const planToSet = planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
     const config = getPlanConfig(planToSet);
 
-    // Update shop plan in database
     await updateShopPlan(shop.id, planToSet);
+
+    if (betaCode) {
+      await validateAndRedeemBetaCode(shop.id, betaCode);
+    }
 
     return {
       success: true,
       plan: planToSet,
-      message: `Successfully upgraded to ${planToSet} plan!`,
+      isBeta: !!betaCode,
+      message: betaCode
+        ? `Beta trial activated! You have full PRO access for 60 days free. After the trial, you'll be billed $99/month.`
+        : `Successfully upgraded to ${planToSet} plan!`,
     };
   } catch (error) {
     console.error("Error activating billing:", error);
