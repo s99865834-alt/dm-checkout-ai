@@ -206,18 +206,9 @@ export default function AnalyticsPage() {
 
     return (
       <s-page heading="Analytics">
-        {shop && plan && (
-          <s-section>
-            <s-stack direction="inline" gap="base">
-              <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
-                {plan.name} Plan
-              </s-badge>
-            </s-stack>
-          </s-section>
-        )}
 
           {/* Analytics Date Range Filter */}
-          <s-section heading="Analytics">
+          <s-section heading="Overview">
             <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
               <form onSubmit={(e) => {
                 e.preventDefault();
@@ -275,7 +266,7 @@ export default function AnalyticsPage() {
           </s-section>
 
           {/* Analytics - Progressive display based on plan tier */}
-          <s-section heading="Analytics">
+          <s-section>
             {analytics ? (
               <>
                 {analytics.messagesSent === 0 && analytics.linksSent === 0 ? (
@@ -568,7 +559,7 @@ export default function AnalyticsPage() {
                       <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="channel">
-                          <s-text variant="strong">Channel</s-text>
+                          <s-text variant="subdued">Channel</s-text>
                         </label>
                         <select
                           id="channel"
@@ -586,7 +577,7 @@ export default function AnalyticsPage() {
                     <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="order_id">
-                          <s-text variant="strong">Order ID</s-text>
+                          <s-text variant="subdued">Order ID</s-text>
                         </label>
                         <input
                           type="text"
@@ -602,7 +593,7 @@ export default function AnalyticsPage() {
                     <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="start_date">
-                          <s-text variant="strong">Start Date</s-text>
+                          <s-text variant="subdued">Start Date</s-text>
                         </label>
                         <input
                           type="date"
@@ -617,7 +608,7 @@ export default function AnalyticsPage() {
                     <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="end_date">
-                          <s-text variant="strong">End Date</s-text>
+                          <s-text variant="subdued">End Date</s-text>
                         </label>
                         <input
                           type="date"
@@ -632,7 +623,7 @@ export default function AnalyticsPage() {
                     <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
                       <s-stack direction="block" gap="tight">
                         <label htmlFor="limit">
-                          <s-text variant="strong">Limit</s-text>
+                          <s-text variant="subdued">Limit</s-text>
                         </label>
                         <input
                           type="number"
@@ -663,7 +654,7 @@ export default function AnalyticsPage() {
           {/* Attribution Records Table */}
           <s-box padding="base" borderWidth="base" borderRadius="base">
             <s-stack direction="block" gap="base">
-              <s-text variant="headingMd">Attribution Records ({attributionRecords.length})</s-text>
+              <s-text variant="strong">Attribution Records ({attributionRecords.length})</s-text>
               {attributionRecords.length === 0 ? (
                 <s-box padding="base">
                   <s-text tone="subdued">No attribution records found.</s-text>
