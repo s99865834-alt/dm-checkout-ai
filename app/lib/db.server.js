@@ -610,7 +610,10 @@ export async function recordAttribution(params) {
  * @returns {Promise<Array>} Array of attribution records
  */
 export async function getAttributionRecords(shopId, filters = {}) {
-  const { channel, orderId, startDate, endDate, limit = 50 } = filters;
+  const { channel, orderId, startDate, limit = 50 } = filters;
+  const endDate = filters.endDate && !filters.endDate.includes("T")
+    ? `${filters.endDate}T23:59:59.999Z`
+    : filters.endDate;
 
   let query = supabase
     .from("attribution")
@@ -1173,11 +1176,15 @@ export async function updateBrandVoice(shopId, brandVoice) {
  * Returns metrics based on plan tier
  */
 export async function getAnalytics(shopId, planName, options = {}) {
-  const { startDate, endDate } = options;
+  const { startDate } = options;
+  // If endDate is a bare date (YYYY-MM-DD), make it inclusive of the full day
+  const endDate = options.endDate && !options.endDate.includes("T")
+    ? `${options.endDate}T23:59:59.999Z`
+    : options.endDate;
   
   const analytics = {
     // Free tier metrics
-    messagesSent: 0,
+    messagesReceived: 0,
     linksSent: 0,
     clicks: 0,
     ctr: 0,
@@ -1219,8 +1226,7 @@ export async function getAnalytics(shopId, planName, options = {}) {
       return analytics;
     }
 
-    // Count all messages (not just ones with links)
-    analytics.messagesSent = (allMessages || []).length;
+    analytics.messagesReceived = (allMessages || []).length;
 
     // Get ALL links_sent for this shop (not just those linked to messages)
     let linksQuery = supabase
@@ -1229,10 +1235,10 @@ export async function getAnalytics(shopId, planName, options = {}) {
       .eq("shop_id", shopId);
 
     if (startDate) {
-      linksQuery = linksQuery.gte("sent_at", startDate);
+      linksQuery = linksQuery.gte("created_at", startDate);
     }
     if (endDate) {
-      linksQuery = linksQuery.lte("sent_at", endDate);
+      linksQuery = linksQuery.lte("created_at", endDate);
     }
 
     const { data: linksSent, error: linksError } = await linksQuery;
@@ -1244,14 +1250,16 @@ export async function getAnalytics(shopId, planName, options = {}) {
     // Count all links sent
     analytics.linksSent = (linksSent || []).length;
 
-    // Create map of message_id -> link_id for click tracking
-    const messageToLinkId = {};
-    const linkIdToChannel = {}; // Map link_id -> channel for click tracking
+    // Create map of message_id -> link_id, keeping the most recent link per message
+    const messageToLink = {};
+    const linkIdToChannel = {};
     const linkIds = [];
     (linksSent || []).forEach(link => {
       if (link.message_id) {
-        messageToLinkId[link.message_id] = link.link_id;
-        // Find the message to get its channel
+        const prev = messageToLink[link.message_id];
+        if (!prev || String(link.id) > String(prev.rowId)) {
+          messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
+        }
         const message = (allMessages || []).find(m => m.id === link.message_id);
         if (message && link.link_id) {
           linkIdToChannel[link.link_id] = message.channel;
@@ -1261,6 +1269,10 @@ export async function getAnalytics(shopId, planName, options = {}) {
         linkIds.push(link.link_id);
       }
     });
+    const messageToLinkId = {};
+    for (const [msgId, val] of Object.entries(messageToLink)) {
+      messageToLinkId[msgId] = val.linkId;
+    }
 
     // Filter messages that have links sent (for channel performance and trigger phrases)
     const messagesWithLinks = (allMessages || []).filter(m => messageToLinkId[m.id]);
@@ -1356,7 +1368,10 @@ export async function getAnalytics(shopId, planName, options = {}) {
  * Includes customer segments, sentiment analysis, revenue attribution, follow-up performance
  */
 export async function getProAnalytics(shopId, options = {}) {
-  const { startDate, endDate } = options;
+  const { startDate } = options;
+  const endDate = options.endDate && !options.endDate.includes("T")
+    ? `${options.endDate}T23:59:59.999Z`
+    : options.endDate;
   
   const proAnalytics = {
     customerSegments: {
@@ -1496,12 +1511,19 @@ export async function getProAnalytics(shopId, options = {}) {
 
     if (!linksError && linksSent) {
       const linkIds = linksSent.map(l => l.link_id).filter(Boolean);
-      const messageToLinkId = {};
+      const messageToLink = {};
       linksSent.forEach(link => {
         if (link.message_id) {
-          messageToLinkId[link.message_id] = link.link_id;
+          const prev = messageToLink[link.message_id];
+          if (!prev || String(link.id) > String(prev.rowId)) {
+            messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
+          }
         }
       });
+      const messageToLinkId = {};
+      for (const [msgId, val] of Object.entries(messageToLink)) {
+        messageToLinkId[msgId] = val.linkId;
+      }
 
       // Get follow-ups for these messages
       const { data: followups, error: followupsError } = await supabase
