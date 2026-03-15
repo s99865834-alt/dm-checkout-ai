@@ -444,7 +444,6 @@ export default function Index() {
                     {(instagramInfo?.id || metaAuth?.ig_business_id) && (
                       <span className="srCardDesc">
                         ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                        {metaAuth.token_expires_at && ` · Expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
                       </span>
                     )}
                   </div>
@@ -539,12 +538,10 @@ export default function Index() {
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                   <div className="srToggleStack">
                     <div className="srToggleRow">
-                      <div className="srToggleRowInner">
-                        <div className="srToggleRowText">
-                          <span className="srCardTitle">Tone</span>
-                          <span className="srCardDesc">Overall style of automated replies</span>
-                        </div>
-                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srSelectInline">
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">Tone</span>
+                        <span className="srCardDesc">Overall style of automated replies</span>
+                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
                           <option value="casual">Casual</option>
@@ -553,7 +550,7 @@ export default function Index() {
                     </div>
                     <div className="srToggleRow srToggleRowLast">
                       <div className="srToggleRowText">
-                        <span className="srCardTitle">Custom instruction</span>
+                        <span className="srCardTitle">Custom Voice</span>
                         <span className="srCardDesc">Optional override for reply style</span>
                         <input
                           type="text"
@@ -630,7 +627,7 @@ export default function Index() {
                         {/* Per-post automation toggle */}
                         <s-box padding="tight" borderWidth="base" borderRadius="base"
                           background={automationEnabled ? "success-subdued" : "subdued"}>
-                          <div className="srGridToggleRow">
+                          <div className="srGridToggleRow srGridStatusBox">
                             <div className="srGridToggleInfo">
                               <span className="srGridTextStrong">
                                 {automationEnabled ? "Automation Enabled" : "Automation Disabled"}
@@ -655,7 +652,7 @@ export default function Index() {
                         {/* Product mapping */}
                         {mapping ? (
                           <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                               <span className="srGridTextSuccess">Mapped to Product</span>
                               <span className="srGridTextSubdued">
                                 {mappedProduct?.title || (mapping.product_handle ? `Product: ${mapping.product_handle}` : "Product")}
@@ -672,7 +669,7 @@ export default function Index() {
                           </s-box>
                         ) : (
                           <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                               <span className="srGridTextSubdued">Not mapped</span>
                               <s-button
                                 variant="primary" size="small"

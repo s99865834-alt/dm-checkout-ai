@@ -348,6 +348,11 @@ s-page s-box.srCardCompact {
   gap: 2px;
 }
 
+/* Extra inner padding for grid status boxes (automation, mapping) */
+.srGridStatusBox {
+  padding: 10px 12px;
+}
+
 /* Billing page */
 .srPlanGrid {
   display: grid;
@@ -384,6 +389,28 @@ s-page s-box.srCardCompact {
 
 .srTh {
   font-weight: 600;
+}
+
+/* Analytics filter row: align inputs and buttons on one line */
+.srFilterRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Analytics filter buttons: match input height (32px) */
+.srFilterActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.srFilterActions s-button {
+  --s-button-height: 32px;
+  --s-button-min-height: 32px;
+  height: 32px;
+  min-height: 32px;
 }
 
 /* Analytics layout */
