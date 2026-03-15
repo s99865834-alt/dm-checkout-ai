@@ -610,7 +610,7 @@ export async function recordAttribution(params) {
  * @returns {Promise<Array>} Array of attribution records
  */
 export async function getAttributionRecords(shopId, filters = {}) {
-  const { channel, orderId, startDate, limit = 50 } = filters;
+  const { channel, orderId, startDate, limit = 50, linkIds = null } = filters;
   const endDate = filters.endDate && !filters.endDate.includes("T")
     ? `${filters.endDate}T23:59:59.999Z`
     : filters.endDate;
@@ -622,7 +622,10 @@ export async function getAttributionRecords(shopId, filters = {}) {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  // Apply filters
+  if (linkIds) {
+    query = query.in("link_id", linkIds.length > 0 ? linkIds : ["__none__"]);
+  }
+
   if (channel) {
     query = query.eq("channel", channel);
   }
@@ -776,6 +779,7 @@ export async function getMessages(shopId, options = {}) {
     endDate = null,
     orderBy = "created_at",
     orderDirection = "desc",
+    messageIds = null,
   } = options;
 
   let query = supabase
@@ -791,7 +795,10 @@ export async function getMessages(shopId, options = {}) {
     `)
     .eq("shop_id", shopId);
 
-  // Apply filters
+  if (messageIds) {
+    query = query.in("id", messageIds.length > 0 ? messageIds : ["__none__"]);
+  }
+
   if (channel) {
     query = query.eq("channel", channel);
   }
@@ -842,12 +849,16 @@ export async function getMessages(shopId, options = {}) {
  * Get message count for a shop (for pagination)
  */
 export async function getMessageCount(shopId, options = {}) {
-  const { channel = null, startDate = null, endDate = null } = options;
+  const { channel = null, startDate = null, endDate = null, messageIds = null } = options;
 
   let query = supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("shop_id", shopId);
+
+  if (messageIds) {
+    query = query.in("id", messageIds.length > 0 ? messageIds : ["__none__"]);
+  }
 
   if (channel) {
     query = query.eq("channel", channel);
@@ -1176,21 +1187,17 @@ export async function updateBrandVoice(shopId, brandVoice) {
  * Returns metrics based on plan tier
  */
 export async function getAnalytics(shopId, planName, options = {}) {
-  const { startDate } = options;
-  // If endDate is a bare date (YYYY-MM-DD), make it inclusive of the full day
+  const { startDate, productId = null } = options;
   const endDate = options.endDate && !options.endDate.includes("T")
     ? `${options.endDate}T23:59:59.999Z`
     : options.endDate;
   
   const analytics = {
-    // Free tier metrics
     messagesReceived: 0,
     linksSent: 0,
     clicks: 0,
     ctr: 0,
     topTriggerPhrases: [],
-    
-    // Growth tier metrics (additional)
     channelPerformance: {
       dm: { sent: 0, responded: 0, clicks: 0 },
       comment: { sent: 0, responded: 0, clicks: 0 },
@@ -1199,41 +1206,15 @@ export async function getAnalytics(shopId, planName, options = {}) {
   };
 
   try {
-    // Build date filter for Supabase queries
-    let messagesQuery = supabase
-      .from("messages")
-      .select(`
-        id,
-        channel,
-        ai_intent,
-        last_user_message_at,
-        created_at
-      `)
-      .eq("shop_id", shopId);
-
-    if (startDate) {
-      messagesQuery = messagesQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      messagesQuery = messagesQuery.lte("created_at", endDate);
-    }
-
-    // Get all messages that have links sent
-    const { data: allMessages, error: messagesError } = await messagesQuery;
-
-    if (messagesError) {
-      console.error("[analytics] Error fetching messages:", messagesError);
-      return analytics;
-    }
-
-    analytics.messagesReceived = (allMessages || []).length;
-
-    // Get ALL links_sent for this shop (not just those linked to messages)
+    // Get links_sent first (may be narrowed by productId)
     let linksQuery = supabase
       .from("links_sent")
-      .select("id, message_id, link_id")
+      .select("id, message_id, link_id, product_id")
       .eq("shop_id", shopId);
 
+    if (productId) {
+      linksQuery = linksQuery.eq("product_id", productId);
+    }
     if (startDate) {
       linksQuery = linksQuery.gte("created_at", startDate);
     }
@@ -1242,6 +1223,39 @@ export async function getAnalytics(shopId, planName, options = {}) {
     }
 
     const { data: linksSent, error: linksError } = await linksQuery;
+
+    if (linksError) {
+      console.error("[analytics] Error fetching links sent:", linksError);
+    }
+
+    // When filtering by post, scope messages to those with matching links
+    const postFilterMessageIds = productId
+      ? [...new Set((linksSent || []).map(l => l.message_id).filter(Boolean))]
+      : null;
+
+    let messagesQuery = supabase
+      .from("messages")
+      .select("id, channel, ai_intent, last_user_message_at, created_at")
+      .eq("shop_id", shopId);
+
+    if (postFilterMessageIds) {
+      messagesQuery = messagesQuery.in("id", postFilterMessageIds.length > 0 ? postFilterMessageIds : ["__none__"]);
+    }
+    if (startDate) {
+      messagesQuery = messagesQuery.gte("created_at", startDate);
+    }
+    if (endDate) {
+      messagesQuery = messagesQuery.lte("created_at", endDate);
+    }
+
+    const { data: allMessages, error: messagesError } = await messagesQuery;
+
+    if (messagesError) {
+      console.error("[analytics] Error fetching messages:", messagesError);
+      return analytics;
+    }
+
+    analytics.messagesReceived = (allMessages || []).length;
 
     if (linksError) {
       console.error("[analytics] Error fetching links sent:", linksError);
@@ -1368,54 +1382,40 @@ export async function getAnalytics(shopId, planName, options = {}) {
  * Includes customer segments, sentiment analysis, revenue attribution, follow-up performance
  */
 export async function getProAnalytics(shopId, options = {}) {
-  const { startDate } = options;
+  const { startDate, productId = null } = options;
   const endDate = options.endDate && !options.endDate.includes("T")
     ? `${options.endDate}T23:59:59.999Z`
     : options.endDate;
   
   const proAnalytics = {
-    customerSegments: {
-      firstTime: 0,
-      repeat: 0,
-      total: 0,
-    },
-    sentimentAnalysis: {
-      positive: 0,
-      neutral: 0,
-      negative: 0,
-      total: 0,
-    },
-    revenueAttribution: {
-      total: 0,
-      byChannel: {
-        dm: 0,
-        comment: 0,
-      },
-      currency: "USD",
-    },
+    customerSegments: { firstTime: 0, repeat: 0, total: 0 },
+    sentimentAnalysis: { positive: 0, neutral: 0, negative: 0, total: 0 },
+    revenueAttribution: { total: 0, byChannel: { dm: 0, comment: 0 }, currency: "USD" },
     followUpPerformance: {
-      withFollowup: {
-        messages: 0,
-        clicks: 0,
-        revenue: 0,
-        ctr: 0,
-      },
-      withoutFollowup: {
-        messages: 0,
-        clicks: 0,
-        revenue: 0,
-        ctr: 0,
-      },
+      withFollowup: { messages: 0, clicks: 0, revenue: 0, ctr: 0 },
+      withoutFollowup: { messages: 0, clicks: 0, revenue: 0, ctr: 0 },
     },
   };
 
   try {
-    // Build date filter
+    // When filtering by post/product, pre-fetch matching message IDs
+    let postFilterMessageIds = null;
+    if (productId) {
+      let pfLinksQ = supabase.from("links_sent").select("message_id").eq("shop_id", shopId).eq("product_id", productId);
+      if (startDate) pfLinksQ = pfLinksQ.gte("created_at", startDate);
+      if (endDate) pfLinksQ = pfLinksQ.lte("created_at", endDate);
+      const { data: pfLinks } = await pfLinksQ;
+      postFilterMessageIds = [...new Set((pfLinks || []).map(l => l.message_id).filter(Boolean))];
+    }
+
     let messagesQuery = supabase
       .from("messages")
       .select("*")
       .eq("shop_id", shopId);
 
+    if (postFilterMessageIds) {
+      messagesQuery = messagesQuery.in("id", postFilterMessageIds.length > 0 ? postFilterMessageIds : ["__none__"]);
+    }
     if (startDate) {
       messagesQuery = messagesQuery.gte("created_at", startDate);
     }

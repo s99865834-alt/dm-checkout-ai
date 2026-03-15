@@ -532,6 +532,88 @@ s-page s-box.srCardCompact {
   gap: 12px;
 }
 
+/* ── Post Picker Strip (analytics filter by post) ─────────────── */
+.srPostPickerStrip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.srPostPickerItem {
+  flex: 0 0 auto;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 2px solid #e1e3e5;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+  font: inherit;
+  text-align: center;
+}
+
+.srPostPickerItem:hover {
+  border-color: #b5b5b5;
+}
+
+.srPostPickerItemActive {
+  border-color: #008060;
+  box-shadow: 0 0 0 1px #008060;
+  background: #f0fdf4;
+}
+
+.srPostPickerImg {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.srPostPickerCaption {
+  font-size: 11px;
+  line-height: 1.3;
+  color: #6d7175;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 2.6em;
+  width: 100%;
+}
+
+.srPostPickerCheck {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #008060;
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.srLinkBtn {
+  background: none;
+  border: none;
+  color: #006e52;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+
 .srFlexWrap {
   flex-wrap: wrap;
 }
