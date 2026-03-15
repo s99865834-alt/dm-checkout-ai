@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLoaderData, useRouteError, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { validateBetaCode, getBetaTrialStatus } from "../lib/db.server";
+import { validateBetaCode, getBetaTrialStatus, setPendingBetaCode } from "../lib/db.server";
 import { createChargeViaAPI } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
@@ -24,6 +24,8 @@ export const action = async ({ request }) => {
   if (!validation.success) {
     return { error: validation.message };
   }
+
+  await setPendingBetaCode(shop.id, code);
 
   const storeHandle = session.shop.replace(".myshopify.com", "");
   const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=PRO&beta_code=${encodeURIComponent(code.trim().toUpperCase())}`;

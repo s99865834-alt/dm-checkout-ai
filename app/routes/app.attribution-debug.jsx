@@ -84,28 +84,15 @@ export default function AttributionDebugPage() {
 
   return (
     <s-page heading="Attribution Debug">
-      {shop && plan && (
-        <s-section>
-          <s-stack direction="inline" gap="base">
-            <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
-              {plan.name} Plan
-            </s-badge>
-            <s-text variant="bodyMd" tone="subdued">
-              Shop: {shop.shopify_domain}
-            </s-text>
-          </s-stack>
-        </s-section>
-      )}
-
       {/* Filters Section */}
       <s-section heading="Filters">
         <form onSubmit={handleFilterSubmit}>
           <s-stack direction="block" gap="base">
             <s-stack direction="inline" gap="base">
-              <s-box padding="base" border="base" borderRadius="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="channel">
-                    <s-text variant="strong">Channel</s-text>
+                    <s-text variant="subdued">Channel</s-text>
                   </label>
                   <select
                     id="channel"
@@ -120,10 +107,10 @@ export default function AttributionDebugPage() {
                 </s-stack>
               </s-box>
 
-              <s-box padding="base" border="base" borderRadius="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="order_id">
-                    <s-text variant="strong">Order ID</s-text>
+                    <s-text variant="subdued">Order ID</s-text>
                   </label>
                   <input
                     type="text"
@@ -136,10 +123,10 @@ export default function AttributionDebugPage() {
                 </s-stack>
               </s-box>
 
-              <s-box padding="base" border="base" borderRadius="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="start_date">
-                    <s-text variant="strong">Start Date</s-text>
+                    <s-text variant="subdued">Start Date</s-text>
                   </label>
                   <input
                     type="date"
@@ -151,10 +138,10 @@ export default function AttributionDebugPage() {
                 </s-stack>
               </s-box>
 
-              <s-box padding="base" border="base" borderRadius="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="end_date">
-                    <s-text variant="strong">End Date</s-text>
+                    <s-text variant="subdued">End Date</s-text>
                   </label>
                   <input
                     type="date"
@@ -166,10 +153,10 @@ export default function AttributionDebugPage() {
                 </s-stack>
               </s-box>
 
-              <s-box padding="base" border="base" borderRadius="base">
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <s-stack direction="block" gap="tight">
                   <label htmlFor="limit">
-                    <s-text variant="strong">Limit</s-text>
+                    <s-text variant="subdued">Limit</s-text>
                   </label>
                   <input
                     type="number"
@@ -203,7 +190,7 @@ export default function AttributionDebugPage() {
             <s-text tone="subdued">No attribution records found.</s-text>
           </s-box>
         ) : (
-          <s-box padding="base" border="base" borderRadius="base">
+          <s-box padding="base" borderWidth="base" borderRadius="base">
             <table className="srTable">
               <thead>
                 <tr>

@@ -112,7 +112,7 @@ export default function ProductContextPreview() {
     <s-page heading="Product context preview">
       <s-section>
         <s-text>
-          This page shows the <strong>exact product context</strong> sent to the
+          This page shows the <s-text variant="strong">exact product context</s-text> sent to the
           AI when someone comments on a post with a mapped product. Use it to
           verify that the AI has access to the mapped product (including
           single-variant / “no other colors”).
@@ -134,7 +134,7 @@ export default function ProductContextPreview() {
             <select
               value={selectedProductId || ""}
               onChange={handleSelect}
-              style={{ marginTop: 8, minWidth: 280 }}
+              className="srSelect"
             >
               {productMappings.map((m) => (
                 <option key={m.product_id} value={m.product_id}>
@@ -149,11 +149,12 @@ export default function ProductContextPreview() {
             <s-section>
               <s-text tone="critical">{error}</s-text>
               {error.includes("read_products") && (
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" style={{ marginTop: 12 }}>
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                   <s-text variant="strong">Fix: get a new token with read_products</s-text>
-                  <s-text style={{ display: "block", marginTop: 8 }}>
+                  <s-text>
                     1) In Railway (or your host), set <code>SCOPES=read_products,write_products,read_orders</code> and redeploy.
-                    <br />
+                  </s-text>
+                  <s-text>
                     2) Re-authorize the app so Shopify issues a new token: open{" "}
                     <a href="/auth/login">/auth/login</a> in a new tab and complete login, or uninstall and reinstall the app from your Shopify admin.
                   </s-text>
@@ -168,25 +169,15 @@ export default function ProductContextPreview() {
                 Variant count: {variantCount ?? "—"}
                 {variantCount === 1 && " (single variant → AI must say no to “other colors/sizes”)"}
               </s-text>
-              <s-text tone="subdued" style={{ display: "block", marginTop: 4 }}>
+              <s-text tone="subdued">
                 Text below is exactly what the model sees in the PRODUCT CONTEXT
                 block for comment replies.
               </s-text>
-              <pre
-                style={{
-                  marginTop: 12,
-                  padding: 16,
-                  background: "#f5f5f5",
-                  borderRadius: 8,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontSize: 13,
-                  maxHeight: 400,
-                  overflow: "auto",
-                }}
-              >
-                {productContextText || "(empty)"}
-              </pre>
+              <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                <pre className="srPreWrap" style={{ margin: 0, fontSize: 13, maxHeight: 400, overflow: "auto" }}>
+                  {productContextText || "(empty)"}
+                </pre>
+              </s-box>
             </s-section>
           )}
         </>

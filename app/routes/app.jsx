@@ -3,11 +3,20 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
+import { tryRedeemPendingBeta } from "../lib/db.server";
+import { getPlanConfig } from "../lib/plans";
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  let { shop, plan, admin } = await getShopWithPlan(request);
 
-  // eslint-disable-next-line no-undef
+  if (shop?.pending_beta_code && !shop.beta_trial_expires_at) {
+    const redeemed = await tryRedeemPendingBeta(shop.id, admin);
+    if (redeemed) {
+      plan = getPlanConfig("PRO");
+      shop = { ...shop, plan: "PRO", beta_trial_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), pending_beta_code: null };
+    }
+  }
+
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     shop,
