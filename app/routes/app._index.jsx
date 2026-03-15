@@ -127,11 +127,24 @@ export const action = async ({ request }) => {
       try {
         const currentSettings = await getSettings(shop.id, plan?.name);
         const current = currentSettings?.enabled_post_ids || [];
-        const newIds = togglePost === "enable"
-          ? current.includes(postId) ? current : [...current, postId]
-          : current.filter((id) => id !== postId);
-        await updateSettings(shop.id, { enabled_post_ids: newIds }, plan?.name);
-        return { success: true, actionType: "toggle-post-automation", message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+        let newIds;
+        if (togglePost === "enable") {
+          newIds = current.includes(postId) ? current : [...current, postId];
+        } else {
+          if (current.length === 0) {
+            const allMediaIds = JSON.parse(formData.get("allMediaIds") || "[]");
+            newIds = allMediaIds.filter((id) => id !== postId);
+          } else {
+            newIds = current.filter((id) => id !== postId);
+          }
+        }
+        await updateSettings(shop.id, {
+          dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
+          comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
+          followup_enabled: currentSettings?.followup_enabled ?? false,
+          enabled_post_ids: newIds,
+        }, plan?.name);
+        return { success: true, actionType: "toggle-post-automation", newEnabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
         return { error: err.message || "Failed to toggle post automation" };
@@ -286,8 +299,8 @@ export default function Index() {
       });
     } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
       setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
-    } else if (actionType === "toggle-post-automation") {
-      setTimeout(() => revalidator.revalidate(), 100);
+    } else if (actionType === "toggle-post-automation" && postFetcher.data.newEnabledIds) {
+      setLocalEnabledPostIds(postFetcher.data.newEnabledIds);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
 
@@ -313,14 +326,30 @@ export default function Index() {
     return n(storedId) === n(shopifyProductId);
   };
   const mappingsMap = new Map((localMappings || []).map((m) => [m.ig_media_id, m]));
-  const enabledPostIds = settings?.enabled_post_ids || [];
-  const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
+  const [localEnabledPostIds, setLocalEnabledPostIds] = useState(settings?.enabled_post_ids || []);
+
+  useEffect(() => {
+    setLocalEnabledPostIds(settings?.enabled_post_ids || []);
+  }, [settings?.enabled_post_ids]);
+
+  const isPostEnabled = (postId) => localEnabledPostIds.length === 0 || localEnabledPostIds.includes(postId);
 
   const handleTogglePost = (postId, currentlyEnabled) => {
     const fd = new FormData();
     fd.append("action", "toggle-post-automation");
     fd.append("postId", postId);
     fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
+
+    if (currentlyEnabled && localEnabledPostIds.length === 0 && mediaData?.data) {
+      const allIds = mediaData.data.map((m) => m.id);
+      fd.append("allMediaIds", JSON.stringify(allIds));
+      setLocalEnabledPostIds(allIds.filter((id) => id !== postId));
+    } else if (currentlyEnabled) {
+      setLocalEnabledPostIds((prev) => prev.filter((id) => id !== postId));
+    } else {
+      setLocalEnabledPostIds((prev) => [...prev, postId]);
+    }
+
     postFetcher.submit(fd, { method: "post" });
   };
 
