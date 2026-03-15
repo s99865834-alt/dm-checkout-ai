@@ -261,8 +261,89 @@ export default function AnalyticsPage() {
     });
   };
 
+    const usagePct = shop?.usage_count && plan?.cap ? Math.round((shop.usage_count / plan.cap) * 100) : 0;
+
     return (
       <s-page heading="Analytics">
+
+          {/* ── Usage nudges ─────────────────────────────────── */}
+          {plan?.name === "FREE" && shop?.usage_count >= plan?.cap && (
+            <s-banner tone="critical">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srTextStrong">Message limit reached — analytics are paused.</span>
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                    You've used all {plan.cap} messages this month. Upgrade to keep tracking and unlock full analytics.
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
+              </div>
+            </s-banner>
+          )}
+          {plan?.name === "FREE" && shop?.usage_count >= plan?.cap * 0.8 && shop?.usage_count < plan?.cap && (
+            <s-banner tone="warning">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                    Growth plan ($39/mo) includes 500 messages, order attribution, and full analytics.
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="secondary" size="slim">View plans</s-button>
+              </div>
+            </s-banner>
+          )}
+          {plan?.name === "FREE" && !(shop?.usage_count >= plan?.cap * 0.8) && (
+            <s-banner tone="info">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srTextStrong">Unlock full analytics</span>
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                    Free plan includes basic overview stats. Upgrade for order attribution, per-post filtering, and detailed conversion tracking.
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="secondary" size="slim">Compare plans</s-button>
+              </div>
+            </s-banner>
+          )}
+          {plan?.name === "GROWTH" && shop?.usage_count >= plan?.cap && (
+            <s-banner tone="critical">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srTextStrong">Message limit reached — automation is paused.</span>
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                    Upgrade to Pro for 10,000 messages/mo, follow-ups, and per-post analytics.
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+              </div>
+            </s-banner>
+          )}
+          {plan?.name === "GROWTH" && shop?.usage_count >= plan?.cap * 0.8 && shop?.usage_count < plan?.cap && (
+            <s-banner tone="warning">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                    Pro plan ($99/mo) includes 10,000 messages, per-post analytics, and multi-turn conversations.
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>
+              </div>
+            </s-banner>
+          )}
+          {plan?.name === "GROWTH" && !(shop?.usage_count >= plan?.cap * 0.8) && (
+            <s-banner tone="info">
+              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <span className="srCardDesc">
+                    Want per-post analytics filtering, follow-up messages, and multi-turn conversations? <strong>Upgrade to Pro.</strong>
+                  </span>
+                </div>
+                <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>
+              </div>
+            </s-banner>
+          )}
 
           {/* Analytics Date Range Filter */}
           <s-section heading="Overview">

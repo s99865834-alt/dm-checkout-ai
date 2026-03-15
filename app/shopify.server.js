@@ -34,7 +34,7 @@ const shopify = shopifyApp({
     try {
       const result = await createOrUpdateShop(session.shop, {
         plan: "FREE",
-        monthly_cap: 25,
+        monthly_cap: 100,
         active: true,
       });
       logger.debug(`[afterAuth] Shop ${session.shop} created/updated in database - active: ${result.active}, usage_count: ${result.usage_count}`);

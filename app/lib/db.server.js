@@ -64,7 +64,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
   // Base defaults - these are the initial values for a new shop
   const baseDefaults = {
     plan: "FREE",
-    monthly_cap: 25,
+    monthly_cap: 100,
     usage_month: usageMonth,
     usage_count: 0, // Always start at 0 on install/reinstall
     priority_support: false,
@@ -877,6 +877,29 @@ export async function getMessageCount(shopId, options = {}) {
   if (error) {
     console.error("getMessageCount error", error);
     throw error;
+  }
+
+  return count || 0;
+}
+
+/**
+ * Count comment messages this month for Free-tier shops (no comment automation).
+ * Used to show Free users how many comments they received but couldn't auto-reply to.
+ */
+export async function getMissedCommentCount(shopId) {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("channel", "comment")
+    .gte("created_at", monthStart);
+
+  if (error) {
+    console.error("getMissedCommentCount error", error);
+    return 0;
   }
 
   return count || 0;

@@ -3,7 +3,7 @@ import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -70,7 +70,12 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
+  let missedComments = 0;
+  if (shop?.id && plan?.name === "FREE") {
+    missedComments = await getMissedCommentCount(shop.id);
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments };
 };
 
 export const action = async ({ request }) => {
@@ -242,7 +247,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -415,6 +420,88 @@ export default function Index() {
             {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
             {" "}({Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)
           </s-text>
+        </s-banner>
+      )}
+
+      {/* ── Upgrade prompts ─────────────────────────────────────────────── */}
+      {shop && plan && plan.name === "FREE" && shop.usage_count >= plan.cap && (
+        <s-banner tone="critical">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                New DMs won't receive automated responses until next month.
+                Upgrade to Growth for 500 messages/mo plus comment automation and brand voice.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "FREE" && shop.usage_count >= plan.cap * 0.8 && shop.usage_count < plan.cap && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Running low on messages. Upgrade to Growth for 5x the limit plus comment automation and full analytics.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">View plans</s-button>
+          </div>
+        </s-banner>
+      )}
+      {plan && plan.name === "FREE" && missedComments > 0 && (
+        <s-banner tone="info">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">{missedComments} comment{missedComments === 1 ? "" : "s"} received this month without an automated reply.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Comment-to-DM automation is available on Growth ($39/mo). Turn comments into checkout links automatically.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="secondary" size="slim">Unlock comment automation</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "GROWTH" && shop.usage_count >= plan.cap && (
+        <s-banner tone="critical">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Automation is paused until next month. Upgrade to Pro for 10,000 messages/mo, follow-ups, and per-post analytics.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "GROWTH" && shop.usage_count >= plan.cap * 0.8 && shop.usage_count < plan.cap && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Upgrade to Pro for 10,000 messages/mo plus follow-up messages and multi-turn conversations.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "FREE" && shop.usage_count === 0 && !missedComments && (
+        <s-banner tone="success">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">Welcome to DM Checkout AI!</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram account, map products to posts, and DM automation will handle the rest.
+                Ready for more? Growth adds comment automation, brand voice, and 500 messages/mo.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
+          </div>
         </s-banner>
       )}
 
