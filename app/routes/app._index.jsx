@@ -611,16 +611,8 @@ export default function Index() {
         <s-section heading="Your Instagram Posts">
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <span className="srCardDesc">
-              Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the checkboxes to enable or disable automation per post.
+              Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the toggles to enable or disable automation per post.
             </span>
-
-            {metaAuth?.auth_type === "instagram" && (
-              <s-callout variant="info" title="Comment replies require Facebook Login">
-                <s-paragraph>
-                  Instagram Login supports DMs but cannot send private comment replies. Connect via Facebook on this page to enable comment automation.
-                </s-paragraph>
-              </s-callout>
-            )}
 
             {!mediaData ? (
               <span className="srCardDesc">Fetching your Instagram posts…</span>
@@ -669,13 +661,14 @@ export default function Index() {
                                   : "AI will NOT respond to comments/DMs on this post"}
                               </span>
                             </div>
-                            <label className="srCheckboxLabel">
+                            <label className="srToggle">
                               <input
                                 type="checkbox"
                                 checked={automationEnabled}
                                 onChange={() => handleTogglePost(media.id, automationEnabled)}
                                 disabled={postFetcher.state !== "idle"}
                               />
+                              <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                             </label>
                           </div>
                         </s-box>
