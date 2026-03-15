@@ -273,59 +273,52 @@ export default function AnalyticsPage() {
               <>
                 {analytics.messagesReceived === 0 && analytics.linksSent === 0 ? (
                   <s-box padding="base" borderWidth="base" borderRadius="base">
-                    <s-stack direction="block" gap="tight">
-                      <s-text variant="strong">No data yet</s-text>
-                      <s-text variant="subdued">
+                    <div className="srCardPad srVStackTight">
+                      <span className="srTextStrong">No data yet</span>
+                      <span className="srTextSubdued">
                         Once you start receiving messages and sending links, your analytics will appear here.
-                      </s-text>
-                    </s-stack>
+                      </span>
+                    </div>
                   </s-box>
                 ) : (
-                  <>
-                    {/* Free Tier Metrics - Everyone sees these */}
-                    <s-stack direction="block" gap="base">
+                  <div className="srVStack">
+                    {/* Free Tier Metrics */}
                     <div className="srKpiGrid">
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                        <s-stack direction="block" gap="tight">
-                          <s-text variant="subdued">Messages Received</s-text>
-                          <s-text variant="headingLg">
+                        <div className="srCardPad srVStackTight">
+                          <span className="srTextSubdued">Messages Received</span>
+                          <span className="srHeadingLg">
                             {analytics.messagesReceived || 0}
                             {plan?.name === "FREE" && (
-                              <s-text variant="subdued" as="span"> / {plan?.cap || 25}</s-text>
+                              <span className="srTextSubdued" style={{ fontSize: 14, fontWeight: 400 }}> / {plan?.cap || 25}</span>
                             )}
-                          </s-text>
-                        </s-stack>
+                          </span>
+                        </div>
                       </s-box>
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                        <s-stack direction="block" gap="tight">
-                          <s-text variant="subdued">Links Sent</s-text>
-                          <s-text variant="headingLg">
-                            {analytics.linksSent || 0}
-                          </s-text>
-                        </s-stack>
+                        <div className="srCardPad srVStackTight">
+                          <span className="srTextSubdued">Links Sent</span>
+                          <span className="srHeadingLg">{analytics.linksSent || 0}</span>
+                        </div>
                       </s-box>
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                        <s-stack direction="block" gap="tight">
-                          <s-text variant="subdued">Clicks</s-text>
-                          <s-text variant="headingLg">
-                            {analytics.clicks || 0}
-                          </s-text>
-                        </s-stack>
+                        <div className="srCardPad srVStackTight">
+                          <span className="srTextSubdued">Clicks</span>
+                          <span className="srHeadingLg">{analytics.clicks || 0}</span>
+                        </div>
                       </s-box>
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                        <s-stack direction="block" gap="tight">
-                          <s-text variant="subdued">Click-Through Rate</s-text>
-                          <s-text variant="headingLg">
-                            {analytics.ctr ? `${analytics.ctr.toFixed(1)}%` : "0%"}
-                          </s-text>
-                        </s-stack>
+                        <div className="srCardPad srVStackTight">
+                          <span className="srTextSubdued">Click-Through Rate</span>
+                          <span className="srHeadingLg">{analytics.ctr ? `${analytics.ctr.toFixed(1)}%` : "0%"}</span>
+                        </div>
                       </s-box>
                     </div>
 
                     {analytics.topTriggerPhrases && analytics.topTriggerPhrases.length > 0 && (
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                        <s-stack direction="block" gap="base">
-                          <s-text variant="strong">Top Trigger Phrases</s-text>
+                        <div className="srCardPad srVStack">
+                          <span className="srTextStrong">Top Trigger Phrases</span>
                           <div className="srWrapRow">
                             {analytics.topTriggerPhrases.map((phrase, idx) => (
                               <s-badge key={idx} tone="info">
@@ -333,501 +326,306 @@ export default function AnalyticsPage() {
                               </s-badge>
                             ))}
                           </div>
-                        </s-stack>
+                        </div>
                       </s-box>
                     )}
 
-                    {/* Growth Tier Metrics - Growth and Pro see these */}
+                    {/* Growth Tier: Channel Performance */}
                     <PlanGate requiredPlan="GROWTH" feature="Channel Performance Analytics">
                       {analytics.channelPerformance ? (
                         <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                          <s-stack direction="block" gap="base">
-                            <s-text variant="strong">Channel Performance</s-text>
+                          <div className="srCardPad srVStack">
+                            <span className="srTextStrong">Channel Performance</span>
                             <div className="srGridAuto250">
                               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                                <s-stack direction="block" gap="base">
-                                  <s-text variant="strong">Direct Messages</s-text>
-                                  <s-stack direction="block" gap="tight">
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Sent: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.dm.sent}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Responded: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.dm.responded}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Clicks: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.dm.clicks}</s-text>
-                                    </s-text>
+                                <div className="srCardPad srVStack">
+                                  <span className="srTextStrong">Direct Messages</span>
+                                  <div className="srVStackTight">
+                                    <span className="srStatRow"><span className="srStatLabel">Sent: </span><span className="srStatValue">{analytics.channelPerformance.dm.sent}</span></span>
+                                    <span className="srStatRow"><span className="srStatLabel">Responded: </span><span className="srStatValue">{analytics.channelPerformance.dm.responded}</span></span>
+                                    <span className="srStatRow"><span className="srStatLabel">Clicks: </span><span className="srStatValue">{analytics.channelPerformance.dm.clicks}</span></span>
                                     {analytics.channelPerformance.dm.sent > 0 && (
-                                      <s-text variant="bodyMd">
-                                        <s-text variant="subdued">CTR: </s-text>
-                                        <s-text variant="strong">{((analytics.channelPerformance.dm.clicks / analytics.channelPerformance.dm.sent) * 100).toFixed(1)}%</s-text>
-                                      </s-text>
+                                      <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.dm.clicks / analytics.channelPerformance.dm.sent) * 100).toFixed(1)}%</span></span>
                                     )}
-                                  </s-stack>
-                                </s-stack>
+                                  </div>
+                                </div>
                               </s-box>
                               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                                <s-stack direction="block" gap="base">
-                                  <s-text variant="strong">Comments</s-text>
-                                  <s-stack direction="block" gap="tight">
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Sent: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.comment.sent}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Responded: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.comment.responded}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Clicks: </s-text>
-                                      <s-text variant="strong">{analytics.channelPerformance.comment.clicks}</s-text>
-                                    </s-text>
+                                <div className="srCardPad srVStack">
+                                  <span className="srTextStrong">Comments</span>
+                                  <div className="srVStackTight">
+                                    <span className="srStatRow"><span className="srStatLabel">Sent: </span><span className="srStatValue">{analytics.channelPerformance.comment.sent}</span></span>
+                                    <span className="srStatRow"><span className="srStatLabel">Responded: </span><span className="srStatValue">{analytics.channelPerformance.comment.responded}</span></span>
+                                    <span className="srStatRow"><span className="srStatLabel">Clicks: </span><span className="srStatValue">{analytics.channelPerformance.comment.clicks}</span></span>
                                     {analytics.channelPerformance.comment.sent > 0 && (
-                                      <s-text variant="bodyMd">
-                                        <s-text variant="subdued">CTR: </s-text>
-                                        <s-text variant="strong">{((analytics.channelPerformance.comment.clicks / analytics.channelPerformance.comment.sent) * 100).toFixed(1)}%</s-text>
-                                      </s-text>
+                                      <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.comment.clicks / analytics.channelPerformance.comment.sent) * 100).toFixed(1)}%</span></span>
                                     )}
-                                  </s-stack>
-                                </s-stack>
+                                  </div>
+                                </div>
                               </s-box>
                             </div>
-                          </s-stack>
+                          </div>
                         </s-box>
                       ) : null}
                     </PlanGate>
 
-                    {/* Pro Tier Metrics - Only Pro sees these */}
+                    {/* Pro Tier Metrics */}
                     <PlanGate requiredPlan="PRO" feature="Pro Analytics">
                       {proAnalytics ? (
                         <div className="srGridAuto280">
                           {/* Customer Segments */}
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                            <s-stack direction="block" gap="base">
-                              <s-text variant="strong">Customer Segments</s-text>
-                              <s-stack direction="block" gap="tight">
-                                <s-text variant="bodyMd">
-                                  <s-text variant="subdued">Total: </s-text>
-                                  <s-text variant="strong">{proAnalytics.customerSegments.total}</s-text>
-                                </s-text>
-                                <s-text variant="bodyMd">
-                                  <s-text variant="subdued">First-Time: </s-text>
-                                  <s-text variant="strong">{proAnalytics.customerSegments.firstTime}</s-text>
-                                </s-text>
-                                <s-text variant="bodyMd">
-                                  <s-text variant="subdued">Repeat: </s-text>
-                                  <s-text variant="strong">{proAnalytics.customerSegments.repeat}</s-text>
-                                </s-text>
+                            <div className="srCardPad srVStack">
+                              <span className="srTextStrong">Customer Segments</span>
+                              <div className="srVStackTight">
+                                <span className="srStatRow"><span className="srStatLabel">Total: </span><span className="srStatValue">{proAnalytics.customerSegments.total}</span></span>
+                                <span className="srStatRow"><span className="srStatLabel">First-Time: </span><span className="srStatValue">{proAnalytics.customerSegments.firstTime}</span></span>
+                                <span className="srStatRow"><span className="srStatLabel">Repeat: </span><span className="srStatValue">{proAnalytics.customerSegments.repeat}</span></span>
                                 {proAnalytics.customerSegments.total > 0 && (
-                                  <s-text variant="bodyMd">
-                                    <s-text variant="subdued">Repeat Rate: </s-text>
-                                    <s-text variant="strong">{((proAnalytics.customerSegments.repeat / proAnalytics.customerSegments.total) * 100).toFixed(1)}%</s-text>
-                                  </s-text>
+                                  <span className="srStatRow"><span className="srStatLabel">Repeat Rate: </span><span className="srStatValue">{((proAnalytics.customerSegments.repeat / proAnalytics.customerSegments.total) * 100).toFixed(1)}%</span></span>
                                 )}
-                              </s-stack>
-                            </s-stack>
+                              </div>
+                            </div>
                           </s-box>
 
                           {/* Sentiment Analysis */}
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                            <s-stack direction="block" gap="base">
-                              <s-text variant="strong">Sentiment Analysis</s-text>
+                            <div className="srCardPad srVStack">
+                              <span className="srTextStrong">Sentiment Analysis</span>
                               {proAnalytics.sentimentAnalysis.total > 0 ? (
-                                <s-stack direction="block" gap="tight">
-                                  <s-text variant="bodyMd">
-                                    <s-text variant="subdued">Analyzed: </s-text>
-                                    <s-text variant="strong">{proAnalytics.sentimentAnalysis.total}</s-text>
-                                  </s-text>
-                                  <s-text variant="bodyMd">
-                                    <s-stack direction="inline" gap="tight" alignment="center">
-                                      <s-badge tone="success">Positive</s-badge>
-                                    {proAnalytics.sentimentAnalysis.positive} ({((proAnalytics.sentimentAnalysis.positive / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)
-                                    </s-stack>
-                                  </s-text>
-                                  <s-text variant="bodyMd">
-                                    <s-stack direction="inline" gap="tight" alignment="center">
-                                      <s-badge tone="subdued">Neutral</s-badge>
-                                    {proAnalytics.sentimentAnalysis.neutral} ({((proAnalytics.sentimentAnalysis.neutral / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)
-                                    </s-stack>
-                                  </s-text>
-                                  <s-text variant="bodyMd">
-                                    <s-stack direction="inline" gap="tight" alignment="center">
-                                      <s-badge tone="critical">Negative</s-badge>
-                                    {proAnalytics.sentimentAnalysis.negative} ({((proAnalytics.sentimentAnalysis.negative / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)
-                                    </s-stack>
-                                  </s-text>
-                                </s-stack>
+                                <div className="srVStackTight">
+                                  <span className="srStatRow"><span className="srStatLabel">Analyzed: </span><span className="srStatValue">{proAnalytics.sentimentAnalysis.total}</span></span>
+                                  <div className="srHStackTight">
+                                    <s-badge tone="success">Positive</s-badge>
+                                    <span className="srTextBody">{proAnalytics.sentimentAnalysis.positive} ({((proAnalytics.sentimentAnalysis.positive / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)</span>
+                                  </div>
+                                  <div className="srHStackTight">
+                                    <s-badge tone="subdued">Neutral</s-badge>
+                                    <span className="srTextBody">{proAnalytics.sentimentAnalysis.neutral} ({((proAnalytics.sentimentAnalysis.neutral / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)</span>
+                                  </div>
+                                  <div className="srHStackTight">
+                                    <s-badge tone="critical">Negative</s-badge>
+                                    <span className="srTextBody">{proAnalytics.sentimentAnalysis.negative} ({((proAnalytics.sentimentAnalysis.negative / proAnalytics.sentimentAnalysis.total) * 100).toFixed(1)}%)</span>
+                                  </div>
+                                </div>
                               ) : (
-                                <s-text variant="subdued">No sentiment data available yet</s-text>
+                                <span className="srTextSubdued">No sentiment data available yet</span>
                               )}
-                            </s-stack>
+                            </div>
                           </s-box>
 
                           {/* Revenue Attribution */}
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                            <s-stack direction="block" gap="base">
-                              <s-text variant="strong">Revenue Attribution</s-text>
-                              <s-stack direction="block" gap="tight">
-                                <s-text variant="headingMd">
-                                  {formatCurrency(proAnalytics.revenueAttribution.total, proAnalytics.revenueAttribution.currency)}
-                                </s-text>
-                                <s-text variant="bodyMd">
-                                  <s-text variant="subdued">From DMs: </s-text>
-                                  <s-text variant="strong">{formatCurrency(proAnalytics.revenueAttribution.byChannel.dm, proAnalytics.revenueAttribution.currency)}</s-text>
-                                </s-text>
-                                <s-text variant="bodyMd">
-                                  <s-text variant="subdued">From Comments: </s-text>
-                                  <s-text variant="strong">{formatCurrency(proAnalytics.revenueAttribution.byChannel.comment, proAnalytics.revenueAttribution.currency)}</s-text>
-                                </s-text>
-                              </s-stack>
-                            </s-stack>
+                            <div className="srCardPad srVStack">
+                              <span className="srTextStrong">Revenue Attribution</span>
+                              <div className="srVStackTight">
+                                <span className="srHeadingMd">{formatCurrency(proAnalytics.revenueAttribution.total, proAnalytics.revenueAttribution.currency)}</span>
+                                <span className="srStatRow"><span className="srStatLabel">From DMs: </span><span className="srStatValue">{formatCurrency(proAnalytics.revenueAttribution.byChannel.dm, proAnalytics.revenueAttribution.currency)}</span></span>
+                                <span className="srStatRow"><span className="srStatLabel">From Comments: </span><span className="srStatValue">{formatCurrency(proAnalytics.revenueAttribution.byChannel.comment, proAnalytics.revenueAttribution.currency)}</span></span>
+                              </div>
+                            </div>
                           </s-box>
 
                           {/* Follow-Up Performance */}
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-                            <s-stack direction="block" gap="base">
-                              <s-text variant="strong">Follow-Up Performance</s-text>
-                              <s-stack direction="block" gap="base">
-                                <div>
-                                  <s-text variant="subdued">With Follow-Up</s-text>
-                                  <s-stack direction="block" gap="tight">
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Messages: </s-text>
-                                      <s-text variant="strong">{proAnalytics.followUpPerformance.withFollowup.messages}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">CTR: </s-text>
-                                      <s-text variant="strong">{proAnalytics.followUpPerformance.withFollowup.ctr.toFixed(1)}%</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Revenue: </s-text>
-                                      <s-text variant="strong">{formatCurrency(proAnalytics.followUpPerformance.withFollowup.revenue, proAnalytics.revenueAttribution.currency)}</s-text>
-                                    </s-text>
-                                  </s-stack>
+                            <div className="srCardPad srVStack">
+                              <span className="srTextStrong">Follow-Up Performance</span>
+                              <div className="srVStackTight">
+                                <span className="srTextSubdued">With Follow-Up</span>
+                                <span className="srStatRow"><span className="srStatLabel">Messages: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.messages}</span></span>
+                                <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.ctr.toFixed(1)}%</span></span>
+                                <span className="srStatRow"><span className="srStatLabel">Revenue: </span><span className="srStatValue">{formatCurrency(proAnalytics.followUpPerformance.withFollowup.revenue, proAnalytics.revenueAttribution.currency)}</span></span>
+                              </div>
+                              <div className="srDividerTop">
+                                <div className="srVStackTight">
+                                  <span className="srTextSubdued">Without Follow-Up</span>
+                                  <span className="srStatRow"><span className="srStatLabel">Messages: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withoutFollowup.messages}</span></span>
+                                  <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withoutFollowup.ctr.toFixed(1)}%</span></span>
+                                  <span className="srStatRow"><span className="srStatLabel">Revenue: </span><span className="srStatValue">{formatCurrency(proAnalytics.followUpPerformance.withoutFollowup.revenue, proAnalytics.revenueAttribution.currency)}</span></span>
                                 </div>
-                                <div className="srDividerTop">
-                                  <s-text variant="subdued">Without Follow-Up</s-text>
-                                  <s-stack direction="block" gap="tight">
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Messages: </s-text>
-                                      <s-text variant="strong">{proAnalytics.followUpPerformance.withoutFollowup.messages}</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">CTR: </s-text>
-                                      <s-text variant="strong">{proAnalytics.followUpPerformance.withoutFollowup.ctr.toFixed(1)}%</s-text>
-                                    </s-text>
-                                    <s-text variant="bodyMd">
-                                      <s-text variant="subdued">Revenue: </s-text>
-                                      <s-text variant="strong">{formatCurrency(proAnalytics.followUpPerformance.withoutFollowup.revenue, proAnalytics.revenueAttribution.currency)}</s-text>
-                                    </s-text>
-                                  </s-stack>
-                                </div>
-                              </s-stack>
-                            </s-stack>
+                              </div>
+                            </div>
                           </s-box>
                         </div>
                       ) : null}
                     </PlanGate>
-                    </s-stack>
-                  </>
+                  </div>
                 )}
               </>
             ) : (
-              <s-paragraph>
-                <s-text variant="subdued">Loading analytics...</s-text>
-              </s-paragraph>
+              <span className="srTextSubdued">Loading analytics...</span>
             )}
           </s-section>
 
-          {/* Attribution Debug Section */}
+          {/* Order Attribution */}
           <s-section heading="Order Attribution">
-            <s-stack direction="block" gap="base">
+            <div className="srVStack">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                <s-text variant="bodyMd" tone="subdued">
-                  Track which orders came from Instagram DMs and comments via attribution links.
-                </s-text>
+                <div className="srCardPad">
+                  <span className="srTextSubdued">Track which orders came from Instagram DMs and comments via attribution links.</span>
+                </div>
               </s-box>
 
-              {/* Filters Section */}
+              {/* Filters */}
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                <s-stack direction="block" gap="base">
-                  <s-text variant="strong">Filters</s-text>
-                <form onSubmit={handleFilterSubmit}>
-                  <s-stack direction="block" gap="base">
-                    <s-stack direction="inline" gap="base">
-                      <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
-                      <s-stack direction="block" gap="tight">
-                        <label htmlFor="channel">
-                          <s-text variant="subdued">Channel</s-text>
+                <div className="srCardPad srVStack">
+                  <span className="srTextStrong">Filters</span>
+                  <form onSubmit={handleFilterSubmit}>
+                    <div className="srVStack">
+                      <div className="srFilterRow">
+                        <label className="srFieldLabel srFlex1">
+                          <span className="srTextSubdued">Channel</span>
+                          <select id="channel" name="channel" className="srSelect" defaultValue={filters.channel || ""}>
+                            <option value="">All Channels</option>
+                            <option value="dm">DM</option>
+                            <option value="comment">Comment</option>
+                          </select>
                         </label>
-                        <select
-                          id="channel"
-                          name="channel"
-                          className="srSelect"
-                          defaultValue={filters.channel || ""}
-                        >
-                          <option value="">All Channels</option>
-                          <option value="dm">DM</option>
-                          <option value="comment">Comment</option>
-                        </select>
-                      </s-stack>
-                    </s-box>
-
-                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
-                      <s-stack direction="block" gap="tight">
-                        <label htmlFor="order_id">
-                          <s-text variant="subdued">Order ID</s-text>
+                        <label className="srFieldLabel srFlex1">
+                          <span className="srTextSubdued">Order ID</span>
+                          <input type="text" id="order_id" name="order_id" placeholder="e.g., 123456789" defaultValue={filters.orderId || ""} className="srInput" />
                         </label>
-                        <input
-                          type="text"
-                          id="order_id"
-                          name="order_id"
-                          placeholder="e.g., 123456789"
-                          defaultValue={filters.orderId || ""}
-                          className="srInput"
-                        />
-                      </s-stack>
-                    </s-box>
-
-                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
-                      <s-stack direction="block" gap="tight">
-                        <label htmlFor="start_date">
-                          <s-text variant="subdued">Start Date</s-text>
+                        <label className="srFieldLabel srFlex1">
+                          <span className="srTextSubdued">Start Date</span>
+                          <input type="date" id="start_date" name="start_date" defaultValue={filters.startDate || ""} className="srInput" />
                         </label>
-                        <input
-                          type="date"
-                          id="start_date"
-                          name="start_date"
-                          defaultValue={filters.startDate || ""}
-                          className="srInput"
-                        />
-                      </s-stack>
-                    </s-box>
-
-                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
-                      <s-stack direction="block" gap="tight">
-                        <label htmlFor="end_date">
-                          <s-text variant="subdued">End Date</s-text>
+                        <label className="srFieldLabel srFlex1">
+                          <span className="srTextSubdued">End Date</span>
+                          <input type="date" id="end_date" name="end_date" defaultValue={filters.endDate || ""} className="srInput" />
                         </label>
-                        <input
-                          type="date"
-                          id="end_date"
-                          name="end_date"
-                          defaultValue={filters.endDate || ""}
-                          className="srInput"
-                        />
-                      </s-stack>
-                    </s-box>
-
-                    <s-box padding="tight" borderWidth="base" borderRadius="base" className="srFlex1">
-                      <s-stack direction="block" gap="tight">
-                        <label htmlFor="limit">
-                          <s-text variant="subdued">Limit</s-text>
+                        <label className="srFieldLabel">
+                          <span className="srTextSubdued">Limit</span>
+                          <input type="number" id="limit" name="limit" min="1" max="200" defaultValue={filters.limit || 50} className="srInput" style={{ width: 80 }} />
                         </label>
-                        <input
-                          type="number"
-                          id="limit"
-                          name="limit"
-                          min="1"
-                          max="200"
-                          defaultValue={filters.limit || 50}
-                          className="srInput"
-                        />
-                      </s-stack>
-                    </s-box>
-                  </s-stack>
+                      </div>
+                      <div className="srFilterActions">
+                        <s-button type="submit" variant="primary">Apply Filters</s-button>
+                        <s-button type="button" variant="secondary" onClick={clearFilters}>Clear Filters</s-button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </s-box>
 
-                  <div className="srFilterActions">
-                    <s-button type="submit" variant="primary">
-                      Apply Filters
-                    </s-button>
-                    <s-button type="button" variant="secondary" onClick={clearFilters}>
-                      Clear Filters
-                    </s-button>
-                  </div>
-                </s-stack>
-                </form>
-              </s-stack>
-            </s-box>
-
-          {/* Attribution Records Table */}
-          <s-box padding="base" borderWidth="base" borderRadius="base">
-            <s-stack direction="block" gap="base">
-              <s-text variant="strong">Attribution Records ({attributionRecords.length})</s-text>
-              {attributionRecords.length === 0 ? (
-                <s-box padding="base">
-                  <s-text tone="subdued">No attribution records found.</s-text>
-                </s-box>
-              ) : (
-                <table className="srTable">
-                  <thead>
-                    <tr>
-                      <th className="srTh srTextLeft">Order ID</th>
-                      <th className="srTh srTextLeft">Amount</th>
-                      <th className="srTh srTextLeft">Channel</th>
-                      <th className="srTh srTextLeft">Link ID</th>
-                      <th className="srTh srTextLeft">Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {attributionRecords.map((record) => (
-                      <tr key={record.id}>
-                        <td>
-                          <s-text variant="bodyMd">{record.order_id || "—"}</s-text>
-                        </td>
-                        <td>
-                          <s-text variant="bodyMd">{formatCurrency(record.amount, record.currency)}</s-text>
-                        </td>
-                        <td>
-                          <s-badge tone={record.channel === "dm" ? "info" : record.channel === "comment" ? "success" : "subdued"}>
-                            {record.channel || "—"}
-                          </s-badge>
-                        </td>
-                        <td>
-                          {record.link_id ? (
-                            <s-link href={`/app/links/${record.link_id}`}>
-                              <s-text variant="bodyMd" tone="info">
-                                {record.link_id}
-                              </s-text>
-                            </s-link>
-                          ) : (
-                            <s-text variant="bodyMd" tone="subdued">—</s-text>
-                          )}
-                        </td>
-                        <td>
-                          <s-text variant="bodyMd" tone="subdued">
-                            {formatDate(record.created_at)}
-                          </s-text>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </s-stack>
-          </s-box>
-          </s-stack>
+              {/* Attribution Records Table */}
+              <s-box padding="base" borderWidth="base" borderRadius="base">
+                <div className="srCardPad srVStack">
+                  <span className="srTextStrong">Attribution Records ({attributionRecords.length})</span>
+                  {attributionRecords.length === 0 ? (
+                    <span className="srTextSubdued">No attribution records found.</span>
+                  ) : (
+                    <table className="srTable">
+                      <thead>
+                        <tr>
+                          <th className="srTh srTextLeft">Order ID</th>
+                          <th className="srTh srTextLeft">Amount</th>
+                          <th className="srTh srTextLeft">Channel</th>
+                          <th className="srTh srTextLeft">Link ID</th>
+                          <th className="srTh srTextLeft">Created At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attributionRecords.map((record) => (
+                          <tr key={record.id}>
+                            <td><span className="srTextBody">{record.order_id || "—"}</span></td>
+                            <td><span className="srTextBody">{formatCurrency(record.amount, record.currency)}</span></td>
+                            <td>
+                              <s-badge tone={record.channel === "dm" ? "info" : record.channel === "comment" ? "success" : "subdued"}>
+                                {record.channel || "—"}
+                              </s-badge>
+                            </td>
+                            <td><span className="srTextBody">{record.link_id || "—"}</span></td>
+                            <td><span className="srTextSubdued">{formatDate(record.created_at)}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </s-box>
+            </div>
           </s-section>
 
-          {/* Message Log Section */}
+          {/* Message Log */}
           <PlanGate requiredPlan="GROWTH" feature="Message Log">
             <s-section heading="Message Log">
-              <s-stack direction="block" gap="base">
+              <div className="srVStack">
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <s-text variant="bodyMd">
-                    <s-text variant="subdued">Total Messages: </s-text>
-                    <s-text variant="strong">{messageTotalCount}</s-text>
-                  </s-text>
+                  <div className="srCardPad">
+                    <span className="srStatRow"><span className="srStatLabel">Total Messages: </span><span className="srStatValue">{messageTotalCount}</span></span>
+                  </div>
                 </s-box>
 
                 {/* Message Filters */}
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <s-stack direction="block" gap="base">
-                    <s-stack direction="inline" gap="base" alignment="center">
+                  <div className="srCardPad">
+                    <div className="srFilterRow">
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Channel</s-text>
-                        <select
-                          value={messageFilters.channel || ""}
-                          onChange={(e) => updateMessageFilter("message_channel", e.target.value || null)}
-                          className="srSelect"
-                        >
+                        <span className="srTextSubdued">Channel</span>
+                        <select value={messageFilters.channel || ""} onChange={(e) => updateMessageFilter("message_channel", e.target.value || null)} className="srSelect">
                           <option value="">All Channels</option>
                           <option value="dm">DM</option>
                           <option value="comment">Comment</option>
                         </select>
                       </label>
-
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Start Date</s-text>
-                        <input
-                          type="date"
-                          value={messageFilters.startDate || ""}
-                          onChange={(e) => updateMessageFilter("message_start_date", e.target.value || null)}
-                          className="srInput"
-                        />
+                        <span className="srTextSubdued">Start Date</span>
+                        <input type="date" value={messageFilters.startDate || ""} onChange={(e) => updateMessageFilter("message_start_date", e.target.value || null)} className="srInput" />
                       </label>
-
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">End Date</s-text>
-                        <input
-                          type="date"
-                          value={messageFilters.endDate || ""}
-                          onChange={(e) => updateMessageFilter("message_end_date", e.target.value || null)}
-                          className="srInput"
-                        />
+                        <span className="srTextSubdued">End Date</span>
+                        <input type="date" value={messageFilters.endDate || ""} onChange={(e) => updateMessageFilter("message_end_date", e.target.value || null)} className="srInput" />
                       </label>
-
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Sort By</s-text>
-                        <select
-                          value={messageFilters.orderBy}
-                          onChange={(e) => updateMessageFilter("message_order_by", e.target.value)}
-                          className="srSelect"
-                        >
+                        <span className="srTextSubdued">Sort By</span>
+                        <select value={messageFilters.orderBy} onChange={(e) => updateMessageFilter("message_order_by", e.target.value)} className="srSelect">
                           <option value="created_at">Date</option>
                           <option value="channel">Channel</option>
                           <option value="text">Text</option>
                         </select>
                       </label>
-
                       <label className="srFieldLabel">
-                        <s-text variant="subdued">Order</s-text>
-                        <select
-                          value={messageFilters.orderDirection}
-                          onChange={(e) => updateMessageFilter("message_order_direction", e.target.value)}
-                          className="srSelect"
-                        >
+                        <span className="srTextSubdued">Order</span>
+                        <select value={messageFilters.orderDirection} onChange={(e) => updateMessageFilter("message_order_direction", e.target.value)} className="srSelect">
                           <option value="desc">Newest First</option>
                           <option value="asc">Oldest First</option>
                         </select>
                       </label>
-
-                      <s-button variant="secondary" onClick={clearMessageFilters}>
-                        Clear Filters
-                      </s-button>
-                    </s-stack>
-                  </s-stack>
+                      <div className="srFilterActions">
+                        <s-button variant="secondary" onClick={clearMessageFilters}>Clear Filters</s-button>
+                      </div>
+                    </div>
+                  </div>
                 </s-box>
 
                 {/* Messages List */}
                 {messages.length === 0 ? (
-                  <s-paragraph>
-                    <s-text tone="subdued">No messages found.</s-text>
-                  </s-paragraph>
+                  <span className="srTextSubdued">No messages found.</span>
                 ) : (
-                  <s-stack direction="block" gap="base">
+                  <div className="srVStack">
                     {messages.map((message) => {
                       const isExpanded = expandedMessages.has(message.id);
                       return (
-                        <s-box
-                          key={message.id}
-                          padding="base"
-                          borderWidth="base"
-                          borderRadius="base"
-                          background="subdued"
-                        >
-                          <s-stack direction="block" gap="base">
-                            {/* Header with metadata */}
-                            <s-stack direction="inline" gap="base" alignment="space-between">
-                              <s-stack direction="inline" gap="base" alignment="center">
+                        <div key={message.id} className="srMsgCard">
+                          <div className="srVStack">
+                            {/* Header */}
+                            <div className="srHStackSpread">
+                              <div className="srHStackTight">
                                 <s-badge tone={message.channel === "dm" ? "info" : "success"}>
                                   {message.channel.toUpperCase()}
                                 </s-badge>
-                                <s-text variant="subdued">{new Date(message.created_at).toLocaleString()}</s-text>
+                                <span className="srTextSubdued">{new Date(message.created_at).toLocaleString()}</span>
                                 {message.external_id && (
-                                  <s-text variant="subdued">ID: {message.external_id.substring(0, 20)}...</s-text>
+                                  <span className="srTextSubdued">ID: {message.external_id.substring(0, 20)}...</span>
                                 )}
-                              </s-stack>
+                              </div>
                               {message.from_user_id && (
-                                <s-text variant="subdued">From: {message.from_user_id}</s-text>
+                                <span className="srTextSubdued">From: {message.from_user_id}</span>
                               )}
-                            </s-stack>
+                            </div>
 
-                            {/* Badges for intent, sentiment, and AI response */}
-                            <s-stack direction="inline" gap="base" alignment="center">
+                            {/* Badges */}
+                            <div className="srHStackTight">
                               {message.ai_responded ? (
                                 <s-badge tone="success">AI Responded</s-badge>
                               ) : (
@@ -840,110 +638,71 @@ export default function AnalyticsPage() {
                                 </s-badge>
                               )}
                               {message.sentiment && (
-                                <s-badge
-                                  tone={
-                                    message.sentiment === "positive"
-                                      ? "success"
-                                      : message.sentiment === "negative"
-                                        ? "critical"
-                                        : "subdued"
-                                  }
-                                >
+                                <s-badge tone={message.sentiment === "positive" ? "success" : message.sentiment === "negative" ? "critical" : "subdued"}>
                                   {message.sentiment}
                                 </s-badge>
                               )}
-                            </s-stack>
+                            </div>
 
-                            <s-button
-                              variant="plain"
-                              size="small"
-                              onClick={() => toggleMessageExpanded(message.id)}
-                            >
+                            <s-button variant="plain" size="small" onClick={() => toggleMessageExpanded(message.id)}>
                               {isExpanded ? "Hide Conversation" : "Show Conversation"}
                             </s-button>
 
                             {/* Collapsible Conversation */}
                             {isExpanded && (
-                              <s-stack direction="block" gap="base">
+                              <div className="srVStack">
                                 {/* Customer Message */}
-                                <s-box padding="tight" borderWidth="base" borderRadius="base" background="base">
-                                  <s-stack direction="block" gap="tight">
-                                    <s-text variant="strong">Customer Message:</s-text>
+                                <div className="srMsgInner">
+                                  <div className="srVStackTight">
+                                    <span className="srTextStrong">Customer Message:</span>
                                     {message.text ? (
-                                      <s-paragraph>
-                                        <s-text>{message.text}</s-text>
-                                      </s-paragraph>
+                                      <span className="srMsgText">{message.text}</span>
                                     ) : (
-                                      <s-text variant="subdued">No message text</s-text>
+                                      <span className="srTextSubdued">No message text</span>
                                     )}
-                                  </s-stack>
-                                </s-box>
+                                  </div>
+                                </div>
 
-                                {/* AI Response - only show if AI responded */}
+                                {/* AI Response */}
                                 {message.ai_responded && (
-                                  <s-box padding="tight" borderWidth="base" borderRadius="base" background="base">
-                                    <s-stack direction="block" gap="tight">
-                                      <s-stack direction="inline" gap="tight" alignment="center">
-                                        <s-text variant="strong">AI Response:</s-text>
+                                  <div className="srMsgInner">
+                                    <div className="srVStackTight">
+                                      <div className="srHStackTight">
+                                        <span className="srTextStrong">AI Response:</span>
                                         {message.ai_response_sent_at && (
-                                          <s-text variant="subdued">
-                                            ({new Date(message.ai_response_sent_at).toLocaleString()})
-                                          </s-text>
+                                          <span className="srTextSubdued">({new Date(message.ai_response_sent_at).toLocaleString()})</span>
                                         )}
-                                      </s-stack>
+                                      </div>
                                       {message.ai_response_text ? (
-                                        <s-paragraph>
-                                          <s-text className="srPreWrap">{message.ai_response_text}</s-text>
-                                        </s-paragraph>
+                                        <span className="srMsgText">{message.ai_response_text}</span>
                                       ) : (
-                                        <s-paragraph>
-                                          <s-text variant="subdued" className="srItalic">
-                                            AI sent a checkout link
-                                          </s-text>
-                                        </s-paragraph>
+                                        <span className="srTextSubdued srItalic">AI sent a checkout link</span>
                                       )}
-                                      {message.ai_response_link_id && (
-                                        <s-link href={`/app/links/${message.ai_response_link_id}`}>
-                                          <s-text variant="bodyMd" tone="info">
-                                            View checkout link →
-                                          </s-text>
-                                        </s-link>
-                                      )}
-                                    </s-stack>
-                                  </s-box>
+                                    </div>
+                                  </div>
                                 )}
-                              </s-stack>
+                              </div>
                             )}
-                          </s-stack>
-                        </s-box>
+                          </div>
+                        </div>
                       );
                     })}
-                  </s-stack>
+                  </div>
                 )}
 
-                {/* Message Pagination */}
+                {/* Pagination */}
                 {messageTotalPages > 1 && (
-                  <s-stack direction="inline" gap="base" alignment="center">
-                    <s-button
-                      variant="secondary"
-                      disabled={messageCurrentPage === 1}
-                      onClick={() => goToMessagePage(messageCurrentPage - 1)}
-                    >
+                  <div className="srPaginationRow">
+                    <s-button variant="secondary" disabled={messageCurrentPage === 1} onClick={() => goToMessagePage(messageCurrentPage - 1)}>
                       Previous
                     </s-button>
-                    <s-text variant="subdued">
-                      Page {messageCurrentPage} of {messageTotalPages}
-                    </s-text>
-                    <s-button
-                      variant="secondary"
-                      disabled={messageCurrentPage === messageTotalPages}
-                      onClick={() => goToMessagePage(messageCurrentPage + 1)}
-                    >
+                    <span className="srTextSubdued">Page {messageCurrentPage} of {messageTotalPages}</span>
+                    <s-button variant="secondary" disabled={messageCurrentPage === messageTotalPages} onClick={() => goToMessagePage(messageCurrentPage + 1)}>
                       Next
                     </s-button>
-                  </s-stack>
+                  </div>
                 )}
-              </s-stack>
+              </div>
             </s-section>
           </PlanGate>
       </s-page>
