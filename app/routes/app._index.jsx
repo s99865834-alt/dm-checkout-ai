@@ -100,11 +100,13 @@ export const action = async ({ request }) => {
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       try {
+        const currentSettings = await getSettings(shop.id, plan?.name);
         await Promise.all([
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
+            enabled_post_ids: currentSettings?.enabled_post_ids ?? null,
           }, plan?.name),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
