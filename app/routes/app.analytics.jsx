@@ -3,12 +3,13 @@ import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSub
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
-import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics } from "../lib/db.server";
+import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings } from "../lib/db.server";
+import { getMetaAuthWithRefresh, getInstagramMedia } from "../lib/meta.server";
+import supabase from "../lib/supabase.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
 
-  // Parse query parameters for filters
   const url = new URL(request.url);
   const channel = url.searchParams.get("channel") || null;
   const orderId = url.searchParams.get("order_id") || null;
@@ -16,7 +17,6 @@ export const loader = async ({ request }) => {
   const endDate = url.searchParams.get("end_date") || null;
   const limit = parseInt(url.searchParams.get("limit") || "50", 10);
 
-  // Parse message filters (separate from attribution filters)
   const messageChannel = url.searchParams.get("message_channel") || null;
   const messagePage = parseInt(url.searchParams.get("message_page") || "1", 10);
   const messageLimit = 50;
@@ -26,12 +26,50 @@ export const loader = async ({ request }) => {
   const messageOrderBy = url.searchParams.get("message_order_by") || "created_at";
   const messageOrderDirection = url.searchParams.get("message_order_direction") || "desc";
 
-  // Parse analytics date range (defaults to last 30 days)
   const analyticsStartDate = url.searchParams.get("analytics_start_date") || null;
   const analyticsEndDate = url.searchParams.get("analytics_end_date") || null;
 
-  // Fetch all independent data in parallel
-  const analyticsDateRange = { startDate: analyticsStartDate, endDate: analyticsEndDate };
+  // Pro-only: post filter
+  const postFilterId = url.searchParams.get("post_id") || null;
+
+  // For Pro users, load Instagram media + product mappings for the post filter
+  let mediaPosts = [];
+  let productMappings = [];
+  if (plan?.name === "PRO") {
+    const metaAuth = await getMetaAuthWithRefresh(shop.id).catch(() => null);
+    const [mediaResult, mappingsResult] = await Promise.all([
+      metaAuth?.ig_business_id || metaAuth?.auth_type === "instagram"
+        ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
+        : Promise.resolve(null),
+      getProductMappings(shop.id),
+    ]);
+    mediaPosts = mediaResult?.data || [];
+    productMappings = mappingsResult || [];
+  }
+
+  // Resolve post_id → product_id for query filtering, and pre-fetch scoped IDs
+  let postProductId = null;
+  let postFilterMessageIds = null;
+  let postFilterLinkIds = null;
+  if (postFilterId && plan?.name === "PRO") {
+    const mapping = productMappings.find(m => m.ig_media_id === postFilterId);
+    if (mapping) {
+      postProductId = mapping.product_id;
+      const { data: scopedLinks } = await supabase
+        .from("links_sent")
+        .select("message_id, link_id")
+        .eq("shop_id", shop.id)
+        .eq("product_id", postProductId);
+      postFilterMessageIds = [...new Set((scopedLinks || []).map(l => l.message_id).filter(Boolean))];
+      postFilterLinkIds = [...new Set((scopedLinks || []).map(l => l.link_id).filter(Boolean))];
+    }
+  }
+
+  const analyticsDateRange = {
+    startDate: analyticsStartDate,
+    endDate: analyticsEndDate,
+    productId: postProductId,
+  };
   const [
     attributionRecords,
     messages,
@@ -39,7 +77,7 @@ export const loader = async ({ request }) => {
     analytics,
     proAnalytics,
   ] = await Promise.all([
-    getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit }),
+    getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit, linkIds: postFilterLinkIds }),
     getMessages(shop.id, {
       channel: messageChannel,
       limit: messageLimit,
@@ -48,11 +86,13 @@ export const loader = async ({ request }) => {
       endDate: messageEndDate,
       orderBy: messageOrderBy,
       orderDirection: messageOrderDirection,
+      messageIds: postFilterMessageIds,
     }),
     getMessageCount(shop.id, {
       channel: messageChannel,
       startDate: messageStartDate,
       endDate: messageEndDate,
+      messageIds: postFilterMessageIds,
     }),
     plan?.name ? getAnalytics(shop.id, plan.name, analyticsDateRange) : Promise.resolve(null),
     plan?.name === "PRO" ? getProAnalytics(shop.id, analyticsDateRange) : Promise.resolve(null),
@@ -82,17 +122,34 @@ export const loader = async ({ request }) => {
       startDate: analyticsStartDate,
       endDate: analyticsEndDate,
     },
+    mediaPosts,
+    productMappings,
+    postFilterId,
   };
 };
 
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
   const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
-  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters } = useLoaderData();
+  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId } = useLoaderData();
   const [searchParams] = useSearchParams();
   const submit = useSubmit();
   const navigate = useNavigate();
   const [expandedMessages, setExpandedMessages] = useState(new Set());
+
+  // Build a set of mapped media IDs for the post picker
+  const mappedMediaIds = new Set((productMappings || []).map(m => m.ig_media_id));
+
+  const handlePostFilter = (mediaId) => {
+    const params = new URLSearchParams(searchParams);
+    if (mediaId) {
+      params.set("post_id", mediaId);
+    } else {
+      params.delete("post_id");
+    }
+    params.delete("message_page");
+    navigate(`/app/analytics?${params.toString()}`, { replace: true, preventScrollReset: true });
+  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -265,6 +322,53 @@ export default function AnalyticsPage() {
                 </div>
               </form>
             </s-box>
+
+            {/* Post Filter (Pro only) */}
+            {isPro && mediaPosts.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div className="srVStack">
+                  <div className="srHStackSpread">
+                    <span className="srTextStrong">Filter by Post</span>
+                    {postFilterId && (
+                      <s-button variant="plain" size="small" onClick={() => handlePostFilter(null)}>Clear Post Filter</s-button>
+                    )}
+                  </div>
+                  <div className="srPostPickerStrip">
+                    {mediaPosts.filter(m => mappedMediaIds.has(m.id)).map((media) => {
+                      const isActive = postFilterId === media.id;
+                      const mapping = (productMappings || []).find(m => m.ig_media_id === media.id);
+                      return (
+                        <button
+                          key={media.id}
+                          className={`srPostPickerItem ${isActive ? "srPostPickerItemActive" : ""}`}
+                          onClick={() => handlePostFilter(isActive ? null : media.id)}
+                          type="button"
+                        >
+                          {(media.media_url || media.thumbnail_url) && (
+                            <img
+                              src={media.thumbnail_url || media.media_url}
+                              alt={media.caption || "Post"}
+                              className="srPostPickerImg"
+                            />
+                          )}
+                          <span className="srPostPickerCaption">
+                            {media.caption
+                              ? (media.caption.length > 40 ? media.caption.slice(0, 40) + "…" : media.caption)
+                              : mapping?.product_handle || "Post"}
+                          </span>
+                          {isActive && <span className="srPostPickerCheck">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {postFilterId && (
+                    <s-banner tone="info">
+                      Showing analytics for the selected post only. <button className="srLinkBtn" onClick={() => handlePostFilter(null)}>Show all posts</button>
+                    </s-banner>
+                  )}
+                </div>
+              </div>
+            )}
           </s-section>
 
           {/* Analytics - Progressive display based on plan tier */}
