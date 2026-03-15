@@ -146,13 +146,19 @@ export async function processFollowups() {
           continue;
         }
 
-        // Create map of message_id -> link_id (get most recent link per message)
-        const messageToLinkId = {};
+        // Map message_id → { linkId, rowId } keeping the row with the highest id (most recent)
+        const messageToLink = {};
         (linksSent || []).forEach(link => {
-          if (link.message_id && (!messageToLinkId[link.message_id] || link.id > messageToLinkId[link.message_id])) {
-            messageToLinkId[link.message_id] = link.link_id;
+          if (!link.message_id) return;
+          const prev = messageToLink[link.message_id];
+          if (!prev || String(link.id) > String(prev.rowId)) {
+            messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
           }
         });
+        const messageToLinkId = {};
+        for (const [msgId, val] of Object.entries(messageToLink)) {
+          messageToLinkId[msgId] = val.linkId;
+        }
 
         // Filter messages that have links sent
         const messages = allMessages.filter(m => messageToLinkId[m.id]);
@@ -177,9 +183,8 @@ export async function processFollowups() {
               continue;
             }
 
-            // Get shop plan and usage
-            const { shop: shopData, plan } = await getShopPlanAndUsage(shop.id);
-            if (!shopData || !plan) {
+            const usageData = await getShopPlanAndUsage(shop.id);
+            if (!usageData?.plan) {
               continue;
             }
 

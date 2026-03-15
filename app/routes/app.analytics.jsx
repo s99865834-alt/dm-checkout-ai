@@ -226,9 +226,9 @@ export default function AnalyticsPage() {
                 }
                 navigate(`/app/analytics?${params.toString()}`, { replace: true, preventScrollReset: true });
               }}>
-                <s-stack direction="inline" gap="base" alignment="end">
+                <div className="srFilterRow">
                   <label className="srFieldLabel">
-                    <s-text variant="subdued">Start Date</s-text>
+                    <span className="srGridTextSubdued">Start Date</span>
                     <input
                       type="date"
                       name="analytics_start_date"
@@ -237,7 +237,7 @@ export default function AnalyticsPage() {
                     />
                   </label>
                   <label className="srFieldLabel">
-                    <s-text variant="subdued">End Date</s-text>
+                    <span className="srGridTextSubdued">End Date</span>
                     <input
                       type="date"
                       name="analytics_end_date"
@@ -245,22 +245,24 @@ export default function AnalyticsPage() {
                       className="srInput"
                     />
                   </label>
-                  <s-button type="submit" variant="secondary">Apply</s-button>
-                  {analyticsFilters?.startDate || analyticsFilters?.endDate ? (
-                    <s-button
-                      type="button"
-                      variant="plain"
-                      onClick={() => {
-                        const params = new URLSearchParams(searchParams);
-                        params.delete("analytics_start_date");
-                        params.delete("analytics_end_date");
-                        navigate(`/app/analytics?${params.toString()}`, { replace: true, preventScrollReset: true });
-                      }}
-                    >
-                      Clear
-                    </s-button>
-                  ) : null}
-                </s-stack>
+                  <div className="srFilterActions">
+                    <s-button type="submit" variant="secondary">Apply</s-button>
+                    {analyticsFilters?.startDate || analyticsFilters?.endDate ? (
+                      <s-button
+                        type="button"
+                        variant="plain"
+                        onClick={() => {
+                          const params = new URLSearchParams(searchParams);
+                          params.delete("analytics_start_date");
+                          params.delete("analytics_end_date");
+                          navigate(`/app/analytics?${params.toString()}`, { replace: true, preventScrollReset: true });
+                        }}
+                      >
+                        Clear
+                      </s-button>
+                    ) : null}
+                  </div>
+                </div>
               </form>
             </s-box>
           </s-section>
@@ -269,7 +271,7 @@ export default function AnalyticsPage() {
           <s-section>
             {analytics ? (
               <>
-                {analytics.messagesSent === 0 && analytics.linksSent === 0 ? (
+                {analytics.messagesReceived === 0 && analytics.linksSent === 0 ? (
                   <s-box padding="base" borderWidth="base" borderRadius="base">
                     <s-stack direction="block" gap="tight">
                       <s-text variant="strong">No data yet</s-text>
@@ -285,9 +287,9 @@ export default function AnalyticsPage() {
                     <div className="srKpiGrid">
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
                         <s-stack direction="block" gap="tight">
-                          <s-text variant="subdued">Messages Sent</s-text>
+                          <s-text variant="subdued">Messages Received</s-text>
                           <s-text variant="headingLg">
-                            {analytics.messagesSent || 0}
+                            {analytics.messagesReceived || 0}
                             {plan?.name === "FREE" && (
                               <s-text variant="subdued" as="span"> / {plan?.cap || 25}</s-text>
                             )}
@@ -638,14 +640,14 @@ export default function AnalyticsPage() {
                     </s-box>
                   </s-stack>
 
-                  <s-stack direction="inline" gap="base">
+                  <div className="srFilterActions">
                     <s-button type="submit" variant="primary">
                       Apply Filters
                     </s-button>
                     <s-button type="button" variant="secondary" onClick={clearFilters}>
                       Clear Filters
                     </s-button>
-                  </s-stack>
+                  </div>
                 </s-stack>
                 </form>
               </s-stack>

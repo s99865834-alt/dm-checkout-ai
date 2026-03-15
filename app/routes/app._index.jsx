@@ -100,11 +100,13 @@ export const action = async ({ request }) => {
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       try {
+        const currentSettings = await getSettings(shop.id, plan?.name);
         await Promise.all([
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
+            enabled_post_ids: currentSettings?.enabled_post_ids ?? null,
           }, plan?.name),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -127,11 +129,24 @@ export const action = async ({ request }) => {
       try {
         const currentSettings = await getSettings(shop.id, plan?.name);
         const current = currentSettings?.enabled_post_ids || [];
-        const newIds = togglePost === "enable"
-          ? current.includes(postId) ? current : [...current, postId]
-          : current.filter((id) => id !== postId);
-        await updateSettings(shop.id, { enabled_post_ids: newIds }, plan?.name);
-        return { success: true, actionType: "toggle-post-automation", message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+        let newIds;
+        if (togglePost === "enable") {
+          newIds = current.includes(postId) ? current : [...current, postId];
+        } else {
+          if (current.length === 0) {
+            const allMediaIds = JSON.parse(formData.get("allMediaIds") || "[]");
+            newIds = allMediaIds.filter((id) => id !== postId);
+          } else {
+            newIds = current.filter((id) => id !== postId);
+          }
+        }
+        await updateSettings(shop.id, {
+          dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
+          comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
+          followup_enabled: currentSettings?.followup_enabled ?? false,
+          enabled_post_ids: newIds,
+        }, plan?.name);
+        return { success: true, actionType: "toggle-post-automation", newEnabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
         return { error: err.message || "Failed to toggle post automation" };
@@ -286,8 +301,8 @@ export default function Index() {
       });
     } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
       setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
-    } else if (actionType === "toggle-post-automation") {
-      setTimeout(() => revalidator.revalidate(), 100);
+    } else if (actionType === "toggle-post-automation" && postFetcher.data.newEnabledIds) {
+      setLocalEnabledPostIds(postFetcher.data.newEnabledIds);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
 
@@ -313,14 +328,30 @@ export default function Index() {
     return n(storedId) === n(shopifyProductId);
   };
   const mappingsMap = new Map((localMappings || []).map((m) => [m.ig_media_id, m]));
-  const enabledPostIds = settings?.enabled_post_ids || [];
-  const isPostEnabled = (postId) => enabledPostIds.length === 0 || enabledPostIds.includes(postId);
+  const [localEnabledPostIds, setLocalEnabledPostIds] = useState(settings?.enabled_post_ids || []);
+
+  useEffect(() => {
+    setLocalEnabledPostIds(settings?.enabled_post_ids || []);
+  }, [settings?.enabled_post_ids]);
+
+  const isPostEnabled = (postId) => localEnabledPostIds.length === 0 || localEnabledPostIds.includes(postId);
 
   const handleTogglePost = (postId, currentlyEnabled) => {
     const fd = new FormData();
     fd.append("action", "toggle-post-automation");
     fd.append("postId", postId);
     fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
+
+    if (currentlyEnabled && localEnabledPostIds.length === 0 && mediaData?.data) {
+      const allIds = mediaData.data.map((m) => m.id);
+      fd.append("allMediaIds", JSON.stringify(allIds));
+      setLocalEnabledPostIds(allIds.filter((id) => id !== postId));
+    } else if (currentlyEnabled) {
+      setLocalEnabledPostIds((prev) => prev.filter((id) => id !== postId));
+    } else {
+      setLocalEnabledPostIds((prev) => [...prev, postId]);
+    }
+
     postFetcher.submit(fd, { method: "post" });
   };
 
@@ -403,9 +434,9 @@ export default function Index() {
                     <s-badge tone="warning">BETA</s-badge>
                   )}
                   {shop.usage_count !== undefined && (
-                    <s-text variant="subdued" className="srCardDesc">
+                    <span className="srCardDesc">
                       {shop.usage_count}/{plan.cap} messages this month
-                    </s-text>
+                    </span>
                   )}
                   {shop.usage_count >= plan.cap * 0.8 && (
                     <s-badge tone={shop.usage_count >= plan.cap ? "critical" : "warning"}>
@@ -438,14 +469,13 @@ export default function Index() {
               {isConnected ? (
                 <div className="srIGConnectedRow">
                   <div className="srIGConnectedInfo">
-                    <s-text variant="strong" className="srCardTitle">
+                    <span className="srCardTitle">
                       Connected{instagramInfo?.username ? ` · @${instagramInfo.username}` : ""}
-                    </s-text>
+                    </span>
                     {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                      <s-text variant="subdued" className="srCardDesc">
+                      <span className="srCardDesc">
                         ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                        {metaAuth.token_expires_at && ` · Expires ${new Date(metaAuth.token_expires_at).toLocaleDateString()}`}
-                      </s-text>
+                      </span>
                     )}
                   </div>
                   <s-button
@@ -462,9 +492,9 @@ export default function Index() {
                 </div>
               ) : (
                 <div className="srIGConnectedRow">
-                  <s-text variant="subdued" className="srCardDesc">
+                  <span className="srCardDesc">
                     Connect your Instagram Business account to enable automation.
-                  </s-text>
+                  </span>
                   <s-button
                     variant="primary" size="slim" className="srBtnCompact"
                     onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
@@ -494,67 +524,65 @@ export default function Index() {
             <div className="srAutoTwoCol">
               {/* Left: toggles */}
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                <s-stack direction="block" gap="none" className="srToggleStack">
+                <div className="srToggleStack">
                   <div className="srToggleRow">
-                    <s-stack direction="inline" gap="base" alignment="space-between">
-                      <s-stack direction="block" gap="tight">
-                        <s-text variant="strong" className="srCardTitle">DM automation</s-text>
-                        <s-text variant="subdued" className="srCardDesc">Process and reply to Instagram DMs</s-text>
-                      </s-stack>
+                    <div className="srToggleRowInner">
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">DM automation</span>
+                        <span className="srCardDesc">Process and reply to Instagram DMs</span>
+                      </div>
                       <label className="srToggle">
                         <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
                         <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                       </label>
-                    </s-stack>
+                    </div>
                   </div>
                   <div className="srToggleRow">
-                    <s-stack direction="inline" gap="base" alignment="space-between">
-                      <s-stack direction="block" gap="tight">
-                        <s-text variant="strong" className="srCardTitle">Comment automation</s-text>
-                        <s-text variant="subdued" className="srCardDesc">Process and reply to comments on posts</s-text>
-                      </s-stack>
+                    <div className="srToggleRowInner">
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">Comment automation</span>
+                        <span className="srCardDesc">Process and reply to comments on posts</span>
+                      </div>
                       <label className="srToggle">
                         <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
                         <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                       </label>
-                    </s-stack>
+                    </div>
                   </div>
                   <div className="srToggleRow srToggleRowLast">
-                    <s-stack direction="inline" gap="base" alignment="space-between">
-                      <s-stack direction="block" gap="tight">
-                        <s-text variant="strong" className="srCardTitle">Follow-up messages</s-text>
-                        <s-text variant="subdued" className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</s-text>
-                      </s-stack>
+                    <div className="srToggleRowInner">
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">Follow-up messages</span>
+                        <span className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</span>
+                      </div>
                       <label className="srToggle">
                         <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
                         <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                       </label>
-                    </s-stack>
+                    </div>
                   </div>
-                </s-stack>
+                </div>
               </s-box>
 
               {/* Right: brand voice */}
               <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <s-stack direction="block" gap="none" className="srToggleStack">
+                  <div className="srToggleStack">
                     <div className="srToggleRow">
-                      <s-stack direction="inline" gap="base" alignment="space-between">
-                        <s-stack direction="block" gap="tight">
-                          <s-text variant="strong" className="srCardTitle">Tone</s-text>
-                          <s-text variant="subdued" className="srCardDesc">Overall style of automated replies</s-text>
-                        </s-stack>
-                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srSelectInline">
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">Tone</span>
+                        <span className="srCardDesc">Overall style of automated replies</span>
+                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
                           <option value="friendly">Friendly</option>
                           <option value="expert">Expert</option>
                           <option value="casual">Casual</option>
                         </select>
-                      </s-stack>
+                      </div>
                     </div>
                     <div className="srToggleRow srToggleRowLast">
-                      <s-stack direction="block" gap="tight">
-                        <s-text variant="strong" className="srCardTitle">Custom instruction</s-text>
-                        <s-text variant="subdued" className="srCardDesc">Optional override for reply style</s-text>
+                      <div className="srToggleRowText">
+                        <span className="srCardTitle">Custom Voice</span>
+                        <span className="srCardDesc">Optional override for reply style</span>
                         <input
                           type="text"
                           value={brandVoiceCustom}
@@ -562,9 +590,9 @@ export default function Index() {
                           placeholder="e.g. Always be enthusiastic and use emojis"
                           className="srInput srInputRow"
                         />
-                      </s-stack>
+                      </div>
                     </div>
-                  </s-stack>
+                  </div>
                 </s-box>
               </PlanGate>
             </div>
@@ -581,10 +609,10 @@ export default function Index() {
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
       {isConnected && (
         <s-section heading="Your Instagram Posts">
-          <s-stack direction="block" gap="base">
-            <s-text variant="subdued" className="srCardDesc">
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <span className="srCardDesc">
               Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the checkboxes to enable or disable automation per post.
-            </s-text>
+            </span>
 
             {metaAuth?.auth_type === "instagram" && (
               <s-callout variant="info" title="Comment replies require Facebook Login">
@@ -595,7 +623,7 @@ export default function Index() {
             )}
 
             {!mediaData ? (
-              <s-text variant="subdued" className="srCardDesc">Fetching your Instagram posts…</s-text>
+              <span className="srCardDesc">Fetching your Instagram posts…</span>
             ) : mediaData.data?.length > 0 ? (
               <div className="srMediaGrid">
                 {mediaData.data.map((media) => {
@@ -615,32 +643,32 @@ export default function Index() {
 
                   return (
                     <s-box key={media.id} padding="base" borderWidth="base" borderRadius="base">
-                      <s-stack direction="block" gap="base">
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                         {media.media_url && (
                           <img src={media.media_url} alt={media.caption || "Instagram post"} className="srMediaImage" />
                         )}
                         {media.caption && (
-                          <s-text variant="subdued" className="srClamp2">{media.caption}</s-text>
+                          <span className="srGridTextSubdued srClamp2">{media.caption}</span>
                         )}
-                        <s-stack direction="inline" gap="tight">
-                          {media.like_count !== undefined && <s-text variant="subdued">❤️ {media.like_count}</s-text>}
-                          {media.comments_count !== undefined && <s-text variant="subdued">💬 {media.comments_count}</s-text>}
-                        </s-stack>
+                        <div className="srGridMeta">
+                          {media.like_count !== undefined && <span>❤️ {media.like_count}</span>}
+                          {media.comments_count !== undefined && <span>💬 {media.comments_count}</span>}
+                        </div>
 
                         {/* Per-post automation toggle */}
                         <s-box padding="tight" borderWidth="base" borderRadius="base"
                           background={automationEnabled ? "success-subdued" : "subdued"}>
-                          <s-stack direction="inline" gap="base" alignment="space-between">
-                            <s-stack direction="block" gap="tight">
-                              <s-text variant="strong">
-                                {automationEnabled ? "✅ Automation Enabled" : "❌ Automation Disabled"}
-                              </s-text>
-                              <s-text variant="subdued">
+                          <div className="srGridToggleRow srGridStatusBox">
+                            <div className="srGridToggleInfo">
+                              <span className="srGridTextStrong">
+                                {automationEnabled ? "Automation Enabled" : "Automation Disabled"}
+                              </span>
+                              <span className="srGridTextSubdued">
                                 {automationEnabled
                                   ? "AI will respond to comments/DMs on this post"
                                   : "AI will NOT respond to comments/DMs on this post"}
-                              </s-text>
-                            </s-stack>
+                              </span>
+                            </div>
                             <label className="srCheckboxLabel">
                               <input
                                 type="checkbox"
@@ -649,18 +677,18 @@ export default function Index() {
                                 disabled={postFetcher.state !== "idle"}
                               />
                             </label>
-                          </s-stack>
+                          </div>
                         </s-box>
 
                         {/* Product mapping */}
                         {mapping ? (
                           <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
-                            <s-stack direction="block" gap="tight">
-                              <s-text variant="strong" tone="success">✅ Mapped to Product</s-text>
-                              <s-text variant="subdued">
+                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <span className="srGridTextSuccess">Mapped to Product</span>
+                              <span className="srGridTextSubdued">
                                 {mappedProduct?.title || (mapping.product_handle ? `Product: ${mapping.product_handle}` : "Product")}
                                 {mappedVariant && ` (${mappedVariant.title})`}
-                              </s-text>
+                              </span>
                               <s-button
                                 variant="secondary" size="small"
                                 onClick={() => handleDeleteMapping(media.id)}
@@ -668,12 +696,12 @@ export default function Index() {
                               >
                                 Remove Mapping
                               </s-button>
-                            </s-stack>
+                            </div>
                           </s-box>
                         ) : (
                           <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
-                            <s-stack direction="block" gap="tight">
-                              <s-text variant="subdued">Not mapped</s-text>
+                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <span className="srGridTextSubdued">Not mapped</span>
                               <s-button
                                 variant="primary" size="small"
                                 onClick={() => setSelectedMedia(media.id)}
@@ -681,22 +709,22 @@ export default function Index() {
                               >
                                 Map to Product
                               </s-button>
-                            </s-stack>
+                            </div>
                           </s-box>
                         )}
 
-                        {/* Product picker — shown when Map is clicked. Products from loader (same request as rest of page). */}
+                        {/* Product picker */}
                         {selectedMedia === media.id && (
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                            <s-stack direction="block" gap="base">
+                            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                               <label htmlFor={`product-${media.id}`}>
-                                <s-text variant="strong">Select Product:</s-text>
+                                <span className="srGridTextStrong">Select Product:</span>
                               </label>
                               {(localProducts || []).length === 0 ? (
-                                <s-stack direction="block" gap="tight">
-                                  <s-text variant="subdued">
+                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                  <span className="srGridTextSubdued">
                                     No products to show. Your store may have no products, or the list could not be loaded.
-                                  </s-text>
+                                  </span>
                                   <s-button
                                     variant="secondary"
                                     size="small"
@@ -705,7 +733,7 @@ export default function Index() {
                                   >
                                     {revalidator.state === "loading" ? "Loading…" : "Retry"}
                                   </s-button>
-                                </s-stack>
+                                </div>
                               ) : (
                                 <>
                                   <select
@@ -723,7 +751,7 @@ export default function Index() {
                                   {selectedProduct && selectedProductVariants.length > 1 && (
                                     <>
                                       <label htmlFor={`variant-${media.id}`}>
-                                        <s-text variant="strong">Select Variant (Optional):</s-text>
+                                        <span className="srGridTextStrong">Select Variant (Optional):</span>
                                       </label>
                                       <select
                                         id={`variant-${media.id}`}
@@ -739,7 +767,7 @@ export default function Index() {
                                     </>
                                   )}
 
-                                  <s-stack direction="inline" gap="tight">
+                                  <div style={{ display: "flex", gap: "8px" }}>
                                     <s-button
                                       variant="primary" size="small"
                                       onClick={() => handleSaveMapping(media.id)}
@@ -753,21 +781,21 @@ export default function Index() {
                                     >
                                       Cancel
                                     </s-button>
-                                  </s-stack>
+                                  </div>
                                 </>
                               )}
-                            </s-stack>
+                            </div>
                           </s-box>
                         )}
-                      </s-stack>
+                      </div>
                     </s-box>
                   );
                 })}
               </div>
             ) : (
-              <s-text variant="subdued" className="srCardDesc">No Instagram posts found.</s-text>
+              <span className="srGridTextSubdued">No Instagram posts found.</span>
             )}
-          </s-stack>
+          </div>
         </s-section>
       )}
 
