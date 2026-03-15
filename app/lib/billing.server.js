@@ -7,14 +7,14 @@ import { getPlanConfig } from "./plans";
  */
 const PLAN_PRICING = {
   GROWTH: {
-    amount: "29.00",
+    amount: "39.00",
     name: "Growth Plan",
-    description: "500 messages/month, Comments automation, Conversations, Brand voice",
+    description: "500 messages/month, DMs + Comment-to-DM, Brand voice, Store Q&A, Full analytics",
   },
   PRO: {
     amount: "99.00",
     name: "Pro Plan",
-    description: "50,000 messages/month, All Growth features, Follow-ups, Priority support",
+    description: "10,000 messages/month, Everything in Growth, Follow-ups, Multi-turn conversations, Per-post analytics",
   },
 };
 

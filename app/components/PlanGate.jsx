@@ -40,7 +40,7 @@ export function PlanGate({ requiredPlan, feature, children }) {
   };
 
   const pricing = {
-    GROWTH: "$29/month",
+    GROWTH: "$39/month",
     PRO: "$99/month",
   };
 

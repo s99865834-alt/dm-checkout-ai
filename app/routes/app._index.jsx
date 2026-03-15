@@ -243,7 +243,7 @@ export const action = async ({ request }) => {
 export default function Index() {
   const loaderData = useLoaderData();
   const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts } = loaderData || {};
-  const { hasAccess } = usePlanAccess();
+  const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
@@ -511,100 +511,116 @@ export default function Index() {
       </s-section>
 
       {/* ── Automation ────────────────────────────────────────────────── */}
-      <PlanGate requiredPlan="PRO" feature="Automation Controls">
-        <s-section heading="Automation">
-          <automationFetcher.Form method="post">
-            <input type="hidden" name="action" value="update-automation-settings" />
-            <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
-            <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
-            <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
+      <s-section heading="Automation">
+        <automationFetcher.Form method="post">
+          <input type="hidden" name="action" value="update-automation-settings" />
+          <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
+          <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+          <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+          <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
+          <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
 
-            <div className="srAutoTwoCol">
-              {/* Left: toggles */}
+          <div className="srAutoTwoCol">
+            {/* Left: toggles */}
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+              <div className="srToggleStack">
+                <div className="srToggleRow">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">DM automation</span>
+                      <span className="srCardDesc">Process and reply to Instagram DMs</span>
+                    </div>
+                    <label className="srToggle">
+                      <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="srToggleRow">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Comment automation</span>
+                      <span className="srCardDesc">
+                        {hasAccess("GROWTH")
+                          ? "Auto-reply to comments with private DMs"
+                          : "Upgrade to Growth to unlock comment automation"}
+                      </span>
+                    </div>
+                    <label className="srToggle">
+                      <input
+                        type="checkbox"
+                        checked={hasAccess("GROWTH") ? commentAutomationEnabled : false}
+                        onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
+                        disabled={!hasAccess("GROWTH")}
+                      />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="srToggleRow srToggleRowLast">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Follow-up messages</span>
+                      <span className="srCardDesc">
+                        {hasAccess("PRO")
+                          ? "Send a reminder 23–24 hours after last message if no link click"
+                          : "Upgrade to Pro to unlock follow-ups"}
+                      </span>
+                    </div>
+                    <label className="srToggle">
+                      <input
+                        type="checkbox"
+                        checked={hasAccess("PRO") ? followupEnabled : false}
+                        onChange={(e) => setFollowupEnabled(e.target.checked)}
+                        disabled={!hasAccess("PRO")}
+                      />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </s-box>
+
+            {/* Right: brand voice */}
+            <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <div className="srToggleStack">
                   <div className="srToggleRow">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">DM automation</span>
-                        <span className="srCardDesc">Process and reply to Instagram DMs</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="srToggleRow">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Comment automation</span>
-                        <span className="srCardDesc">Process and reply to comments on posts</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Tone</span>
+                      <span className="srCardDesc">Overall style of automated replies</span>
+                      <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
+                        <option value="friendly">Friendly</option>
+                        <option value="expert">Expert</option>
+                        <option value="casual">Casual</option>
+                      </select>
                     </div>
                   </div>
                   <div className="srToggleRow srToggleRowLast">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Follow-up messages</span>
-                        <span className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Custom Voice</span>
+                      <span className="srCardDesc">Optional override for reply style</span>
+                      <input
+                        type="text"
+                        value={brandVoiceCustom}
+                        onChange={(e) => setBrandVoiceCustom(e.target.value)}
+                        placeholder="e.g. Always be enthusiastic and use emojis"
+                        className="srInput srInputRow"
+                      />
                     </div>
                   </div>
                 </div>
               </s-box>
+            </PlanGate>
+          </div>
 
-              {/* Right: brand voice */}
-              <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <div className="srToggleStack">
-                    <div className="srToggleRow">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Tone</span>
-                        <span className="srCardDesc">Overall style of automated replies</span>
-                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
-                          <option value="friendly">Friendly</option>
-                          <option value="expert">Expert</option>
-                          <option value="casual">Casual</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="srToggleRow srToggleRowLast">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Custom Voice</span>
-                        <span className="srCardDesc">Optional override for reply style</span>
-                        <input
-                          type="text"
-                          value={brandVoiceCustom}
-                          onChange={(e) => setBrandVoiceCustom(e.target.value)}
-                          placeholder="e.g. Always be enthusiastic and use emojis"
-                          className="srInput srInputRow"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </s-box>
-              </PlanGate>
-            </div>
-
-            <div className="srSaveBtnWrap">
-              <s-button type="submit" variant="primary" className="srBtnCompact">
-                {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
-              </s-button>
-            </div>
-          </automationFetcher.Form>
-        </s-section>
-      </PlanGate>
+          <div className="srSaveBtnWrap">
+            <s-button type="submit" variant="primary" className="srBtnCompact">
+              {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
+            </s-button>
+          </div>
+        </automationFetcher.Form>
+      </s-section>
 
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
       {isConnected && (

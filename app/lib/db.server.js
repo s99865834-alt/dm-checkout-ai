@@ -1197,6 +1197,7 @@ export async function getAnalytics(shopId, planName, options = {}) {
     linksSent: 0,
     clicks: 0,
     ctr: 0,
+    responseRate: 0,
     topTriggerPhrases: [],
     channelPerformance: {
       dm: { sent: 0, responded: 0, clicks: 0 },
@@ -1290,6 +1291,11 @@ export async function getAnalytics(shopId, planName, options = {}) {
 
     // Filter messages that have links sent (for channel performance and trigger phrases)
     const messagesWithLinks = (allMessages || []).filter(m => messageToLinkId[m.id]);
+
+    // Response rate: % of messages that received an AI response (link sent)
+    if (analytics.messagesReceived > 0) {
+      analytics.responseRate = (messagesWithLinks.length / analytics.messagesReceived) * 100;
+    }
 
     // Get clicks for ALL link_ids (not just those linked to messages)
     if (linkIds.length > 0) {

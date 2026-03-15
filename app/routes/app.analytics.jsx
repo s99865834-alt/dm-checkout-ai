@@ -417,6 +417,12 @@ export default function AnalyticsPage() {
                           <span className="srHeadingLg">{analytics.ctr ? `${analytics.ctr.toFixed(1)}%` : "0%"}</span>
                         </div>
                       </s-box>
+                      <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
+                        <div className="srCardPad srVStackTight">
+                          <span className="srTextSubdued">Response Rate</span>
+                          <span className="srHeadingLg">{analytics.responseRate ? `${analytics.responseRate.toFixed(1)}%` : "0%"}</span>
+                        </div>
+                      </s-box>
                     </div>
 
                     {analytics.topTriggerPhrases && analytics.topTriggerPhrases.length > 0 && (
@@ -561,7 +567,8 @@ export default function AnalyticsPage() {
             )}
           </s-section>
 
-          {/* Order Attribution */}
+          {/* Order Attribution (Growth+) */}
+          <PlanGate requiredPlan="GROWTH" feature="Order Attribution">
           <s-section heading="Order Attribution">
             <div className="srVStack">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
@@ -649,6 +656,7 @@ export default function AnalyticsPage() {
               </s-box>
             </div>
           </s-section>
+          </PlanGate>
 
           {/* Message Log */}
           <PlanGate requiredPlan="GROWTH" feature="Message Log">
