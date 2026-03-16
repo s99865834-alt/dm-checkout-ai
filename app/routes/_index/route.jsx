@@ -9,7 +9,7 @@ const SHOPIFY_APP_STORE_URL =
 const JSON_LD = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "SocialRepl.ai — DM Checkout AI",
+  name: "SocialRepl.ai",
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
   url: "https://www.socialrepl.ai",
@@ -92,7 +92,7 @@ export const meta = () => [
     content:
       "AI-powered Instagram DM and comment automation for Shopify stores. Sends personalized replies with one-click checkout links so you never miss a sale.",
   },
-  { property: "og:title", content: "SocialRepl.ai — DM Checkout AI" },
+  { property: "og:title", content: "SocialRepl.ai — Instagram Automation for Shopify" },
   {
     property: "og:description",
     content:
@@ -122,7 +122,7 @@ export default function LandingPage() {
       <section className="srMarketingHero">
         <h1>Transform Instagram DMs and comments into sales</h1>
         <p>
-          DM Checkout AI sends AI-powered automated replies with one-click
+          SocialRepl.ai sends AI-powered automated replies with one-click
           checkout links—so you never miss a DM sale.
         </p>
         <a

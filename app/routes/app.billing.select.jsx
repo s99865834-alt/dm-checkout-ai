@@ -1,13 +1,19 @@
-import { useOutletContext, useLoaderData, useRouteError, redirect, Form, useSearchParams, useFetcher } from "react-router";
+import { useOutletContext, useLoaderData, useRouteError, useSearchParams, useFetcher } from "react-router";
 import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import { createChargeViaAPI } from "../lib/billing.server";
+import { createChargeViaAPI, getCurrentSubscription } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
-  return { shop, plan };
+  const { shop, plan, admin } = await getShopWithPlan(request);
+  let subscription = null;
+  try {
+    subscription = await getCurrentSubscription(admin);
+  } catch (e) {
+    console.error("[billing] Error fetching subscription:", e.message);
+  }
+  return { shop, plan, subscription };
 };
 
 export const action = async ({ request }) => {
@@ -28,21 +34,17 @@ export const action = async ({ request }) => {
   const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=${planName}`;
 
   try {
-    // Create the recurring charge
     const { confirmationUrl } = await createChargeViaAPI(admin, planName, returnUrl);
-
-    // Return the confirmation URL to the client
-    // The client will handle the redirect using App Bridge
     return { confirmationUrl, planName };
   } catch (error) {
     console.error("Error creating charge:", error);
-    // Return error to client
     return { error: error.message };
   }
 };
 
 export default function BillingSelect() {
   const { shop, plan: currentPlan } = useOutletContext() || useLoaderData();
+  const { subscription } = useLoaderData();
   const currentPlanName = currentPlan?.name || "FREE";
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
@@ -74,6 +76,7 @@ export default function BillingSelect() {
       period: "month",
       config: PLANS.GROWTH,
       description: "Scale your Instagram sales",
+      badge: "Popular",
       features: [
         "500 messages/month",
         "DMs + Comment-to-DM",
@@ -94,26 +97,15 @@ export default function BillingSelect() {
         "Follow-up messages",
         "Multi-turn conversations",
         "Per-post analytics",
+        "Priority support",
       ],
     },
   ];
 
-  const getPlanBadgeTone = (planName) => {
-    if (planName === "FREE") return "subdued";
-    if (planName === "GROWTH") return "info";
-    if (planName === "PRO") return "success";
-    return "subdued";
-  };
-
+  const planOrder = ["FREE", "GROWTH", "PRO"];
   const isCurrentPlan = (planName) => planName === currentPlanName;
-  const canUpgrade = (planName) => {
-    const planOrder = ["FREE", "GROWTH", "PRO"];
-    return planOrder.indexOf(planName) > planOrder.indexOf(currentPlanName);
-  };
-  const canDowngrade = (planName) => {
-    const planOrder = ["FREE", "GROWTH", "PRO"];
-    return planOrder.indexOf(planName) < planOrder.indexOf(currentPlanName);
-  };
+  const canUpgrade = (planName) => planOrder.indexOf(planName) > planOrder.indexOf(currentPlanName);
+  const canDowngrade = (planName) => planOrder.indexOf(planName) < planOrder.indexOf(currentPlanName);
 
   return (
     <s-page heading="Choose Your Plan">
@@ -129,22 +121,9 @@ export default function BillingSelect() {
 
       {fetcher.state === "submitting" && (
         <s-section>
-          <s-callout variant="info" title="Creating charge...">
+          <s-callout variant="info" title="Processing...">
             <s-paragraph>
-              <s-text>Please wait while we create your billing charge...</s-text>
-            </s-paragraph>
-          </s-callout>
-        </s-section>
-      )}
-
-      {currentPlanName && (
-        <s-section>
-          <s-callout variant="info" title={`Current Plan: ${currentPlanName}`}>
-            <s-paragraph>
-              You're currently on the <s-text variant="strong">{currentPlanName}</s-text> plan.
-              {shop?.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date()
-                ? ` (BETA — ${Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)`
-                : currentPlanName !== "PRO" ? " Upgrade to unlock more features!" : ""}
+              <s-text>Please wait while we set up your new plan...</s-text>
             </s-paragraph>
           </s-callout>
         </s-section>
@@ -165,6 +144,9 @@ export default function BillingSelect() {
                     {isCurrent && (
                       <s-badge tone="success">Current Plan</s-badge>
                     )}
+                    {plan.badge && !isCurrent && (
+                      <s-badge tone="info">{plan.badge}</s-badge>
+                    )}
                   </s-stack>
 
                   <s-stack direction="inline" gap="tight" alignment="baseline">
@@ -179,7 +161,7 @@ export default function BillingSelect() {
                   <s-paragraph tone="subdued">{plan.description}</s-paragraph>
 
                   <s-stack direction="block" gap="tight">
-                    <s-heading level="3">Features:</s-heading>
+                    <s-heading level="3">Includes:</s-heading>
                     <s-unordered-list>
                       {plan.features.map((feature, idx) => (
                         <s-list-item key={idx}>{feature}</s-list-item>
@@ -203,10 +185,37 @@ export default function BillingSelect() {
                           Upgrade to {plan.name}
                         </s-button>
                       </fetcher.Form>
+                    ) : downgrade && plan.name === "FREE" ? (
+                      subscription ? (
+                        <s-button
+                          variant="secondary"
+                          onClick={() => {
+                            if (confirm("Cancel your subscription and switch to the Free plan? You'll keep access to paid features until the end of your current billing period.")) {
+                              window.open(
+                                `https://admin.shopify.com/store/${shop?.shopify_domain?.replace(".myshopify.com", "")}/charges/${shop?.shopify_domain?.replace(".myshopify.com", "")}/pricing_plans`,
+                                "_top"
+                              );
+                            }
+                          }}
+                        >
+                          Switch to Free
+                        </s-button>
+                      ) : (
+                        <s-button variant="secondary" disabled>
+                          Current Plan
+                        </s-button>
+                      )
                     ) : downgrade ? (
-                      <s-button variant="secondary" disabled>
-                        Downgrade (Coming Soon)
-                      </s-button>
+                      <fetcher.Form method="post">
+                        <input type="hidden" name="plan" value={plan.name} />
+                        <s-button 
+                          variant="secondary" 
+                          type="submit"
+                          loading={fetcher.state === "submitting"}
+                        >
+                          Switch to {plan.name}
+                        </s-button>
+                      </fetcher.Form>
                     ) : null}
                   </s-stack>
                 </s-stack>
@@ -215,6 +224,33 @@ export default function BillingSelect() {
           })}
         </div>
       </s-section>
+
+      {currentPlanName !== "FREE" && (
+        <s-section>
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <div className="srHStack" style={{ gap: "12px", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div>
+                <span className="srCardTitle">Manage subscription</span>
+                <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                  To cancel your subscription or view billing history, visit your Shopify admin.
+                </span>
+              </div>
+              <s-button
+                variant="secondary"
+                size="slim"
+                onClick={() => {
+                  window.open(
+                    `https://admin.shopify.com/store/${shop?.shopify_domain?.replace(".myshopify.com", "")}/settings/billing`,
+                    "_top"
+                  );
+                }}
+              >
+                Billing settings
+              </s-button>
+            </div>
+          </s-box>
+        </s-section>
+      )}
 
       <s-section heading="Feature Comparison">
         <s-box
@@ -299,6 +335,12 @@ export default function BillingSelect() {
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
               </tr>
+              <tr>
+                <td><span className="srTextStrong">Priority Support</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
             </tbody>
           </table>
         </s-box>
@@ -314,4 +356,3 @@ export const headers = (headersArgs) => {
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }
-

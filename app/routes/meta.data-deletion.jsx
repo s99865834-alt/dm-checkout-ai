@@ -177,7 +177,7 @@ export const action = async ({ request }) => {
       console.error("[data-deletion] Missing signed_request");
       return new Response(
         JSON.stringify({
-          url: `${process.env.SHOPIFY_APP_URL || "https://socialrepl.ai"}/privacy`,
+          url: `${process.env.SHOPIFY_APP_URL || "https://www.socialrepl.ai"}/privacy`,
           confirmation_code: "ERROR_MISSING_REQUEST",
         }),
         {
@@ -195,7 +195,7 @@ export const action = async ({ request }) => {
       console.error("[data-deletion] Invalid signed_request:", error);
       return new Response(
         JSON.stringify({
-          url: `${process.env.SHOPIFY_APP_URL || "https://socialrepl.ai"}/privacy`,
+          url: `${process.env.SHOPIFY_APP_URL || "https://www.socialrepl.ai"}/privacy`,
           confirmation_code: "ERROR_INVALID_REQUEST",
         }),
         {
@@ -211,7 +211,7 @@ export const action = async ({ request }) => {
       console.error("[data-deletion] Missing user_id in payload");
       return new Response(
         JSON.stringify({
-          url: `${process.env.SHOPIFY_APP_URL || "https://socialrepl.ai"}/privacy`,
+          url: `${process.env.SHOPIFY_APP_URL || "https://www.socialrepl.ai"}/privacy`,
           confirmation_code: "ERROR_MISSING_USER_ID",
         }),
         {
@@ -230,7 +230,7 @@ export const action = async ({ request }) => {
     // Meta will show the confirmation_code to the user
     return new Response(
       JSON.stringify({
-        url: `${process.env.SHOPIFY_APP_URL || "https://socialrepl.ai"}/privacy`,
+        url: `${process.env.SHOPIFY_APP_URL || "https://www.socialrepl.ai"}/privacy`,
         confirmation_code: `DELETED_${userId}_${Date.now()}`,
       }),
       {
@@ -242,7 +242,7 @@ export const action = async ({ request }) => {
     console.error("[data-deletion] Error processing deletion request:", error);
     return new Response(
       JSON.stringify({
-        url: `${process.env.SHOPIFY_APP_URL || "https://socialrepl.ai"}/privacy`,
+        url: `${process.env.SHOPIFY_APP_URL || "https://www.socialrepl.ai"}/privacy`,
         confirmation_code: "ERROR_PROCESSING",
       }),
       {

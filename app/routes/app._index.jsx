@@ -266,7 +266,7 @@ export default function Index() {
   // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
-  const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
+  const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? true);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
 
@@ -285,7 +285,7 @@ export default function Index() {
     if (settings) {
       setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
       setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
-      setFollowupEnabled(settings.followup_enabled ?? false);
+      setFollowupEnabled(settings.followup_enabled ?? true);
     }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
@@ -386,7 +386,7 @@ export default function Index() {
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
-    <s-page heading="DM Checkout AI">
+    <s-page heading="SocialRepl.ai">
 
       {/* ── Banners ────────────────────────────────────────────────────── */}
       {error && (
@@ -415,11 +415,10 @@ export default function Index() {
       )}
       {shop?.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
         <s-banner tone="success">
-          <s-text variant="strong">Beta Trial Active</s-text>
+          <s-text variant="strong">Pro Trial Active</s-text>
           <s-text>
-            {" "}Full PRO access until{" "}
-            {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-            {" "}({Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)
+            {" "}You have full Pro access until{" "}
+            {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
           </s-text>
         </s-banner>
       )}
@@ -495,7 +494,7 @@ export default function Index() {
         <s-banner tone="success">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
-              <span className="srTextStrong">Welcome to DM Checkout AI!</span>
+              <span className="srTextStrong">Welcome to SocialRepl.ai!</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram account, map products to posts, and DM automation will handle the rest.
                 Ready for more? Growth adds comment automation, brand voice, and 500 messages/mo.
@@ -519,7 +518,7 @@ export default function Index() {
                     {plan.name}
                   </s-badge>
                   {shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
-                    <s-badge tone="warning">BETA</s-badge>
+                    <s-badge tone="success">Trial</s-badge>
                   )}
                   {shop.usage_count !== undefined && (
                     <span className="srCardDesc">
@@ -560,11 +559,6 @@ export default function Index() {
                     <span className="srCardTitle">
                       Connected{instagramInfo?.username ? ` · @${instagramInfo.username}` : ""}
                     </span>
-                    {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                      <span className="srCardDesc">
-                        ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                      </span>
-                    )}
                   </div>
                   <s-button
                     variant="secondary" size="slim" className="srBtnCompact"

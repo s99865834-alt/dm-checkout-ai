@@ -188,6 +188,11 @@ export async function processFollowups() {
               continue;
             }
 
+            if (usageData.usage >= usageData.cap) {
+              logger.debug(`[followup] Shop ${shop.id} at usage cap (${usageData.usage}/${usageData.cap}), skipping follow-up`);
+              continue;
+            }
+
             // Get brand voice
             const brandVoice = await getBrandVoice(shop.id);
 

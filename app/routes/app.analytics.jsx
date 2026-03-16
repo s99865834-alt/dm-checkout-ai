@@ -475,7 +475,7 @@ export default function AnalyticsPage() {
                           <span className="srHeadingLg">
                             {analytics.messagesReceived || 0}
                             {plan?.name === "FREE" && (
-                              <span className="srTextSubdued" style={{ fontSize: 14, fontWeight: 400 }}> / {plan?.cap || 25}</span>
+                              <span className="srTextSubdued" style={{ fontSize: 14, fontWeight: 400 }}> / {plan?.cap || 100}</span>
                             )}
                           </span>
                         </div>
@@ -808,12 +808,9 @@ export default function AnalyticsPage() {
                                   {message.channel.toUpperCase()}
                                 </s-badge>
                                 <span className="srTextSubdued">{new Date(message.created_at).toLocaleString()}</span>
-                                {message.external_id && (
-                                  <span className="srTextSubdued">ID: {message.external_id.substring(0, 20)}...</span>
-                                )}
                               </div>
-                              {message.from_user_id && (
-                                <span className="srTextSubdued">From: {message.from_user_id}</span>
+                              {message.from_username && (
+                                <span className="srTextSubdued">@{message.from_username}</span>
                               )}
                             </div>
 
