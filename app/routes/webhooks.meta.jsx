@@ -459,6 +459,9 @@ export const action = async ({ request }) => {
 
                     if (!updatedMessage) return;
 
+                    // Attach entities from classification (not stored in DB)
+                    updatedMessage.ai_entities = classification.entities || null;
+
                     const usageData = await getShopPlanAndUsage(shopId);
                     if (!usageData) return;
 
@@ -559,7 +562,7 @@ export const action = async ({ request }) => {
                   logger.debug(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
                 } else if (result?.id && parsed.commentText) {
                   withAutomationLimit(async () => {
-                    const classification = await classifyMessage(parsed.commentText, { shopId });
+                    const classification = await classifyMessage(parsed.commentText, { shopId, channel: "comment" });
                     if (classification.intent === null || classification.error) return;
 
                     await updateMessageAI(

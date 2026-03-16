@@ -9,7 +9,7 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessa
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain } from "./shopify-data.server";
 import { getStoredStoreContext } from "./db.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
@@ -565,14 +565,114 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         return { sent: true };
       }
 
-      // No prior product context => Direct DM without context
+      // No prior product context => try to find the product from AI entities or message text
+      const entityProductName = message.ai_entities?.product_name || null;
+      const searchTerm = entityProductName || message.text;
+
+      let matchedProduct = null;
+      if (shop.shopify_domain && searchTerm) {
+        try {
+          const candidates = await searchProductsByDomain(shop.shopify_domain, searchTerm, 3);
+          if (candidates.length === 1) {
+            matchedProduct = candidates[0];
+          } else if (candidates.length > 1 && entityProductName) {
+            const lower = entityProductName.toLowerCase();
+            matchedProduct = candidates.find(
+              (p) => p.title.toLowerCase() === lower
+            ) || candidates.find(
+              (p) => p.title.toLowerCase().includes(lower)
+            ) || candidates[0];
+          }
+          if (matchedProduct) {
+            logger.debug(`[automation] Product search matched: "${matchedProduct.title}" for text "${searchTerm}"`);
+          }
+        } catch (err) {
+          console.error("[automation] Product search error:", err?.message);
+        }
+      }
+
+      if (matchedProduct) {
+        const gid = matchedProduct.id;
+        const numericProductId = gid.replace("gid://shopify/Product/", "");
+        const firstVariant = matchedProduct.variants?.nodes?.[0];
+        const variantGid = firstVariant?.id || null;
+        const numericVariantId = variantGid ? variantGid.replace("gid://shopify/ProductVariant/", "") : null;
+
+        const productMapping = {
+          product_id: numericProductId,
+          variant_id: numericVariantId,
+          product_handle: matchedProduct.handle || null,
+        };
+
+        const needsPdp = intent === "product_question" || intent === "variant_inquiry";
+        const [pdpResult, checkoutLink, brandVoiceData, productInfo] = await Promise.all([
+          needsPdp
+            ? buildProductPageLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, productMapping.product_handle)
+            : Promise.resolve(null),
+          buildCheckoutLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, 1),
+          getBrandVoice(shop.id),
+          getShopifyProductInfo(shop.shopify_domain, gid, variantGid),
+        ]);
+
+        const productPageUrl = pdpResult;
+        const checkoutUrl = checkoutLink.url;
+        const linkId = checkoutLink.linkId;
+        const productName = productInfo.productName || matchedProduct.title;
+        const productPrice = productInfo.productPrice || firstVariant?.price;
+
+        const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+
+        const replyText = await generateReplyMessage(
+          brandVoiceData,
+          productName,
+          checkoutUrlForMessage,
+          intent,
+          productPrice,
+          productPageUrl,
+          message.text,
+          null,
+          {
+            originChannel: "dm",
+            inboundChannel: "dm",
+            triggerChannel: "dm",
+            lastProductLink: null,
+            recentMessages: (threadContext?.messages || [])
+              .filter((m) => m.id !== message.id)
+              .slice(0, 8)
+              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+          }
+        );
+
+        if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
+          return { sent: false, reason: "Already replied to this message" };
+        }
+        const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
+        if (sendResult?.sent === false) return sendResult;
+        await incrementUsage(shop.id, 1);
+
+        await logLinkSent({
+          shopId: shop.id,
+          messageId: message.id,
+          productId: `gid://shopify/Product/${numericProductId}`,
+          variantId: variantGid,
+          url: (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
+            ? productPageUrl
+            : checkoutUrl,
+          linkId,
+          replyText,
+        });
+
+        logger.debug(`[automation] ✅ Product-matched DM reply sent for message ${message.id} (product: ${productName})`);
+        return { sent: true };
+      }
+
+      // No product match found => ask clarifying question (PRO with followup enabled)
       if (plan.followup === true && followupAutomationEnabled) {
-        // Meta Compliance: loop prevention - don't ask clarifying question multiple times
         const { data: recentClarifyingQuestions } = await supabase
           .from("links_sent")
           .select("id, sent_at, message_id")
           .eq("shop_id", shop.id)
-          .is("url", null) // Clarifying questions have no URL
+          .is("url", null)
           .not("reply_text", "is", null)
           .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
@@ -590,14 +690,13 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             );
             return {
               sent: false,
-              reason:
-                "Loop prevention: Maximum clarifying questions reached. Please contact support for assistance.",
+              reason: "Loop prevention: Maximum clarifying questions reached.",
             };
           }
         }
 
         logger.debug(
-          `[automation] Direct DM without product context - PRO tier will ask for clarification for intent: ${intent}`
+          `[automation] No product match found - PRO tier will ask for clarification for intent: ${intent}`
         );
 
         const brandVoiceData = await getBrandVoice(shop.id);
@@ -609,13 +708,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         );
 
         if (!(await claimMessageReply(shop.id, message.id, clarifyingReply, message.external_id))) {
-          logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
         const sendResult = await sendDmReply(shop.id, message.from_user_id, clarifyingReply);
-        if (sendResult?.sent === false) {
-          return sendResult;
-        }
+        if (sendResult?.sent === false) return sendResult;
         await incrementUsage(shop.id, 1);
 
         await logLinkSent({
@@ -629,18 +725,17 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         });
 
         logger.debug(`[automation] ✅ Clarifying question sent for Direct DM ${message.id}`);
-        return { sent: true, reason: "PRO tier: Asked customer which product they're referring to" };
+        return { sent: true, reason: "Asked customer which product they're referring to" };
       }
 
       logger.debug(
-        `[automation] Direct DM without product context - skipping product-specific automation for intent: ${intent} (follow-up automation disabled or unavailable)`
+        `[automation] Direct DM without product context - skipping for intent: ${intent}`
       );
       return {
         sent: false,
-        reason:
-          followupAutomationEnabled
-            ? "Direct DM without product context - cannot determine which product customer is referring to"
-            : "Follow-up automation is disabled — cannot ask clarifying questions, so no automated response will be sent",
+        reason: followupAutomationEnabled
+          ? "Direct DM without product context - cannot determine which product customer is referring to"
+          : "Follow-up automation is disabled — cannot ask clarifying questions",
       };
     }
 
@@ -700,16 +795,16 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       return { sent: false, reason: "Usage cap exceeded" };
     }
 
-    // 4. Check AI intent and confidence threshold (0.7)
-    // Note: price_request indicates purchase intent, so we should respond with checkout link
+    // 4. Check AI intent and confidence threshold
     const eligibleIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
     if (!message.ai_intent || !eligibleIntents.includes(message.ai_intent)) {
       logger.debug(`[automation] Comment AI intent "${message.ai_intent}" not eligible`);
       return { sent: false, reason: `AI intent "${message.ai_intent}" not eligible` };
     }
 
-    if (!message.ai_confidence || message.ai_confidence < 0.7) {
-      logger.debug(`[automation] Comment confidence ${message.ai_confidence} below threshold (0.7)`);
+    const minConfidence = message.ai_intent === "purchase" ? 0.5 : 0.7;
+    if (!message.ai_confidence || message.ai_confidence < minConfidence) {
+      logger.debug(`[automation] Comment confidence ${message.ai_confidence} below threshold (${minConfidence})`);
       return { sent: false, reason: `Confidence ${message.ai_confidence} below threshold` };
     }
 

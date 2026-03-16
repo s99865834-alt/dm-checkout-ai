@@ -141,7 +141,12 @@ export async function classifyMessage(text, context = {}) {
     };
   }
 
-  const prompt = `You are analyzing an Instagram message or comment from a customer to a business. Classify the message and extract relevant information.
+  const channel = context.channel || "dm";
+  const channelHint = channel === "comment"
+    ? "\nThis is a COMMENT on a product post. Positive or enthusiastic comments on product posts usually indicate purchase interest — classify them as \"purchase\"."
+    : "";
+
+  const prompt = `You are analyzing an Instagram ${channel === "comment" ? "comment on a product post" : "direct message"} from a customer to a business. Classify the message and extract relevant information.${channelHint}
 
 Message: "${text}"
 
@@ -158,13 +163,13 @@ Respond with ONLY a valid JSON object (no markdown, no code blocks) with the fol
 }
 
 Intent meanings:
-- "purchase": Customer wants to buy something, is ready to purchase, or expresses strong interest/enthusiasm that suggests purchase intent (e.g., "love this!", "I need this", "want this", "this is amazing")
-- "product_question": Customer is asking about a specific product (features, details, etc.) - requires product context
-- "variant_inquiry": Customer is asking about specific variants (size, color, etc.) - requires product context
-- "price_request": Customer is asking about pricing for a specific product - requires product context
+- "purchase": Customer wants to buy something, is ready to purchase, or expresses enthusiasm/interest that suggests they would want to learn more or buy (e.g., "love this!", "I need this", "want this", "this is amazing", "this is so awesome", "where can I get this", "😍", "🔥"). When in doubt on a product post, lean toward "purchase" for positive/enthusiastic comments.
+- "product_question": Customer is asking about a specific product (features, details, materials, how it works, etc.)
+- "variant_inquiry": Customer is asking about specific variants (size, color, availability, etc.)
+- "price_request": Customer is asking about pricing for a specific product
 - "store_question": Customer is asking about the store in general (return policy, shipping, sales, store hours, general policies, etc.) - does NOT require a specific product
-- "clarification_needed": Customer needs more information to proceed
-- "not_relevant": Message is not related to products or purchasing
+- "clarification_needed": Customer message is too vague to determine what they want
+- "not_relevant": Message is clearly spam, unrelated chatter, or has zero connection to the products or business (e.g., "lol", random tags, arguments between users)
 
 Confidence: How confident you are in the classification (0.0 = not confident, 1.0 = very confident)
 Sentiment: Overall tone of the message

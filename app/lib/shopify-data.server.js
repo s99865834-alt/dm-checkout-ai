@@ -463,7 +463,7 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
 }
 
 /**
- * Search for products by name or handle
+ * Search for products by name or handle (requires request for Shopify auth)
  * @param {Object} request - Request object (for authentication)
  * @param {string} searchTerm - Search term (product name, handle, etc.)
  * @param {number} limit - Maximum number of products to return (default: 5)
@@ -512,6 +512,58 @@ export async function searchShopifyProducts(request, searchTerm, limit = 5) {
     return response?.data?.products?.nodes || [];
   } catch (error) {
     console.error("[shopify-data] Error searching products:", error);
+    return [];
+  }
+}
+
+/**
+ * Webhook-safe product search: uses stored session instead of request auth.
+ * Call from automation/webhook context where there's no Shopify-authenticated request.
+ * @param {string} shopDomain - e.g. "mystore.myshopify.com"
+ * @param {string} searchTerm - Product name or keyword
+ * @param {number} limit - Max results (default 5)
+ * @returns {Promise<Array>} - Matching products with id, title, handle, first variant
+ */
+export async function searchProductsByDomain(shopDomain, searchTerm, limit = 5) {
+  try {
+    if (!shopDomain || !searchTerm) return [];
+
+    const session = await loadShopSession(shopDomain);
+    if (!session?.accessToken) {
+      logger.debug("[shopify-data] No session for product search:", shopDomain);
+      return [];
+    }
+
+    const api = getShopifyApi();
+    const client = new api.clients.Graphql({ session });
+    const response = await client.request(
+      `query searchProducts($query: String!, $first: Int!) {
+        products(first: $first, query: $query) {
+          nodes {
+            id
+            title
+            handle
+            variants(first: 1) {
+              nodes {
+                id
+                title
+                price
+              }
+            }
+          }
+        }
+      }`,
+      {
+        variables: {
+          query: `title:*${searchTerm}*`,
+          first: limit,
+        },
+      }
+    );
+
+    return response?.data?.products?.nodes || [];
+  } catch (error) {
+    console.error("[shopify-data] Error in searchProductsByDomain:", error?.message);
     return [];
   }
 }
