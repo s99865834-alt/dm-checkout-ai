@@ -17,7 +17,7 @@ export default function TermsOfService() {
       <section>
         <h2>1. Agreement to Terms</h2>
         <p>
-          By accessing or using DM Checkout AI (the "Service"), operated by SocialRepl.ai, you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of these Terms, then you may not access the Service.
+          By accessing or using SocialRepl.ai (the "Service"), operated by Tennyson Labs LLC, you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of these Terms, then you may not access the Service.
         </p>
         <p>
           These Terms apply to all users of the Service, including merchants who install the app on their Shopify stores and any end users who interact with automated messages sent through the Service.
@@ -27,7 +27,7 @@ export default function TermsOfService() {
       <section>
         <h2>2. Description of Service</h2>
         <p>
-          DM Checkout AI is a Shopify application that provides automated messaging services for Instagram. The Service allows merchants to:
+          SocialRepl.ai is a Shopify application that provides automated messaging services for Instagram. The Service allows merchants to:
         </p>
         <ul>
           <li>Connect their Instagram business accounts</li>
@@ -112,7 +112,7 @@ export default function TermsOfService() {
       <section>
         <h2>8. Intellectual Property</h2>
         <p>
-          The Service and its original content, features, and functionality are owned by SocialRepl.ai and are protected by applicable copyright, trademark, patent, trade secret, and other intellectual property laws.
+          The Service and its original content, features, and functionality are owned by Tennyson Labs LLC and are protected by applicable copyright, trademark, patent, trade secret, and other intellectual property laws.
         </p>
         <p>
           You retain ownership of any content you provide through the Service. By using the Service, you grant us a license to use, store, and process your content solely for the purpose of providing the Service.
@@ -139,7 +139,7 @@ export default function TermsOfService() {
       <section>
         <h2>11. Limitation of Liability</h2>
         <p>
-          TO THE MAXIMUM EXTENT PERMITTED BY LAW, SOCIALREPL.AI AND DM CHECKOUT AI SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR REVENUES, WHETHER INCURRED DIRECTLY OR INDIRECTLY, OR ANY LOSS OF DATA, USE, GOODWILL, OR OTHER INTANGIBLE LOSSES, RESULTING FROM YOUR USE OF THE SERVICE.
+          TO THE MAXIMUM EXTENT PERMITTED BY LAW, TENNYSON LABS LLC SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR REVENUES, WHETHER INCURRED DIRECTLY OR INDIRECTLY, OR ANY LOSS OF DATA, USE, GOODWILL, OR OTHER INTANGIBLE LOSSES, RESULTING FROM YOUR USE OF THE SERVICE.
         </p>
         <p>
           Our total liability for any claims arising out of or relating to the Service shall not exceed the amount you paid us in the twelve (12) months preceding the claim.
@@ -149,7 +149,7 @@ export default function TermsOfService() {
       <section>
         <h2>12. Indemnification</h2>
         <p>
-          You agree to indemnify, defend, and hold harmless SocialRepl.ai, DM Checkout AI, and their officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses, including reasonable attorneys' fees, arising out of or in any way connected with your use of the Service, violation of these Terms, or infringement of any rights of another.
+          You agree to indemnify, defend, and hold harmless Tennyson Labs LLC and its officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses, including reasonable attorneys' fees, arising out of or in any way connected with your use of the Service, violation of these Terms, or infringement of any rights of another.
         </p>
       </section>
 
@@ -166,7 +166,7 @@ export default function TermsOfService() {
       <section>
         <h2>14. Governing Law</h2>
         <p>
-          These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law provisions. Any disputes arising out of or relating to these Terms or the Service shall be resolved in the courts of the State of Delaware.
+          These Terms shall be governed by and construed in accordance with the laws of the State of Colorado, United States, without regard to its conflict of law provisions. Any disputes arising out of or relating to these Terms or the Service shall be resolved in the courts of the State of Colorado.
         </p>
       </section>
 
@@ -193,7 +193,8 @@ export default function TermsOfService() {
           If you have any questions about these Terms of Service, please contact us at:
         </p>
         <p>
-          <strong>DM Checkout AI by SocialRepl.ai</strong><br />
+          <strong>Tennyson Labs LLC</strong><br />
+          SocialRepl.ai<br />
           Email: support@socialrepl.ai<br />
           Website: https://www.socialrepl.ai
         </p>

@@ -17,7 +17,7 @@ export default function PrivacyPolicy() {
       <section>
         <h2>1. Introduction</h2>
         <p>
-          SocialRepl.ai, operator of DM Checkout AI ("we," "our," or "us"), is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use DM Checkout AI (the "Service"). Please read this Privacy Policy carefully. If you do not agree with the terms of this Privacy Policy, please do not access or use the Service.
+          Tennyson Labs LLC, operator of SocialRepl.ai ("we," "our," or "us"), is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use SocialRepl.ai (the "Service"). Please read this Privacy Policy carefully. If you do not agree with the terms of this Privacy Policy, please do not access or use the Service.
         </p>
       </section>
 
@@ -160,7 +160,8 @@ export default function PrivacyPolicy() {
           If you have any questions about this Privacy Policy or our data practices, please contact us at:
         </p>
         <p>
-          <strong>DM Checkout AI by SocialRepl.ai</strong><br />
+          <strong>Tennyson Labs LLC</strong><br />
+          SocialRepl.ai<br />
           Email: support@socialrepl.ai<br />
           Website: https://www.socialrepl.ai
         </p>

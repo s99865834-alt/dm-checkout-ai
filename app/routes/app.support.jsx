@@ -7,7 +7,7 @@ export default function SupportPage() {
         <s-section heading="We're Here to Help">
           <s-stack direction="block" gap="base">
             <s-paragraph>
-              We're committed to providing you with the best experience using DM Checkout AI. Whether you have a question about features, need help with setup, or want to share feedback — we're here for you.
+              We're committed to providing you with the best experience using SocialRepl.ai. Whether you have a question about features, need help with setup, or want to share feedback — we're here for you.
             </s-paragraph>
           </s-stack>
         </s-section>

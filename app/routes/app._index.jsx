@@ -386,7 +386,7 @@ export default function Index() {
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
 
   return (
-    <s-page heading="DM Checkout AI">
+    <s-page heading="SocialRepl.ai">
 
       {/* ── Banners ────────────────────────────────────────────────────── */}
       {error && (
@@ -494,7 +494,7 @@ export default function Index() {
         <s-banner tone="success">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
-              <span className="srTextStrong">Welcome to DM Checkout AI!</span>
+              <span className="srTextStrong">Welcome to SocialRepl.ai!</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram account, map products to posts, and DM automation will handle the rest.
                 Ready for more? Growth adds comment automation, brand voice, and 500 messages/mo.
