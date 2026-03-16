@@ -23,6 +23,11 @@ api_version = "2026-01"
   topics = [ "orders/create" ]
   uri = "/webhooks/shopify/orders"
 
+  # Mandatory compliance webhooks (required for App Store)
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_products,read_products,read_orders,read_legal_policies,read_content"
