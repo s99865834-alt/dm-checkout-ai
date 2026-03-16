@@ -64,7 +64,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
   // Base defaults - these are the initial values for a new shop
   const baseDefaults = {
     plan: "FREE",
-    monthly_cap: 25,
+    monthly_cap: 100,
     usage_month: usageMonth,
     usage_count: 0, // Always start at 0 on install/reinstall
     priority_support: false,
@@ -883,6 +883,29 @@ export async function getMessageCount(shopId, options = {}) {
 }
 
 /**
+ * Count comment messages this month for Free-tier shops (no comment automation).
+ * Used to show Free users how many comments they received but couldn't auto-reply to.
+ */
+export async function getMissedCommentCount(shopId) {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("channel", "comment")
+    .gte("created_at", monthStart);
+
+  if (error) {
+    console.error("getMissedCommentCount error", error);
+    return 0;
+  }
+
+  return count || 0;
+}
+
+/**
  * Get product mapping for an Instagram media ID
  */
 export async function getProductMapping(shopId, igMediaId) {
@@ -1197,6 +1220,7 @@ export async function getAnalytics(shopId, planName, options = {}) {
     linksSent: 0,
     clicks: 0,
     ctr: 0,
+    responseRate: 0,
     topTriggerPhrases: [],
     channelPerformance: {
       dm: { sent: 0, responded: 0, clicks: 0 },
@@ -1290,6 +1314,11 @@ export async function getAnalytics(shopId, planName, options = {}) {
 
     // Filter messages that have links sent (for channel performance and trigger phrases)
     const messagesWithLinks = (allMessages || []).filter(m => messageToLinkId[m.id]);
+
+    // Response rate: % of messages that received an AI response (link sent)
+    if (analytics.messagesReceived > 0) {
+      analytics.responseRate = (messagesWithLinks.length / analytics.messagesReceived) * 100;
+    }
 
     // Get clicks for ALL link_ids (not just those linked to messages)
     if (linkIds.length > 0) {

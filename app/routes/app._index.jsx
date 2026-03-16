@@ -3,7 +3,7 @@ import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount } from "../lib/db.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -70,7 +70,12 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts };
+  let missedComments = 0;
+  if (shop?.id && plan?.name === "FREE") {
+    missedComments = await getMissedCommentCount(shop.id);
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments };
 };
 
 export const action = async ({ request }) => {
@@ -242,8 +247,8 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts } = loaderData || {};
-  const { hasAccess } = usePlanAccess();
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments } = loaderData || {};
+  const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
@@ -418,6 +423,88 @@ export default function Index() {
         </s-banner>
       )}
 
+      {/* ── Upgrade prompts ─────────────────────────────────────────────── */}
+      {shop && plan && plan.name === "FREE" && shop.usage_count >= plan.cap && (
+        <s-banner tone="critical">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                New DMs won't receive automated responses until next month.
+                Upgrade to Growth for 500 messages/mo plus comment automation and brand voice.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "FREE" && shop.usage_count >= plan.cap * 0.8 && shop.usage_count < plan.cap && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Running low on messages. Upgrade to Growth for 5x the limit plus comment automation and full analytics.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">View plans</s-button>
+          </div>
+        </s-banner>
+      )}
+      {plan && plan.name === "FREE" && missedComments > 0 && (
+        <s-banner tone="info">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">{missedComments} comment{missedComments === 1 ? "" : "s"} received this month without an automated reply.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Comment-to-DM automation is available on Growth ($39/mo). Turn comments into checkout links automatically.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="secondary" size="slim">Unlock comment automation</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "GROWTH" && shop.usage_count >= plan.cap && (
+        <s-banner tone="critical">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Automation is paused until next month. Upgrade to Pro for 10,000 messages/mo, follow-ups, and per-post analytics.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "GROWTH" && shop.usage_count >= plan.cap * 0.8 && shop.usage_count < plan.cap && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Upgrade to Pro for 10,000 messages/mo plus follow-up messages and multi-turn conversations.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {shop && plan && plan.name === "FREE" && shop.usage_count === 0 && !missedComments && (
+        <s-banner tone="success">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">Welcome to DM Checkout AI!</span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram account, map products to posts, and DM automation will handle the rest.
+                Ready for more? Growth adds comment automation, brand voice, and 500 messages/mo.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
+          </div>
+        </s-banner>
+      )}
+
       {/* ── Plan & Instagram ───────────────────────────────────────────── */}
       <s-section heading="Plan & Instagram">
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" className="srCardCompact">
@@ -511,100 +598,116 @@ export default function Index() {
       </s-section>
 
       {/* ── Automation ────────────────────────────────────────────────── */}
-      <PlanGate requiredPlan="PRO" feature="Automation Controls">
-        <s-section heading="Automation">
-          <automationFetcher.Form method="post">
-            <input type="hidden" name="action" value="update-automation-settings" />
-            <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
-            <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
-            <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
-            <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
+      <s-section heading="Automation">
+        <automationFetcher.Form method="post">
+          <input type="hidden" name="action" value="update-automation-settings" />
+          <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
+          <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
+          <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+          <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
+          <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
 
-            <div className="srAutoTwoCol">
-              {/* Left: toggles */}
+          <div className="srAutoTwoCol">
+            {/* Left: toggles */}
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+              <div className="srToggleStack">
+                <div className="srToggleRow">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">DM automation</span>
+                      <span className="srCardDesc">Process and reply to Instagram DMs</span>
+                    </div>
+                    <label className="srToggle">
+                      <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="srToggleRow">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Comment automation</span>
+                      <span className="srCardDesc">
+                        {hasAccess("GROWTH")
+                          ? "Auto-reply to comments with private DMs"
+                          : "Upgrade to Growth to unlock comment automation"}
+                      </span>
+                    </div>
+                    <label className="srToggle">
+                      <input
+                        type="checkbox"
+                        checked={hasAccess("GROWTH") ? commentAutomationEnabled : false}
+                        onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
+                        disabled={!hasAccess("GROWTH")}
+                      />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+                <div className="srToggleRow srToggleRowLast">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Follow-up messages</span>
+                      <span className="srCardDesc">
+                        {hasAccess("PRO")
+                          ? "Send a reminder 23–24 hours after last message if no link click"
+                          : "Upgrade to Pro to unlock follow-ups"}
+                      </span>
+                    </div>
+                    <label className="srToggle">
+                      <input
+                        type="checkbox"
+                        checked={hasAccess("PRO") ? followupEnabled : false}
+                        onChange={(e) => setFollowupEnabled(e.target.checked)}
+                        disabled={!hasAccess("PRO")}
+                      />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </s-box>
+
+            {/* Right: brand voice */}
+            <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <div className="srToggleStack">
                   <div className="srToggleRow">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">DM automation</span>
-                        <span className="srCardDesc">Process and reply to Instagram DMs</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="srToggleRow">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Comment automation</span>
-                        <span className="srCardDesc">Process and reply to comments on posts</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={commentAutomationEnabled} onChange={(e) => setCommentAutomationEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Tone</span>
+                      <span className="srCardDesc">Overall style of automated replies</span>
+                      <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
+                        <option value="friendly">Friendly</option>
+                        <option value="expert">Expert</option>
+                        <option value="casual">Casual</option>
+                      </select>
                     </div>
                   </div>
                   <div className="srToggleRow srToggleRowLast">
-                    <div className="srToggleRowInner">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Follow-up messages</span>
-                        <span className="srCardDesc">Send a reminder 23–24 hours after last message if no link click</span>
-                      </div>
-                      <label className="srToggle">
-                        <input type="checkbox" checked={followupEnabled} onChange={(e) => setFollowupEnabled(e.target.checked)} />
-                        <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                      </label>
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Custom Voice</span>
+                      <span className="srCardDesc">Optional override for reply style</span>
+                      <input
+                        type="text"
+                        value={brandVoiceCustom}
+                        onChange={(e) => setBrandVoiceCustom(e.target.value)}
+                        placeholder="e.g. Always be enthusiastic and use emojis"
+                        className="srInput srInputRow"
+                      />
                     </div>
                   </div>
                 </div>
               </s-box>
+            </PlanGate>
+          </div>
 
-              {/* Right: brand voice */}
-              <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
-                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <div className="srToggleStack">
-                    <div className="srToggleRow">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Tone</span>
-                        <span className="srCardDesc">Overall style of automated replies</span>
-                        <select value={brandVoiceTone} onChange={(e) => setBrandVoiceTone(e.target.value)} className="srSelect srInputRow">
-                          <option value="friendly">Friendly</option>
-                          <option value="expert">Expert</option>
-                          <option value="casual">Casual</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="srToggleRow srToggleRowLast">
-                      <div className="srToggleRowText">
-                        <span className="srCardTitle">Custom Voice</span>
-                        <span className="srCardDesc">Optional override for reply style</span>
-                        <input
-                          type="text"
-                          value={brandVoiceCustom}
-                          onChange={(e) => setBrandVoiceCustom(e.target.value)}
-                          placeholder="e.g. Always be enthusiastic and use emojis"
-                          className="srInput srInputRow"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </s-box>
-              </PlanGate>
-            </div>
-
-            <div className="srSaveBtnWrap">
-              <s-button type="submit" variant="primary" className="srBtnCompact">
-                {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
-              </s-button>
-            </div>
-          </automationFetcher.Form>
-        </s-section>
-      </PlanGate>
+          <div className="srSaveBtnWrap">
+            <s-button type="submit" variant="primary" className="srBtnCompact">
+              {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
+            </s-button>
+          </div>
+        </automationFetcher.Form>
+      </s-section>
 
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
       {isConnected && (

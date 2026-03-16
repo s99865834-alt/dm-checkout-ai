@@ -1,7 +1,7 @@
 export const PLANS = {
   FREE: {
     name: "FREE",
-    cap: 25,
+    cap: 100,
     dm: true,
     comments: false,
     converse: false,
@@ -21,7 +21,7 @@ export const PLANS = {
   },
   PRO: {
     name: "PRO",
-    cap: 50000, // effectively unlimited w/ fair use
+    cap: 10000,
     dm: true,
     comments: true,
     converse: true,

@@ -61,7 +61,7 @@ export async function getShopWithPlan(request) {
     try {
       shop = await createOrUpdateShop(shopDomain, {
         plan: "FREE",
-        monthly_cap: 25,
+        monthly_cap: 100,
         active: true,
       });
       logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
@@ -73,7 +73,7 @@ export async function getShopWithPlan(request) {
     try {
       shop = await createOrUpdateShop(shopDomain, {
         plan: shop.plan || "FREE",
-        monthly_cap: shop.monthly_cap || 25,
+        monthly_cap: shop.monthly_cap || 100,
         active: true,
         usage_count: 0,
       });

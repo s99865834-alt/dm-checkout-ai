@@ -62,22 +62,24 @@ export default function BillingSelect() {
       config: PLANS.FREE,
       description: "Perfect for getting started",
       features: [
-        "25 messages/month",
-        "DM automation",
-        "Basic AI responses",
+        "100 messages/month",
+        "DM automation with AI",
+        "Checkout links",
+        "Basic analytics",
       ],
     },
     {
       name: "GROWTH",
-      price: "$29",
+      price: "$39",
       period: "month",
       config: PLANS.GROWTH,
       description: "Scale your Instagram sales",
       features: [
         "500 messages/month",
-        "DM + Comments automation",
-        "Conversational AI",
+        "DMs + Comment-to-DM",
         "Brand voice customization",
+        "Store question answering",
+        "Order attribution + full analytics",
       ],
     },
     {
@@ -85,12 +87,13 @@ export default function BillingSelect() {
       price: "$99",
       period: "month",
       config: PLANS.PRO,
-      description: "Enterprise-level features",
+      description: "Maximum growth & insights",
       features: [
-        "50,000 messages/month",
-        "All Growth features",
-        "Follow-up automation",
-        "Priority support",
+        "10,000 messages/month",
+        "Everything in Growth",
+        "Follow-up messages",
+        "Multi-turn conversations",
+        "Per-post analytics",
       ],
     },
   ];
@@ -223,73 +226,75 @@ export default function BillingSelect() {
           <table className="srTable">
             <thead>
               <tr>
-                <th className="srTh srTextLeft">
-                  Feature
-                </th>
-                <th className="srTh srTextCenter">
-                  Free
-                </th>
-                <th className="srTh srTextCenter">
-                  Growth
-                </th>
-                <th className="srTh srTextCenter">
-                  Pro
-                </th>
+                <th className="srTh srTextLeft">Feature</th>
+                <th className="srTh srTextCenter">Free</th>
+                <th className="srTh srTextCenter">Growth</th>
+                <th className="srTh srTextCenter">Pro</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>
-                  <s-text variant="strong">Monthly Messages</s-text>
-                </td>
-                <td className="srTextCenter">25</td>
+                <td><span className="srTextStrong">Monthly Messages</span></td>
+                <td className="srTextCenter">100</td>
                 <td className="srTextCenter">500</td>
-                <td className="srTextCenter">50,000</td>
+                <td className="srTextCenter">10,000</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">DM Automation</s-text>
-                </td>
+                <td><span className="srTextStrong">DM Automation</span></td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">Comments Automation</s-text>
-                </td>
+                <td><span className="srTextStrong">Checkout Links</span></td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Basic Analytics</span></td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Comment-to-DM Automation</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">Conversations</s-text>
-                </td>
+                <td><span className="srTextStrong">Brand Voice</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">Brand Voice</s-text>
-                </td>
+                <td><span className="srTextStrong">Store Question Answering</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">Follow-ups</s-text>
-                </td>
+                <td><span className="srTextStrong">Order Attribution + Full Analytics</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Follow-up Messages</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td>
-                  <s-text variant="strong">Priority Support</s-text>
-                </td>
+                <td><span className="srTextStrong">Multi-turn Conversations</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Per-post Analytics</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
