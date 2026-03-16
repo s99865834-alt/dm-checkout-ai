@@ -29,25 +29,19 @@ export default function SupportPage() {
         </s-section>
 
         <s-section heading="Common Questions">
-          <s-stack direction="block" gap="base">
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-stack direction="block" gap="base">
-                <s-heading level="3">How do I connect my Instagram account?</s-heading>
-                <s-paragraph>Go to the Home page and click "Connect Instagram" in the Plan & Instagram section. You'll be guided through the Meta authorization process.</s-paragraph>
-              </s-stack>
-            </s-box>
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-stack direction="block" gap="base">
-                <s-heading level="3">How do I map products to posts?</s-heading>
-                <s-paragraph>On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</s-paragraph>
-              </s-stack>
-            </s-box>
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-stack direction="block" gap="base">
-                <s-heading level="3">How do I change my plan?</s-heading>
-                <s-paragraph>Go to the Billing page to upgrade or manage your subscription. Upgrades take effect immediately. To cancel, use the "Billing settings" link on the Billing page.</s-paragraph>
-              </s-stack>
-            </s-box>
+          <s-stack direction="block" gap="tight">
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">How do I connect my Instagram account?</summary>
+              <p className="srFaqAnswer">Go to the Home page and click "Connect Instagram" in the Plan & Instagram section. You'll be guided through the Meta authorization process.</p>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">How do I map products to posts?</summary>
+              <p className="srFaqAnswer">On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</p>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">How do I change my plan?</summary>
+              <p className="srFaqAnswer">Go to the Billing page to upgrade or manage your subscription. Upgrades take effect immediately. To cancel, use the "Billing settings" link on the Billing page.</p>
+            </details>
           </s-stack>
         </s-section>
       </s-page>

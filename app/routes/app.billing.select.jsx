@@ -1,5 +1,5 @@
 import { useOutletContext, useLoaderData, useRouteError, useSearchParams, useFetcher } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
@@ -41,6 +41,24 @@ export const action = async ({ request }) => {
     return { error: error.message };
   }
 };
+
+function PlanActionButton({ fetcher, planName, variant, label }) {
+  const formRef = useRef(null);
+  const isPrimary = variant === "primary";
+  return (
+    <fetcher.Form method="post" ref={formRef}>
+      <input type="hidden" name="plan" value={planName} />
+      <button
+        type="button"
+        className={isPrimary ? "srPrimaryBtn" : "srSecondaryBtn"}
+        disabled={fetcher.state === "submitting"}
+        onClick={() => formRef.current && fetcher.submit(formRef.current)}
+      >
+        {fetcher.state === "submitting" ? "Processing…" : label}
+      </button>
+    </fetcher.Form>
+  );
+}
 
 export default function BillingSelect() {
   const { shop, plan: currentPlan } = useOutletContext() || useLoaderData();
@@ -169,55 +187,33 @@ export default function BillingSelect() {
                     </s-unordered-list>
                   </s-stack>
 
-                  <s-stack direction="block" gap="tight">
+                  <div>
                     {isCurrent ? (
-                      <s-button variant="primary" disabled>
+                      <button className="srPrimaryBtn" disabled style={{ opacity: 0.5, cursor: "default" }}>
                         Current Plan
-                      </s-button>
+                      </button>
                     ) : upgrade ? (
-                      <fetcher.Form method="post">
-                        <input type="hidden" name="plan" value={plan.name} />
-                        <s-button 
-                          variant="primary" 
-                          type="submit"
-                          loading={fetcher.state === "submitting"}
-                        >
-                          Upgrade to {plan.name}
-                        </s-button>
-                      </fetcher.Form>
+                      <PlanActionButton fetcher={fetcher} planName={plan.name} variant="primary" label={`Upgrade to ${plan.name}`} />
                     ) : downgrade && plan.name === "FREE" ? (
-                      subscription ? (
-                        <s-button
-                          variant="secondary"
-                          onClick={() => {
-                            if (confirm("Cancel your subscription and switch to the Free plan? You'll keep access to paid features until the end of your current billing period.")) {
-                              window.open(
-                                `https://admin.shopify.com/store/${shop?.shopify_domain?.replace(".myshopify.com", "")}/charges/${shop?.shopify_domain?.replace(".myshopify.com", "")}/pricing_plans`,
-                                "_top"
-                              );
-                            }
-                          }}
-                        >
-                          Switch to Free
-                        </s-button>
-                      ) : (
-                        <s-button variant="secondary" disabled>
-                          Current Plan
-                        </s-button>
-                      )
+                      <button
+                        className="srSecondaryBtn"
+                        type="button"
+                        onClick={() => {
+                          if (confirm("Cancel your subscription and switch to the Free plan? You'll keep access to paid features until the end of your current billing period.")) {
+                            const handle = shop?.shopify_domain?.replace(".myshopify.com", "");
+                            window.open(
+                              `https://admin.shopify.com/store/${handle}/settings/billing`,
+                              "_top"
+                            );
+                          }
+                        }}
+                      >
+                        Switch to Free
+                      </button>
                     ) : downgrade ? (
-                      <fetcher.Form method="post">
-                        <input type="hidden" name="plan" value={plan.name} />
-                        <s-button 
-                          variant="secondary" 
-                          type="submit"
-                          loading={fetcher.state === "submitting"}
-                        >
-                          Switch to {plan.name}
-                        </s-button>
-                      </fetcher.Form>
+                      <PlanActionButton fetcher={fetcher} planName={plan.name} variant="secondary" label={`Switch to ${plan.name}`} />
                     ) : null}
-                  </s-stack>
+                  </div>
                 </s-stack>
               </s-card>
             );
@@ -235,18 +231,19 @@ export default function BillingSelect() {
                   To cancel your subscription or view billing history, visit your Shopify admin.
                 </span>
               </div>
-              <s-button
-                variant="secondary"
-                size="slim"
+              <button
+                type="button"
+                className="srSecondaryBtn"
                 onClick={() => {
+                  const handle = shop?.shopify_domain?.replace(".myshopify.com", "");
                   window.open(
-                    `https://admin.shopify.com/store/${shop?.shopify_domain?.replace(".myshopify.com", "")}/settings/billing`,
+                    `https://admin.shopify.com/store/${handle}/settings/billing`,
                     "_top"
                   );
                 }}
               >
                 Billing settings
-              </s-button>
+              </button>
             </div>
           </s-box>
         </s-section>
