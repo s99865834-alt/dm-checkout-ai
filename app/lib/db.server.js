@@ -659,18 +659,7 @@ export async function getAttributionRecords(shopId, filters = {}) {
  * @param {string} shopId
  * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
  */
-export async function getSettings(shopId, planName) {
-  // Only query the shop for its plan when the caller hasn't provided it
-  let plan = planName || null;
-  if (!plan) {
-    const { data: shop } = await supabase
-      .from("shops")
-      .select("plan")
-      .eq("id", shopId)
-      .single();
-    plan = shop?.plan || "FREE";
-  }
-
+export async function getSettings(shopId) {
   const { data, error } = await supabase
     .from("settings")
     .select("*")
@@ -678,14 +667,12 @@ export async function getSettings(shopId, planName) {
     .single();
 
   if (error) {
-    // PGRST116 = "no rows returned" (expected when settings don't exist)
     if (error.code === "PGRST116" || error.message?.includes("No rows found")) {
-      // Return default settings if none exist, based on plan
       return {
         shop_id: shopId,
         dm_automation_enabled: true,
-        comment_automation_enabled: plan === "PRO" ? true : false,
-        followup_enabled: false, // Only PRO can enable, defaults to false
+        comment_automation_enabled: true,
+        followup_enabled: true,
         enabled_post_ids: null,
       };
     }
@@ -693,14 +680,10 @@ export async function getSettings(shopId, planName) {
     throw error;
   }
 
-  // Enforce plan restrictions: FREE/GROWTH can use DM automation (with cap); only PRO gets comments + followup
-  if (plan === "FREE") {
-    data.comment_automation_enabled = false;
-    data.followup_enabled = false;
-  } else if (plan === "GROWTH") {
-    data.followup_enabled = false;
-  }
-  // dm_automation_enabled: allow for FREE and GROWTH so they get replies within their plan cap
+  // Ensure booleans are never null/undefined from the DB
+  data.dm_automation_enabled = data.dm_automation_enabled ?? true;
+  data.comment_automation_enabled = data.comment_automation_enabled ?? true;
+  data.followup_enabled = data.followup_enabled ?? true;
 
   return data;
 }
@@ -713,43 +696,18 @@ export async function getSettings(shopId, planName) {
  * @param {Object} settings
  * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
  */
-export async function updateSettings(shopId, settings, planName) {
-  let plan = planName || null;
-  if (!plan) {
-    const { data: shop, error: shopError } = await supabase
-      .from("shops")
-      .select("plan")
-      .eq("id", shopId)
-      .single();
-    if (shopError) {
-      console.error("updateSettings: Could not fetch shop", shopError);
-      throw shopError;
-    }
-    plan = shop?.plan || "FREE";
-  }
-  const planConfig = getPlanConfig(plan);
-
-  // Enforce plan restrictions: FREE/GROWTH can use DM automation; only PRO gets comments + followup
-  let dmAutomationEnabled = settings.dm_automation_enabled;
-  let commentAutomationEnabled = settings.comment_automation_enabled;
-  let followupEnabled = settings.followup_enabled;
-
-  if (plan === "FREE") {
-    commentAutomationEnabled = false;
-    followupEnabled = false;
-  } else if (plan === "GROWTH") {
-    followupEnabled = false;
-  }
-  // dm_automation_enabled: allow for FREE and GROWTH (saved as-is)
-
+export async function updateSettings(shopId, settings) {
+  // Store the user's actual preference — plan gating is enforced at
+  // runtime (webhook / UI), not at persistence time, so preferences
+  // survive plan upgrades/downgrades.
   const { data, error } = await supabase
     .from("settings")
     .upsert(
       {
         shop_id: shopId,
-        dm_automation_enabled: dmAutomationEnabled ?? false,
-        comment_automation_enabled: commentAutomationEnabled ?? false,
-        followup_enabled: followupEnabled ?? false,
+        dm_automation_enabled: settings.dm_automation_enabled ?? true,
+        comment_automation_enabled: settings.comment_automation_enabled ?? true,
+        followup_enabled: settings.followup_enabled ?? true,
         enabled_post_ids: settings.enabled_post_ids || null,
       },
       {

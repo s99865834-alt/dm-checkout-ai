@@ -20,7 +20,7 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     metaAuth = await getMetaAuth(shop.id);
     productMappings = await getProductMappings(shop.id);
-    settings = await getSettings(shop.id, plan?.name);
+    settings = await getSettings(shop.id);
 
     // Get recent messages for display with links_sent (to get reply text)
     if (metaAuth?.ig_business_id) {
