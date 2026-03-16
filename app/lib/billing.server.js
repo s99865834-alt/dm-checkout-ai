@@ -1,10 +1,3 @@
-import { authenticate } from "../shopify.server";
-import { getShopByDomain } from "./db.server";
-import { getPlanConfig } from "./plans";
-
-/**
- * Plan pricing configuration
- */
 const PLAN_PRICING = {
   GROWTH: {
     amount: "39.00",
@@ -17,45 +10,6 @@ const PLAN_PRICING = {
     description: "10,000 messages/month, Everything in Growth, Follow-ups, Multi-turn conversations, Per-post analytics",
   },
 };
-
-/**
- * Create a recurring charge for a shop
- * @param {string} shopDomain - The shop domain
- * @param {string} planName - The plan name (GROWTH or PRO)
- * @param {string} returnUrl - The URL to redirect to after confirmation
- * @returns {Promise<{confirmationUrl: string, chargeId: string}>}
- */
-export async function createRecurringCharge(shopDomain, planName, returnUrl) {
-  const plan = planName.toUpperCase();
-  
-  if (plan !== "GROWTH" && plan !== "PRO") {
-    throw new Error(`Invalid plan: ${planName}. Must be GROWTH or PRO`);
-  }
-
-  const pricing = PLAN_PRICING[plan];
-  if (!pricing) {
-    throw new Error(`Pricing not found for plan: ${plan}`);
-  }
-
-  // Get shop to verify it exists
-  const shop = await getShopByDomain(shopDomain);
-  if (!shop) {
-    throw new Error(`Shop not found: ${shopDomain}`);
-  }
-
-  // Get admin API access
-  // Note: We need to authenticate the request to get admin access
-  // This function should be called from a route that has already authenticated
-  // For now, we'll accept the admin object as a parameter
-
-  // The actual charge creation will be done in the route that calls this
-  // because we need the authenticated admin object from the request
-  return {
-    plan,
-    pricing,
-    shop,
-  };
-}
 
 /**
  * Create a recurring charge using Shopify GraphQL Admin API
@@ -181,7 +135,5 @@ export async function getCurrentSubscription(admin) {
 
   const subscriptions = responseJson.data?.currentAppInstallation?.activeSubscriptions || [];
   
-  // Return the first active subscription (should only be one)
   return subscriptions.find(sub => sub.status === "ACTIVE") || null;
 }
-

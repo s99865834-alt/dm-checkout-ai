@@ -415,11 +415,10 @@ export default function Index() {
       )}
       {shop?.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
         <s-banner tone="success">
-          <s-text variant="strong">Beta Trial Active</s-text>
+          <s-text variant="strong">Pro Trial Active</s-text>
           <s-text>
-            {" "}Full PRO access until{" "}
-            {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-            {" "}({Math.ceil((new Date(shop.beta_trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))} days remaining)
+            {" "}You have full Pro access until{" "}
+            {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
           </s-text>
         </s-banner>
       )}
@@ -519,7 +518,7 @@ export default function Index() {
                     {plan.name}
                   </s-badge>
                   {shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
-                    <s-badge tone="warning">BETA</s-badge>
+                    <s-badge tone="success">Trial</s-badge>
                   )}
                   {shop.usage_count !== undefined && (
                     <span className="srCardDesc">
@@ -560,11 +559,6 @@ export default function Index() {
                     <span className="srCardTitle">
                       Connected{instagramInfo?.username ? ` · @${instagramInfo.username}` : ""}
                     </span>
-                    {(instagramInfo?.id || metaAuth?.ig_business_id) && (
-                      <span className="srCardDesc">
-                        ID: {instagramInfo?.id || metaAuth.ig_business_id}
-                      </span>
-                    )}
                   </div>
                   <s-button
                     variant="secondary" size="slim" className="srBtnCompact"
