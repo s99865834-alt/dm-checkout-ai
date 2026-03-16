@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
@@ -52,7 +52,7 @@ export const loader = async ({ request }) => {
 
     [metaAuth, settings, brandVoice, shopifyProducts] = await Promise.all([
       getMetaAuthWithRefresh(shop.id),
-      getSettings(shop.id, plan?.name),
+      getSettings(shop.id),
       getBrandVoice(shop.id),
       productsPromise,
     ]);
@@ -105,14 +105,14 @@ export const action = async ({ request }) => {
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       try {
-        const currentSettings = await getSettings(shop.id, plan?.name);
+        const currentSettings = await getSettings(shop.id);
         await Promise.all([
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
             enabled_post_ids: currentSettings?.enabled_post_ids ?? null,
-          }, plan?.name),
+          }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
             custom_instruction: brandVoiceCustom?.trim() || null,
@@ -132,7 +132,7 @@ export const action = async ({ request }) => {
       const togglePost = formData.get("togglePost");
       if (!postId) return { error: "Missing post ID" };
       try {
-        const currentSettings = await getSettings(shop.id, plan?.name);
+        const currentSettings = await getSettings(shop.id);
         const current = currentSettings?.enabled_post_ids || [];
         let newIds;
         if (togglePost === "enable") {
@@ -148,9 +148,9 @@ export const action = async ({ request }) => {
         await updateSettings(shop.id, {
           dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
           comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
-          followup_enabled: currentSettings?.followup_enabled ?? false,
+          followup_enabled: currentSettings?.followup_enabled ?? true,
           enabled_post_ids: newIds,
-        }, plan?.name);
+        });
         return { success: true, actionType: "toggle-post-automation", newEnabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
@@ -261,6 +261,7 @@ export default function Index() {
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
+  const automationFormRef = useRef(null);
 
   // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
@@ -599,7 +600,7 @@ export default function Index() {
 
       {/* ── Automation ────────────────────────────────────────────────── */}
       <s-section heading="Automation">
-        <automationFetcher.Form method="post">
+        <automationFetcher.Form method="post" ref={automationFormRef}>
           <input type="hidden" name="action" value="update-automation-settings" />
           <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
           <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
@@ -702,9 +703,17 @@ export default function Index() {
           </div>
 
           <div className="srSaveBtnWrap">
-            <s-button type="submit" variant="primary" className="srBtnCompact">
+            <button
+              type="button"
+              className="srPrimaryBtn"
+              onClick={() => {
+                if (automationFormRef.current) {
+                  automationFetcher.submit(automationFormRef.current);
+                }
+              }}
+            >
               {automationFetcher.state === "submitting" ? "Saving…" : "Save settings"}
-            </s-button>
+            </button>
           </div>
         </automationFetcher.Form>
       </s-section>
