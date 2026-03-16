@@ -266,7 +266,7 @@ export default function Index() {
   // Automation / brand voice local state
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
-  const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? false);
+  const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? true);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
 
@@ -285,7 +285,7 @@ export default function Index() {
     if (settings) {
       setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
       setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
-      setFollowupEnabled(settings.followup_enabled ?? false);
+      setFollowupEnabled(settings.followup_enabled ?? true);
     }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
