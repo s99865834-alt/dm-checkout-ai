@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useRouteError, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
@@ -36,7 +36,7 @@ export const action = async ({ request }) => {
     });
     return { confirmationUrl };
   } catch (err) {
-    console.error("Beta charge creation error:", err);
+    console.error("Trial charge creation error:", err);
     return { error: err.message || "Failed to create subscription. Please try again." };
   }
 };
@@ -44,6 +44,8 @@ export const action = async ({ request }) => {
 export default function BetaRedeem() {
   const { betaStatus } = useLoaderData();
   const fetcher = useFetcher();
+  const formRef = useRef(null);
+  const [code, setCode] = useState("");
 
   useEffect(() => {
     if (fetcher.data?.confirmationUrl) {
@@ -53,12 +55,12 @@ export default function BetaRedeem() {
 
   if (betaStatus?.active) {
     return (
-      <s-page heading="Beta Trial">
+      <s-page heading="Pro Trial">
         <s-section>
-          <s-callout variant="success" title="Beta Trial Active">
+          <s-callout variant="success" title="Pro Trial Active">
             <s-stack direction="block" gap="tight">
               <s-paragraph>
-                You have full <s-text variant="strong">PRO plan</s-text> access
+                You have full <s-text variant="strong">Pro plan</s-text> access
                 until{" "}
                 <s-text variant="strong">
                   {new Date(betaStatus.expiresAt).toLocaleDateString("en-US", {
@@ -72,9 +74,10 @@ export default function BetaRedeem() {
               <s-paragraph tone="subdued">
                 {betaStatus.daysRemaining} day
                 {betaStatus.daysRemaining !== 1 ? "s" : ""} remaining. After
-                the trial you will be billed $99/month for the PRO plan. You can
+                the trial you will be billed $99/month for the Pro plan. You can
                 cancel anytime before the trial ends.
               </s-paragraph>
+              <s-button href="/app" variant="primary">Go to Dashboard</s-button>
             </s-stack>
           </s-callout>
         </s-section>
@@ -83,7 +86,7 @@ export default function BetaRedeem() {
   }
 
   return (
-    <s-page heading="Beta Trial">
+    <s-page heading="Pro Trial">
       {fetcher.data?.error && (
         <s-section>
           <s-callout variant="critical" title="Error">
@@ -104,7 +107,7 @@ export default function BetaRedeem() {
               </s-paragraph>
               <s-paragraph tone="subdued">
                 You will not be charged during the trial. After 60 days your
-                plan will automatically convert to PRO at $99/month. You can
+                plan will automatically convert to Pro at $99/month. You can
                 cancel anytime before the trial ends to avoid being charged.
               </s-paragraph>
             </s-stack>
@@ -116,27 +119,39 @@ export default function BetaRedeem() {
         <s-section>
           <s-card>
             <s-stack direction="block" gap="base">
-              <s-heading level="2">Enter your beta code</s-heading>
+              <s-heading level="2">Enter your trial code</s-heading>
               <s-paragraph tone="subdued">
-                Your 60-day free trial includes all PRO plan features. After the
+                Your 60-day free trial includes all Pro plan features. After the
                 trial you will be billed $99/month. Cancel anytime.
               </s-paragraph>
-              <fetcher.Form method="post">
-                <s-stack direction="block" gap="base">
-                  <s-text-field
-                    label="Beta Code"
-                    name="code"
-                    placeholder="BETA-XXXX-XXXX"
-                    required
-                  />
-                  <s-button
-                    variant="primary"
-                    type="submit"
-                    loading={fetcher.state === "submitting"}
+              <fetcher.Form method="post" ref={formRef}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label className="srFieldLabel">
+                    <span className="srCardTitle">Trial Code</span>
+                    <input
+                      type="text"
+                      name="code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.toUpperCase())}
+                      placeholder="XXXX-XXXX-XXXX"
+                      required
+                      className="srInput"
+                      style={{ fontFamily: "monospace", letterSpacing: "1px" }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="srPrimaryBtn"
+                    disabled={!code.trim() || fetcher.state === "submitting"}
+                    onClick={() => {
+                      if (formRef.current && code.trim()) {
+                        fetcher.submit(formRef.current);
+                      }
+                    }}
                   >
-                    Start Free Trial
-                  </s-button>
-                </s-stack>
+                    {fetcher.state === "submitting" ? "Activating…" : "Start Free Trial"}
+                  </button>
+                </div>
               </fetcher.Form>
             </s-stack>
           </s-card>

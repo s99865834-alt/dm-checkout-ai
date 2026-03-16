@@ -1,4 +1,5 @@
-import { redirect, useLoaderData, useSearchParams, useRouteError } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useRouteError, useNavigate } from "react-router";
+import { useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan, validateAndRedeemBetaCode } from "../lib/db.server";
@@ -22,20 +23,19 @@ export const loader = async ({ request }) => {
       const subscription = await getCurrentSubscription(admin);
       if (subscription && subscription.status === "ACTIVE") {
         const planToSet = planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
-        const config = getPlanConfig(planToSet);
-        
+
         await updateShopPlan(shop.id, planToSet);
 
         if (betaCode) {
           await validateAndRedeemBetaCode(shop.id, betaCode);
         }
-        
+
         return {
           success: true,
           plan: planToSet,
           isBeta: !!betaCode,
           message: betaCode
-            ? `Beta trial activated! You have full PRO access for 60 days free.`
+            ? `Pro trial activated! You have full Pro access for 60 days free.`
             : `Successfully upgraded to ${planToSet} plan!`,
         };
       }
@@ -48,7 +48,7 @@ export const loader = async ({ request }) => {
 
   try {
     const subscription = await getCurrentSubscription(admin);
-    
+
     if (!subscription || subscription.status !== "ACTIVE") {
       return {
         success: false,
@@ -58,7 +58,6 @@ export const loader = async ({ request }) => {
     }
 
     const planToSet = planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
-    const config = getPlanConfig(planToSet);
 
     await updateShopPlan(shop.id, planToSet);
 
@@ -71,7 +70,7 @@ export const loader = async ({ request }) => {
       plan: planToSet,
       isBeta: !!betaCode,
       message: betaCode
-        ? `Beta trial activated! You have full PRO access for 60 days free. After the trial, you'll be billed $99/month.`
+        ? `Pro trial activated! You have full Pro access for 60 days free. After the trial, you'll be billed $99/month.`
         : `Successfully upgraded to ${planToSet} plan!`,
     };
   } catch (error) {
@@ -87,7 +86,15 @@ export const loader = async ({ request }) => {
 export default function BillingActivate() {
   const data = useLoaderData();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const error = searchParams.get("error");
+
+  useEffect(() => {
+    if (data?.success && data?.isBeta) {
+      const timer = setTimeout(() => navigate("/app"), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [data, navigate]);
 
   if (error === "no_charge") {
     return (
@@ -108,14 +115,16 @@ export default function BillingActivate() {
 
   if (data.success) {
     return (
-      <s-page heading="Billing Activated">
+      <s-page heading={data.isBeta ? "Pro Trial Activated" : "Plan Activated"}>
         <s-section>
-          <s-callout variant="success" title="Upgrade Successful!">
+          <s-callout variant="success" title={data.isBeta ? "Pro Trial Activated!" : "Upgrade Successful!"}>
             <s-paragraph>
               <s-text variant="strong">{data.message}</s-text>
             </s-paragraph>
             <s-paragraph>
-              Your plan has been updated and you now have access to all {data.plan} plan features.
+              {data.isBeta
+                ? "Redirecting you to the dashboard…"
+                : `Your plan has been updated and you now have access to all ${data.plan} plan features.`}
             </s-paragraph>
             <s-button href="/app" variant="primary">
               Go to Dashboard
