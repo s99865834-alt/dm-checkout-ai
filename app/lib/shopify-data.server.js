@@ -388,6 +388,122 @@ export function buildProductContextForAI(productContext) {
 }
 
 /**
+ * Detect whether a product has a "Size" option that warrants asking the customer.
+ * Returns null if no size question is needed (single size, one-size-fits-all, etc.)
+ *
+ * @param {Object} productOptions - { options: [{name, values}], variants: [{id, title, price, selectedOptions}] }
+ *   Can be the cached `product_options` from post_product_map or raw product context.
+ * @returns {{ sizeOptionName: string, sizeValues: string[], variants: Array } | null}
+ */
+export function detectSizeOption(productOptions) {
+  if (!productOptions) return null;
+
+  const options = productOptions.options;
+  if (!Array.isArray(options)) return null;
+
+  const SIZE_NAMES = /^(size|sizing|taille|tamaño|größe|grösse)$/i;
+  const ONE_SIZE_VALUES = /^(one\s*size|os|osfa|one\s*size\s*fits\s*all|n\/a|default|free\s*size|freesize|universal|uni|default\s*title)$/i;
+
+  const sizeOption = options.find((o) => o?.name && SIZE_NAMES.test(o.name.trim()));
+  if (!sizeOption || !Array.isArray(sizeOption.values)) return null;
+
+  const meaningfulSizes = sizeOption.values.filter((v) => !ONE_SIZE_VALUES.test((v || "").trim()));
+  if (meaningfulSizes.length <= 1) return null;
+
+  return {
+    sizeOptionName: sizeOption.name,
+    sizeValues: meaningfulSizes,
+    variants: productOptions.variants?.nodes || productOptions.variants || [],
+  };
+}
+
+/**
+ * Given a product's variants, the originally-mapped variant, and the customer's chosen size,
+ * find the variant that matches the mapped variant's non-size options plus the new size.
+ *
+ * @param {Array} variants - All variants (each has `id`, `selectedOptions`)
+ * @param {string} mappedVariantId - The variant the merchant originally mapped (determines color, etc.)
+ * @param {string} sizeOptionName - The option name for size (e.g., "Size")
+ * @param {string} chosenSize - The size the customer asked for (e.g., "Medium", "M")
+ * @returns {{ variant: Object, exactMatch: boolean } | null}
+ */
+const SIZE_ALIASES = new Map([
+  ["xs", ["xs", "x-small", "x small", "extra small", "extra-small", "xsmall"]],
+  ["s", ["s", "small", "sm"]],
+  ["m", ["m", "medium", "med", "md"]],
+  ["l", ["l", "large", "lg"]],
+  ["xl", ["xl", "x-large", "x large", "extra large", "extra-large", "xlarge"]],
+  ["xxl", ["xxl", "xx-large", "xx large", "2xl", "2x", "xxlarge"]],
+  ["xxxl", ["xxxl", "xxx-large", "3xl", "3x", "xxxlarge"]],
+  ["xxs", ["xxs", "xx-small", "xx small", "2xs", "xxsmall"]],
+  ["0", ["0", "zero"]],
+  ["00", ["00", "double zero"]],
+  ["one size", ["one size", "os", "osfa", "one size fits all", "free size", "uni", "universal"]],
+]);
+
+function expandSizeAliases(input) {
+  const lower = (input || "").trim().toLowerCase();
+  const canonical = [];
+  for (const [, aliases] of SIZE_ALIASES) {
+    if (aliases.includes(lower)) {
+      canonical.push(...aliases);
+    }
+  }
+  return canonical.length > 0 ? canonical : [lower];
+}
+
+export function resolveVariantBySize(variants, mappedVariantId, sizeOptionName, chosenSize) {
+  if (!variants?.length || !chosenSize) return null;
+
+  const mapped = variants.find((v) => v.id === mappedVariantId);
+  const nonSizeOptions = (mapped?.selectedOptions || []).filter(
+    (o) => o.name.toLowerCase() !== sizeOptionName.toLowerCase()
+  );
+
+  const normalize = (s) => (s || "").trim().toLowerCase();
+  const target = normalize(chosenSize);
+  const targetAliases = expandSizeAliases(target);
+
+  const matchesNonSizeOpts = (v) => {
+    const opts = v.selectedOptions || [];
+    return nonSizeOptions.every((req) =>
+      opts.some((o) => normalize(o.name) === normalize(req.name) && normalize(o.value) === normalize(req.value))
+    );
+  };
+
+  const getSizeValue = (v) => {
+    const opts = v.selectedOptions || [];
+    const sizeOpt = opts.find((o) => normalize(o.name) === normalize(sizeOptionName));
+    return sizeOpt ? normalize(sizeOpt.value) : null;
+  };
+
+  // Pass 1: exact match (e.g., "medium" === "medium")
+  for (const v of variants) {
+    if (!matchesNonSizeOpts(v)) continue;
+    const val = getSizeValue(v);
+    if (val && val === target) return { variant: v, exactMatch: true };
+  }
+
+  // Pass 2: alias match (e.g., customer says "M", variant is "Medium" — both share the M alias group)
+  for (const v of variants) {
+    if (!matchesNonSizeOpts(v)) continue;
+    const val = getSizeValue(v);
+    if (val && targetAliases.includes(val)) return { variant: v, exactMatch: true };
+    const valAliases = expandSizeAliases(val);
+    if (valAliases.some((a) => targetAliases.includes(a))) return { variant: v, exactMatch: true };
+  }
+
+  // Pass 3: substring match as last resort (e.g., "petit" in "petite")
+  for (const v of variants) {
+    if (!matchesNonSizeOpts(v)) continue;
+    const val = getSizeValue(v);
+    if (val && (val.includes(target) || target.includes(val))) return { variant: v, exactMatch: false };
+  }
+
+  return null;
+}
+
+/**
  * Get product name and price by product/variant ID.
  * @param {string} shopDomain - Shop domain (e.g., "example.myshopify.com")
  * @param {string} productId - Shopify product GID

@@ -28,3 +28,6 @@ database.sqlite
 
 # Development plans (private)
 DEVELOPMENT_PLAN_REVISED.md
+
+# Marketing demo seed / revert state (local only)
+scripts/.marketing-seed-state.json

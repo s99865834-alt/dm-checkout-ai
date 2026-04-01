@@ -9,7 +9,7 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessa
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { getStoredStoreContext } from "./db.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
 import supabase from "./supabase.server";
@@ -485,6 +485,102 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // - Otherwise, PRO can ask a clarifying question; non-PRO should not respond.
     if (productSpecificIntents.includes(intent)) {
       if (hasPriorProductContext) {
+        // 6a. Size-response follow-up: if the last outbound was a size question,
+        //     resolve the correct variant based on the customer's reply.
+        const isSizeFollowUp = lastProductLink.link_id?.startsWith("size_q_") && !lastProductLink.url;
+
+        if (isSizeFollowUp) {
+          // Fetch product options once for both size inference and variant resolution
+          let productOpts = null;
+          const { data: mapping } = await supabase
+            .from("post_product_map")
+            .select("product_options")
+            .eq("shop_id", shop.id)
+            .eq("product_id", lastProductLink.product_id)
+            .limit(1)
+            .maybeSingle();
+          productOpts = mapping?.product_options || null;
+
+          if (!productOpts && shop.shopify_domain) {
+            const raw = await getShopifyProductContextForReply(shop.shopify_domain, lastProductLink.product_id);
+            if (raw) productOpts = { options: raw.options, variants: raw.variants?.nodes || [] };
+          }
+
+          const sizeCheck = productOpts ? detectSizeOption(productOpts) : null;
+          const customerSize = message.ai_entities?.size || null;
+          let inferredSize = customerSize;
+
+          if (!inferredSize && sizeCheck) {
+            const msgLower = (message.text || "").trim().toLowerCase();
+            inferredSize = sizeCheck.sizeValues.find(
+              (s) => msgLower === s.toLowerCase() || msgLower.includes(s.toLowerCase())
+            ) || null;
+          }
+
+          if (inferredSize && sizeCheck) {
+            const allVariants = productOpts?.variants?.nodes || productOpts?.variants || [];
+            const resolved = resolveVariantBySize(allVariants, lastProductLink.variant_id, sizeCheck.sizeOptionName, inferredSize);
+
+            const resolvedVariantId = resolved?.variant?.id || lastProductLink.variant_id;
+
+            const [checkoutLink, brandVoiceData, productInfo] = await Promise.all([
+              buildCheckoutLink(shop, lastProductLink.product_id, resolvedVariantId, 1),
+              getBrandVoice(shop.id),
+              shop.shopify_domain
+                ? getShopifyProductInfo(shop.shopify_domain, lastProductLink.product_id, resolvedVariantId)
+                : Promise.resolve({ productName: null, productPrice: null }),
+            ]);
+
+            const checkoutUrl = checkoutLink.url;
+            const linkId = checkoutLink.linkId;
+            const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+
+            const replyText = await generateReplyMessage(
+              brandVoiceData,
+              productInfo.productName,
+              checkoutUrlForMessage,
+              "purchase",
+              productInfo.productPrice,
+              null,
+              message.text,
+              null,
+              {
+                originChannel,
+                inboundChannel: "dm",
+                triggerChannel: originChannel,
+                sizeConfirmation: inferredSize,
+                recentMessages: (threadContext?.messages || [])
+                  .filter((m) => m.id !== message.id)
+                  .slice(0, 8)
+                  .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+              }
+            );
+
+            if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
+              return { sent: false, reason: "Already replied to this message" };
+            }
+            const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
+            if (sendResult?.sent === false) return sendResult;
+            await incrementUsage(shop.id, 1);
+
+            await logLinkSent({
+              shopId: shop.id,
+              messageId: message.id,
+              productId: lastProductLink.product_id,
+              variantId: resolvedVariantId,
+              url: checkoutUrl,
+              linkId,
+              replyText,
+            });
+
+            logger.debug(`[automation] ✅ Size-resolved checkout sent for message ${message.id} (size=${inferredSize}, variant=${resolvedVariantId})`);
+            return { sent: true };
+          }
+
+          // Customer didn't specify a size — re-ask
+          logger.debug(`[automation] Size follow-up but no size detected in message ${message.id}, re-asking`);
+        }
+
         const productMapping = {
           product_id: lastProductLink.product_id,
           variant_id: lastProductLink.variant_id || null,
@@ -597,6 +693,43 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         const firstVariant = matchedProduct.variants?.nodes?.[0];
         const variantGid = firstVariant?.id || null;
         const numericVariantId = variantGid ? variantGid.replace("gid://shopify/ProductVariant/", "") : null;
+
+        // Size-awareness for direct DM product matches
+        if ((intent === "purchase" || intent === "price_request") && !message.ai_entities?.size && shop.shopify_domain) {
+          const rawCtx = await getShopifyProductContextForReply(shop.shopify_domain, gid);
+          if (rawCtx) {
+            const sizeInfo = detectSizeOption({ options: rawCtx.options, variants: rawCtx.variants?.nodes || [] });
+            if (sizeInfo) {
+              const brandVoiceData = await getBrandVoice(shop.id);
+              const sizeQText = await generateSizeQuestion(
+                brandVoiceData,
+                rawCtx.title || matchedProduct.title,
+                sizeInfo.sizeValues,
+                message.text
+              );
+
+              if (!(await claimMessageReply(shop.id, message.id, sizeQText, message.external_id))) {
+                return { sent: false, reason: "Already replied to this message" };
+              }
+              const sendResult = await sendDmReply(shop.id, message.from_user_id, sizeQText);
+              if (sendResult?.sent === false) return sendResult;
+              await incrementUsage(shop.id, 1);
+
+              await logLinkSent({
+                shopId: shop.id,
+                messageId: message.id,
+                productId: gid,
+                variantId: variantGid,
+                url: null,
+                linkId: `size_q_${message.id}`,
+                replyText: sizeQText,
+              });
+
+              logger.debug(`[automation] ✅ Size question sent for direct DM ${message.id}`);
+              return { sent: true, reason: "Asked customer which size they want" };
+            }
+          }
+        }
 
         const productMapping = {
           product_id: numericProductId,
@@ -886,6 +1019,70 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       return { sent: true };
     }
 
+    // 6b. Size-awareness: if the product has a multi-value Size option AND
+    //     the customer hasn't already specified a size, ask which size they want
+    //     instead of sending a checkout link for the mapped variant.
+    let cachedOpts = productMapping.product_options || null;
+    if (!cachedOpts && shop.shopify_domain && productMapping.product_id) {
+      const raw = await getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id);
+      if (raw) cachedOpts = { options: raw.options, variants: raw.variants?.nodes || [] };
+    }
+    const sizeInfo = detectSizeOption(cachedOpts);
+
+    if (sizeInfo && (message.ai_intent === "purchase" || message.ai_intent === "price_request")) {
+      const customerSize = message.ai_entities?.size || null;
+      if (!customerSize) {
+        const [brandVoiceData, productInfo] = await Promise.all([
+          getBrandVoice(shop.id),
+          shop.shopify_domain && productMapping.product_id
+            ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
+            : Promise.resolve({ productName: null, productPrice: null }),
+        ]);
+
+        const sizeQText = await generateSizeQuestion(
+          brandVoiceData,
+          productInfo.productName,
+          sizeInfo.sizeValues,
+          message.text
+        );
+
+        const claimed = commentExternalId
+          ? await claimCommentReply(shop.id, commentExternalId, sizeQText, message.id)
+          : await claimMessageReply(shop.id, message.id, sizeQText, message.external_id);
+        if (!claimed) {
+          return { sent: false, reason: "Already replied to this comment" };
+        }
+
+        const fromUserId = message.from_user_id ?? message.fromUserId;
+        if (commentExternalId.startsWith("test_comment_") && fromUserId) {
+          await sendInstagramDm(shop.id, fromUserId, sizeQText);
+        } else {
+          await sendInstagramPrivateReply(shop.id, commentExternalId, sizeQText);
+        }
+        await incrementUsage(shop.id, 1);
+
+        await logLinkSent({
+          shopId: shop.id,
+          messageId: message.id,
+          productId: productMapping.product_id,
+          variantId: productMapping.variant_id,
+          url: null,
+          linkId: `size_q_${message.id}`,
+          replyText: sizeQText,
+        });
+
+        logger.debug(`[automation] ✅ Size question sent for comment ${message.id} (sizes: ${sizeInfo.sizeValues.join(",")})`);
+        return { sent: true, reason: "Asked customer which size they want" };
+      }
+
+      // Customer specified a size in their comment — resolve to the correct variant
+      const resolved = resolveVariantBySize(sizeInfo.variants, productMapping.variant_id, sizeInfo.sizeOptionName, customerSize);
+      if (resolved) {
+        productMapping.variant_id = resolved.variant.id;
+        logger.debug(`[automation] Resolved comment size "${customerSize}" → variant ${resolved.variant.id} (exact=${resolved.exactMatch})`);
+      }
+    }
+
     // 7-8. Build links, brand voice, product info, and product context in parallel
     const needsPdpComment = message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry";
     const needsProductContext = needsPdpComment && shop.shopify_domain && productMapping.product_id;
@@ -1063,6 +1260,58 @@ Write the response:`;
   };
   
   return fallbackMessages[tone] || fallbackMessages.friendly;
+}
+
+/**
+ * Generate a DM asking the customer which size they want.
+ * @param {Object} brandVoice - Brand voice config
+ * @param {string} productName - Product name
+ * @param {string[]} sizeValues - Available sizes (e.g., ["XS","S","M","L","XL"])
+ * @param {string} originalMessage - Customer's original message
+ * @returns {Promise<string>}
+ */
+export async function generateSizeQuestion(brandVoice, productName, sizeValues, originalMessage) {
+  const tone = brandVoice?.tone || "friendly";
+  const customInstruction = brandVoice?.custom_instruction || "";
+  const sizesText = sizeValues.join(", ");
+
+  try {
+    if (openai) {
+      const prompt = `Generate a brief Instagram DM reply asking a customer what size they want.
+
+Product: ${productName || "this item"}
+Available sizes: ${sizesText}
+Customer's original message: "${originalMessage || ""}"
+
+Requirements:
+${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. Match this style precisely.` : `- Style: Use ${tone} tone`}
+- Thank them for their interest briefly
+- Ask what size they'd like
+- List the available sizes naturally (e.g. "We have XS, S, M, L, and XL")
+- Keep it to 2 sentences max
+- Instagram DMs only support plain text, NOT markdown
+
+Write the response:`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are an assistant that generates brief Instagram DM replies. Keep responses short and natural." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 150,
+      });
+
+      if (response?.choices?.[0]?.message?.content) {
+        return response.choices[0].message.content.trim();
+      }
+    }
+  } catch (error) {
+    console.error("[automation] Error generating size question:", error);
+  }
+
+  return `Thanks for your interest in ${productName || "this item"}! What size would you like? We have ${sizesText}.`;
 }
 
 /**
@@ -1248,6 +1497,7 @@ ${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelConte
 ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
+${safeChannelContext?.sizeConfirmation ? `- The customer was asked what size they want and replied with: "${safeChannelContext.sizeConfirmation}". Confirm their size choice and send the checkout link. Keep it brief.` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
