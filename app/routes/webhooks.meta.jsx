@@ -580,6 +580,8 @@ export const action = async ({ request }) => {
 
                     if (!updatedMessage || !parsed.mediaId) return;
 
+                    updatedMessage.ai_entities = classification.entities || null;
+
                     const usageData = await getShopPlanAndUsage(shopId);
                     if (!usageData) return;
 

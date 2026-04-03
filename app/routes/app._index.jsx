@@ -176,17 +176,34 @@ export const action = async ({ request }) => {
             product(id: $id) {
               id
               handle
-              variants(first: 1) { nodes { id } }
+              options { name values }
+              variants(first: 100) {
+                nodes {
+                  id
+                  title
+                  price
+                  selectedOptions { name value }
+                }
+              }
             }
           }
         `, { variables: { id: productId } });
         const json = await response.json();
         const product = json.data?.product;
-        const variants = product?.variants?.nodes || [];
-        if (variants.length === 0) return { error: "Product has no variants." };
-        const finalVariantId = variantId || variants[0].id;
+        const allVariants = product?.variants?.nodes || [];
+        if (allVariants.length === 0) return { error: "Product has no variants." };
+        const finalVariantId = variantId || allVariants[0].id;
         const productHandle = product?.handle?.trim() || null;
-        await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle);
+        const productOptions = {
+          options: product?.options || [],
+          variants: allVariants.map((v) => ({
+            id: v.id,
+            title: v.title,
+            price: v.price,
+            selectedOptions: v.selectedOptions,
+          })),
+        };
+        await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle, productOptions);
         return {
           success: true,
           actionType: "save-mapping",

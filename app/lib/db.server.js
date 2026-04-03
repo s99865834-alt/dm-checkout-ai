@@ -904,7 +904,7 @@ export async function getProductMappings(shopId) {
  * Ensures only one mapping exists per (shop_id, ig_media_id) combination.
  * productHandle is stored so PDP URLs can be built without calling Shopify at runtime.
  */
-export async function saveProductMapping(shopId, igMediaId, productId, variantId = null, productHandle = null) {
+export async function saveProductMapping(shopId, igMediaId, productId, variantId = null, productHandle = null, productOptions = null) {
   // First, delete any existing duplicates for this shop_id + ig_media_id combination
   // This ensures we don't have multiple rows for the same mapping
   const { error: deleteError } = await supabase
@@ -935,8 +935,9 @@ export async function saveProductMapping(shopId, igMediaId, productId, variantId
     shop_id: shopId,
     ig_media_id: igMediaId,
     product_id: productId,
-    variant_id: variantId, // This should never be null - if it is, there's a bug upstream
+    variant_id: variantId,
     product_handle: (productHandle && String(productHandle).trim()) || null,
+    product_options: productOptions || null,
   };
 
   let data, error;
