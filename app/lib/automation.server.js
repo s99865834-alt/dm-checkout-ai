@@ -57,6 +57,35 @@ function getClickTrackingUrlForMessage(linkId) {
   return `${shortBase}/${linkId}`;
 }
 
+/**
+ * Replace full URLs in reply text with srai.link short links.
+ * Creates a links_sent row for each URL so the redirect route can resolve it.
+ */
+async function shortenUrlsInReply(shopId, messageId, text) {
+  if (!text) return text;
+  const urlRegex = /https?:\/\/[^\s)]+/g;
+  const urls = text.match(urlRegex);
+  if (!urls || urls.length === 0) return text;
+
+  let result = text;
+  for (const url of [...new Set(urls)]) {
+    const linkId = `info_${randomBytes(6).toString("hex")}`;
+    const { error } = await supabase.from("links_sent").insert({
+      shop_id: shopId,
+      message_id: messageId,
+      url,
+      link_id: linkId,
+    });
+    if (error) {
+      logger.debug(`[automation] Short-link insert failed for ${url}: ${error.message}`);
+      continue;
+    }
+    const shortUrl = getClickTrackingUrlForMessage(linkId);
+    result = result.split(url).join(shortUrl);
+  }
+  return result;
+}
+
 function getShopDomainHost(shop) {
   const rawDomain = shop?.shopify_domain;
   if (!rawDomain) return null;
@@ -437,7 +466,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
       }
       
-      const replyText = await generateReplyMessage(
+      let replyText = await generateReplyMessage(
         brandVoiceData,
         null,
         null,
@@ -445,7 +474,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         null,
         null,
         message.text,
-        storeInfo, // Pass store-specific information to AI
+        storeInfo,
         {
           originChannel,
           inboundChannel: "dm",
@@ -464,6 +493,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
         }
       );
+
+      replyText = await shortenUrlsInReply(shop.id, message.id, replyText);
 
       // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
       if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
