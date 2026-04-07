@@ -1265,10 +1265,18 @@ export async function getAnalytics(shopId, planName, options = {}) {
       console.error("[analytics] Error fetching links sent:", linksError);
     }
 
-    // Count all links sent
-    analytics.linksSent = (linksSent || []).length;
+    // Checkout link_ids are plain 8-char base62 strings. Non-checkout entries
+    // (claim slots, size questions, info/policy short links) use prefixed IDs
+    // and should not inflate click/CTR metrics.
+    const isCheckoutLinkId = (id) =>
+      !!id && !id.startsWith("dm_reply_") && !id.startsWith("size_q_") && !id.startsWith("info_");
 
-    // Create map of message_id -> link_id, keeping the most recent link per message
+    // Count only checkout links sent (used for CTR denominator)
+    analytics.linksSent = (linksSent || []).filter(l => isCheckoutLinkId(l.link_id)).length;
+
+    // Create map of message_id -> link_id, keeping the most recent link per message.
+    // messageToLink uses ALL entries (so response-rate counts every replied message),
+    // but linkIds/linkIdToChannel only include checkout links (for click queries).
     const messageToLink = {};
     const linkIdToChannel = {};
     const linkIds = [];
@@ -1278,12 +1286,14 @@ export async function getAnalytics(shopId, planName, options = {}) {
         if (!prev || String(link.id) > String(prev.rowId)) {
           messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
         }
-        const message = (allMessages || []).find(m => m.id === link.message_id);
-        if (message && link.link_id) {
-          linkIdToChannel[link.link_id] = message.channel;
+        if (isCheckoutLinkId(link.link_id)) {
+          const message = (allMessages || []).find(m => m.id === link.message_id);
+          if (message) {
+            linkIdToChannel[link.link_id] = message.channel;
+          }
         }
       }
-      if (link.link_id) {
+      if (isCheckoutLinkId(link.link_id)) {
         linkIds.push(link.link_id);
       }
     });
@@ -1519,7 +1529,9 @@ export async function getProAnalytics(shopId, options = {}) {
       .in("message_id", messageIds.length > 0 ? messageIds : [null]);
 
     if (!linksError && linksSent) {
-      const linkIds = linksSent.map(l => l.link_id).filter(Boolean);
+      const isCheckoutLinkId = (id) =>
+        !!id && !id.startsWith("dm_reply_") && !id.startsWith("size_q_") && !id.startsWith("info_");
+      const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
       const messageToLink = {};
       linksSent.forEach(link => {
         if (link.message_id) {
@@ -1549,7 +1561,7 @@ export async function getProAnalytics(shopId, options = {}) {
           }
         });
 
-        // Get clicks for these links
+        // Get clicks for checkout links only
         if (linkIds.length > 0) {
           const { data: clicks, error: clicksError } = await supabase
             .from("clicks")

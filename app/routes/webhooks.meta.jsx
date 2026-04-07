@@ -418,6 +418,12 @@ export const action = async ({ request }) => {
                 logger.debug(`[webhook] Skip: parsed sender matches IG business id ${igBusinessId}`);
                 continue;
               }
+              // Echo detection: skip entirely if this text matches a reply we recently sent
+              if (parsed.messageText && (await isRecentOutboundReply(shopId, parsed.messageText))) {
+                logger.debug(`[webhook] Dropping echo: incoming text matches a recently sent outbound reply (mid=${parsed.messageId?.slice?.(0, 20)})`);
+                continue;
+              }
+
               incCounter("dm_messages_processed");
               logger.debug(`[webhook] Inbound: from=${parsed.igUserId} text_len=${(parsed.messageText || "").length} mid=${parsed.messageId?.slice?.(0, 20)}...`);
               
@@ -436,10 +442,7 @@ export const action = async ({ request }) => {
                 });
                 logger.debug(`[webhook] DM logged db_id=${result?.id}`);
                 
-                // Echo detection: skip if this text matches a reply we recently sent (catches outbound DM echoes where sender ID doesn't match entry.id)
-                if (parsed.messageText && (await isRecentOutboundReply(shopId, parsed.messageText))) {
-                  logger.debug(`[webhook] Skipping echo: incoming text matches a recently sent outbound reply`);
-                } else if (result?.id && (await alreadyRepliedToMessage(result.id))) {
+                if (result?.id && (await alreadyRepliedToMessage(result.id))) {
                   logger.debug(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
                 } else if (result?.id && parsed.messageText) {
                   withAutomationLimit(async () => {

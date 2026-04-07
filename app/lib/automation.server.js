@@ -57,6 +57,35 @@ function getClickTrackingUrlForMessage(linkId) {
   return `${shortBase}/${linkId}`;
 }
 
+/**
+ * Replace full URLs in reply text with srai.link short links.
+ * Creates a links_sent row for each URL so the redirect route can resolve it.
+ */
+async function shortenUrlsInReply(shopId, messageId, text) {
+  if (!text) return text;
+  const urlRegex = /https?:\/\/[^\s)]+/g;
+  const urls = text.match(urlRegex);
+  if (!urls || urls.length === 0) return text;
+
+  let result = text;
+  for (const url of [...new Set(urls)]) {
+    const linkId = `info_${randomBytes(6).toString("hex")}`;
+    const { error } = await supabase.from("links_sent").insert({
+      shop_id: shopId,
+      message_id: messageId,
+      url,
+      link_id: linkId,
+    });
+    if (error) {
+      logger.debug(`[automation] Short-link insert failed for ${url}: ${error.message}`);
+      continue;
+    }
+    const shortUrl = getClickTrackingUrlForMessage(linkId);
+    result = result.split(url).join(shortUrl);
+  }
+  return result;
+}
+
 function getShopDomainHost(shop) {
   const rawDomain = shop?.shopify_domain;
   if (!rawDomain) return null;
@@ -437,7 +466,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
       }
       
-      const replyText = await generateReplyMessage(
+      let replyText = await generateReplyMessage(
         brandVoiceData,
         null,
         null,
@@ -445,7 +474,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         null,
         null,
         message.text,
-        storeInfo, // Pass store-specific information to AI
+        storeInfo,
         {
           originChannel,
           inboundChannel: "dm",
@@ -464,6 +493,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
         }
       );
+
+      replyText = await shortenUrlsInReply(shop.id, message.id, replyText);
 
       // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
       if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -1374,10 +1405,31 @@ export async function generateReplyMessage(brandVoice, productName = null, check
       storeInfo?.storefrontAllProductsUrl,
     ].filter(Boolean);
     const allowedSet = new Set(allowedUrls);
+
+    const policyKeywords = [
+      { aliases: ["refund", "return"], key: "refund" },
+      { aliases: ["shipping", "delivery"], key: "shipping" },
+      { aliases: ["privacy"], key: "privacy" },
+      { aliases: ["terms", "tos"], key: "terms" },
+    ];
+
+    const findClosestAllowed = (url) => {
+      const lower = url.toLowerCase();
+      for (const { aliases } of policyKeywords) {
+        if (aliases.some((a) => lower.includes(a))) {
+          const match = allowedUrls.find((u) => aliases.some((a) => u.toLowerCase().includes(a)));
+          if (match) return match;
+        }
+      }
+      return null;
+    };
+
     const urlRegex = /https?:\/\/[^\s)]+/g;
     let removed = false;
     let cleaned = text.replace(urlRegex, (url) => {
       if (allowedSet.has(url)) return url;
+      const closest = findClosestAllowed(url);
+      if (closest) return closest;
       removed = true;
       return "";
     });
@@ -1557,8 +1609,8 @@ Write the response:`;
             { role: "system", content: systemMessage },
             { role: "user", content: prompt }
           ],
-          temperature: 0.3, // Lower temperature to reduce creativity/hallucination - prioritize accuracy over creativity
-          max_tokens: 250, // Increased from 150 to allow for complete responses with links
+          temperature: 0.3,
+          max_tokens: 350,
         });
 
         if (response?.choices?.[0]?.message?.content) {
