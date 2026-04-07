@@ -1413,22 +1413,25 @@ export async function generateReplyMessage(brandVoice, productName = null, check
       { aliases: ["terms", "tos"], key: "terms" },
     ];
 
-    const findClosestAllowed = (url) => {
+    const findClosestAllowed = (url, contextBefore) => {
       const lower = url.toLowerCase();
+      const ctx = (contextBefore || "").toLowerCase();
       for (const { aliases } of policyKeywords) {
-        if (aliases.some((a) => lower.includes(a))) {
+        if (aliases.some((a) => lower.includes(a) || ctx.includes(a))) {
           const match = allowedUrls.find((u) => aliases.some((a) => u.toLowerCase().includes(a)));
           if (match) return match;
         }
       }
+      if (allowedUrls.length === 1) return allowedUrls[0];
       return null;
     };
 
     const urlRegex = /https?:\/\/[^\s)]+/g;
     let removed = false;
-    let cleaned = text.replace(urlRegex, (url) => {
+    let cleaned = text.replace(urlRegex, (url, offset) => {
       if (allowedSet.has(url)) return url;
-      const closest = findClosestAllowed(url);
+      const contextBefore = text.substring(Math.max(0, offset - 80), offset);
+      const closest = findClosestAllowed(url, contextBefore);
       if (closest) return closest;
       removed = true;
       return "";
