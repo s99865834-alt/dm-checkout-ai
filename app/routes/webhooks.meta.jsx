@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import { getPlanConfig } from "../lib/plans";
@@ -436,8 +436,10 @@ export const action = async ({ request }) => {
                 });
                 logger.debug(`[webhook] DM logged db_id=${result?.id}`);
                 
-                // Skip classification + automation if we already replied (stops API loop on duplicate webhooks)
-                if (result?.id && (await alreadyRepliedToMessage(result.id))) {
+                // Echo detection: skip if this text matches a reply we recently sent (catches outbound DM echoes where sender ID doesn't match entry.id)
+                if (parsed.messageText && (await isRecentOutboundReply(shopId, parsed.messageText))) {
+                  logger.debug(`[webhook] Skipping echo: incoming text matches a recently sent outbound reply`);
+                } else if (result?.id && (await alreadyRepliedToMessage(result.id))) {
                   logger.debug(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
                 } else if (result?.id && parsed.messageText) {
                   withAutomationLimit(async () => {
