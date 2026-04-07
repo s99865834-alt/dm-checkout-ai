@@ -379,7 +379,7 @@ export default function Index() {
   };
 
   const handleSaveMapping = (mediaId) => {
-    if (!selectedProduct) { alert("Please select a product"); return; }
+    if (!selectedProduct) return;
     const fd = new FormData();
     fd.append("action", "save-mapping");
     fd.append("igMediaId", mediaId);
@@ -392,7 +392,6 @@ export default function Index() {
   };
 
   const handleDeleteMapping = (mediaId) => {
-    if (!confirm("Remove this product mapping?")) return;
     const fd = new FormData();
     fd.append("action", "delete-mapping");
     fd.append("igMediaId", mediaId);
@@ -580,9 +579,7 @@ export default function Index() {
                   <s-button
                     variant="secondary" size="slim" className="srBtnCompact"
                     onClick={() => {
-                      if (confirm("Disconnect your Instagram account? You can reconnect anytime.")) {
-                        connectFetcher.submit({ action: "disconnect" }, { method: "post" });
-                      }
+                      connectFetcher.submit({ action: "disconnect" }, { method: "post" });
                     }}
                     disabled={connectFetcher.state === "submitting"}
                   >

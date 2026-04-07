@@ -199,13 +199,11 @@ export default function BillingSelect() {
                         className="srSecondaryBtn"
                         type="button"
                         onClick={() => {
-                          if (confirm("Cancel your subscription and switch to the Free plan? You'll keep access to paid features until the end of your current billing period.")) {
-                            const handle = shop?.shopify_domain?.replace(".myshopify.com", "");
-                            window.open(
-                              `https://admin.shopify.com/store/${handle}/settings/billing`,
-                              "_top"
-                            );
-                          }
+                          const handle = shop?.shopify_domain?.replace(".myshopify.com", "");
+                          window.open(
+                            `https://admin.shopify.com/store/${handle}/settings/billing`,
+                            "_top"
+                          );
                         }}
                       >
                         Switch to Free
