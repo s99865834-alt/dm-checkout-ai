@@ -343,6 +343,27 @@ export async function alreadyRepliedToMessage(messageId) {
 }
 
 /**
+ * Returns true if the given text matches a reply the app recently sent for this shop.
+ * Used to detect webhook echoes (Instagram delivering our own outbound DM back to us).
+ */
+export async function isRecentOutboundReply(shopId, text) {
+  if (!shopId || !text || text.length < 30) return false;
+  const windowStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("links_sent")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("reply_text", text)
+    .gte("sent_at", windowStart)
+    .limit(1);
+  if (error) {
+    console.warn("[db] isRecentOutboundReply error:", error.message);
+    return false;
+  }
+  return data && data.length > 0;
+}
+
+/**
  * Returns true if we have already sent an automated reply for this external message ID.
  * Uses link_id = dm_reply_ext_{externalId} to dedupe across duplicate message rows.
  */
