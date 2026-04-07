@@ -36,7 +36,8 @@ export async function loader({ params, request }) {
     return new Response("Not Found", { status: 404 });
   }
 
-  const shouldLogClick = looksLikeBrowser(request);
+  const isInfoLink = linkId.startsWith("info_");
+  const shouldLogClick = !isInfoLink && looksLikeBrowser(request);
   if (shouldLogClick) {
     const userAgent = request.headers.get("user-agent") || null;
     const forwarded = request.headers.get("x-forwarded-for");
