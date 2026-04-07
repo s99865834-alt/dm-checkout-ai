@@ -1395,6 +1395,13 @@ export async function generateReplyMessage(brandVoice, productName = null, check
     ? { ...(channelContext || {}), lastProductLink: null }
     : channelContext;
 
+  const POLICY_KEYWORDS = [
+    { pattern: /refund|return/i, token: "{{refund_policy_url}}" },
+    { pattern: /shipping|delivery/i, token: "{{shipping_policy_url}}" },
+    { pattern: /privacy/i, token: "{{privacy_policy_url}}" },
+    { pattern: /terms of service|terms & conditions/i, token: "{{terms_url}}" },
+  ];
+
   const replaceTokensAndSanitize = (text, urlMap) => {
     if (!text) return text;
     let result = text;
@@ -1406,6 +1413,15 @@ export async function generateReplyMessage(brandVoice, productName = null, check
     result = result.replace(/\{\{[^}]+\}\}/g, "");
     result = result.replace(/https?:\/\/[^\s)]+/g, "");
     result = result.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+
+    if (urlMap && !/https?:\/\//.test(result)) {
+      for (const { pattern, token } of POLICY_KEYWORDS) {
+        if (pattern.test(result) && urlMap[token]) {
+          result = result.replace(/[.:!?]*\s*$/, "") + ": " + urlMap[token];
+          break;
+        }
+      }
+    }
     return result;
   };
 
