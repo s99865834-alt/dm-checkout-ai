@@ -1395,51 +1395,18 @@ export async function generateReplyMessage(brandVoice, productName = null, check
     ? { ...(channelContext || {}), lastProductLink: null }
     : channelContext;
 
-  const sanitizeStoreQuestionReply = (text, allowedUrlsOverride = null) => {
+  const replaceTokensAndSanitize = (text, urlMap) => {
     if (!text) return text;
-    const allowedUrls = allowedUrlsOverride ?? [
-      storeInfo?.refundPolicy?.url,
-      storeInfo?.shippingPolicy?.url,
-      storeInfo?.privacyPolicy?.url,
-      storeInfo?.termsOfService?.url,
-      storeInfo?.storefrontAllProductsUrl,
-    ].filter(Boolean);
-    const allowedSet = new Set(allowedUrls);
-
-    const policyKeywords = [
-      { aliases: ["refund", "return"], key: "refund" },
-      { aliases: ["shipping", "delivery"], key: "shipping" },
-      { aliases: ["privacy"], key: "privacy" },
-      { aliases: ["terms", "tos"], key: "terms" },
-    ];
-
-    const findClosestAllowed = (url) => {
-      const lower = url.toLowerCase();
-      for (const { aliases } of policyKeywords) {
-        if (aliases.some((a) => lower.includes(a))) {
-          const match = allowedUrls.find((u) => aliases.some((a) => u.toLowerCase().includes(a)));
-          if (match) return match;
-        }
+    let result = text;
+    if (urlMap && typeof urlMap === "object") {
+      for (const [token, url] of Object.entries(urlMap)) {
+        result = result.split(token).join(url);
       }
-      return null;
-    };
-
-    const urlRegex = /https?:\/\/[^\s)]+/g;
-    let removed = false;
-    let cleaned = text.replace(urlRegex, (url) => {
-      if (allowedSet.has(url)) return url;
-      const closest = findClosestAllowed(url);
-      if (closest) return closest;
-      removed = true;
-      return "";
-    });
-    cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
-    if (removed && allowedUrls.length === 0) {
-      cleaned = cleaned
-        ? `${cleaned} I don't have a policy link on hand.`
-        : "I don't have a policy link on hand.";
     }
-    return cleaned;
+    result = result.replace(/\{\{[^}]+\}\}/g, "");
+    result = result.replace(/https?:\/\/[^\s)]+/g, "");
+    result = result.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+    return result;
   };
 
   // Base message templates by tone (not used for product_question - AI generates those)
@@ -1560,7 +1527,7 @@ ${intent === "price_request" && productPrice ? `The exact price is ${productPric
 ${intent === "price_request" && !productPrice ? `You don't have the exact price, but you MUST acknowledge their price question. Tell them they can see the price when they click the checkout link.` : ""}
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
-${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers, URLs, and contact details from the context. If the answer is not in the context, say so. Never invent, shorten, or make up URLs (no is.gd, bit.ly, or placeholders).` : ""}
+${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers and contact details from the context. When referencing a link, use the exact {{placeholder}} token from the store context (e.g. {{refund_policy_url}}). Do NOT write out any URLs yourself. If the answer is not in the context, say so.` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `CRITICAL: Answer using ONLY the product context below. If the product context says "only one variant" or "does NOT come in different sizes or colors", you MUST answer NO to the customer (e.g. "No, it only comes in one option" or "We don't have other colors"). If they ask about a variant we don't have, say NO clearly and include the product page and checkout URLs from this prompt - copy those exact URLs into your reply.` : ""}
 ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
@@ -1574,13 +1541,13 @@ ${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge the
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl && checkoutUrl ? `- Then, if they're ready to buy, you can optionally mention the checkout link (${checkoutUrl}) at the end` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
-${intent === "store_question" ? `- Answer from the store context only. Use only URLs, numbers, and contact info that appear in the store context. If something is not there, say so. No invented or shortened URLs.` : ""}
+${intent === "store_question" ? `- Answer from the store context only. When linking to a policy or page, use the exact {{placeholder}} token from the store context. Do NOT write out any URLs yourself.` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the product or checkout link for available options.` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl && !safeChannelContext?.isHomepageFallback ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- Include the store homepage link so they can browse (use this URL exactly): ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
-- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). Instead, write clear descriptive text before the URL, then include the full URL directly. ${intent === "store_question" ? `Only use URLs from the store context above.` : `URLs will be automatically shortened for cleaner appearance.`} Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.
+- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? `When you want to include a link, use the exact {{placeholder}} token from the store context (e.g. "check our refund policy here: {{refund_policy_url}}"). The placeholder will be replaced with the real URL automatically.` : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? "- Structure: Acknowledge question → Direct to product page link for details/variants → Optionally mention checkout link at the end if ready to buy" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- CRITICAL: Don't make up details you don't know - just acknowledge their question and direct them to the link for full details. If you don't know the answer, say so." : ""}
@@ -1616,7 +1583,7 @@ Write the response:`;
         if (response?.choices?.[0]?.message?.content) {
           message = response.choices[0].message.content.trim();
           if (intent === "store_question") {
-            message = sanitizeStoreQuestionReply(message, storeContextForReply?.allowedUrls);
+            message = replaceTokensAndSanitize(message, storeContextForReply?.urlMap);
           }
           if ((intent === "product_question" || intent === "variant_inquiry") && (productPageUrl || checkoutUrl)) {
             const allowedProductUrls = [productPageUrl, checkoutUrl].filter(Boolean);

@@ -179,10 +179,11 @@ export async function getShopifyStoreInfo(shopDomain) {
  * @returns {{ text: string, allowedUrls: string[] }}
  */
 export function buildStoreContextForAI(storeInfo) {
-  if (!storeInfo) return { text: "", allowedUrls: [] };
+  if (!storeInfo) return { text: "", allowedUrls: [], urlMap: {} };
 
   const sections = [];
   const allowedUrls = [];
+  const urlMap = {};
 
   if (storeInfo.name) sections.push(`Store name: ${storeInfo.name}`);
   if (storeInfo.email) {
@@ -196,55 +197,79 @@ export function buildStoreContextForAI(storeInfo) {
     sections.push(`Total number of products: ${storeInfo.productsCount}`);
   }
   if (storeInfo.storefrontAllProductsUrl) {
-    sections.push(`Browse all products: ${storeInfo.storefrontAllProductsUrl}`);
+    const token = "{{all_products_url}}";
+    sections.push(`Browse all products: ${token}`);
     allowedUrls.push(storeInfo.storefrontAllProductsUrl);
+    urlMap[token] = storeInfo.storefrontAllProductsUrl;
   }
 
-  const policyPart = (label, policy) => {
+  const POLICY_TOKENS = {
+    refund: "{{refund_policy_url}}",
+    shipping: "{{shipping_policy_url}}",
+    privacy: "{{privacy_policy_url}}",
+    terms: "{{terms_url}}",
+  };
+
+  const policyPart = (label, policy, tokenKey) => {
     if (!policy) return "";
     const lines = [`${label}: ${policy.title || label}`];
     if (policy.body) lines.push(policy.body.substring(0, 2500) + (policy.body.length > 2500 ? "..." : ""));
     if (policy.url) {
-      lines.push(`URL: ${policy.url}`);
+      const token = POLICY_TOKENS[tokenKey] || `{{${tokenKey}_url}}`;
+      lines.push(`URL: ${token}`);
       allowedUrls.push(policy.url);
+      urlMap[token] = policy.url;
     }
     return lines.join("\n");
   };
-  if (storeInfo.refundPolicy) sections.push(policyPart("Return / refund policy", storeInfo.refundPolicy));
-  if (storeInfo.shippingPolicy) sections.push(policyPart("Shipping policy", storeInfo.shippingPolicy));
-  if (storeInfo.privacyPolicy) sections.push(policyPart("Privacy policy", storeInfo.privacyPolicy));
-  if (storeInfo.termsOfService) sections.push(policyPart("Terms of service", storeInfo.termsOfService));
+  if (storeInfo.refundPolicy) sections.push(policyPart("Return / refund policy", storeInfo.refundPolicy, "refund"));
+  if (storeInfo.shippingPolicy) sections.push(policyPart("Shipping policy", storeInfo.shippingPolicy, "shipping"));
+  if (storeInfo.privacyPolicy) sections.push(policyPart("Privacy policy", storeInfo.privacyPolicy, "privacy"));
+  if (storeInfo.termsOfService) sections.push(policyPart("Terms of service", storeInfo.termsOfService, "terms"));
 
   if (Array.isArray(storeInfo.pages) && storeInfo.pages.length > 0) {
     const pageLines = storeInfo.pages
       .filter((p) => p?.title)
-      .map((p) => (p.onlineStoreUrl ? `${p.title}: ${p.onlineStoreUrl}` : p.title));
+      .map((p) => {
+        if (p.onlineStoreUrl) {
+          const token = `{{page:${p.title}}}`;
+          allowedUrls.push(p.onlineStoreUrl);
+          urlMap[token] = p.onlineStoreUrl;
+          return `${p.title}: ${token}`;
+        }
+        return p.title;
+      });
     if (pageLines.length) {
       sections.push("Pages: " + pageLines.join(" | "));
-      storeInfo.pages.forEach((p) => p.onlineStoreUrl && allowedUrls.push(p.onlineStoreUrl));
     }
-    // Include body for first N pages (read_content); keeps context bounded
     const pagesWithBody = storeInfo.pages.filter((p) => p?.bodySummary).slice(0, PAGE_BODY_MAX_PAGES);
     if (pagesWithBody.length > 0) {
       sections.push("Page content (use to answer customer questions):");
       pagesWithBody.forEach((p) => {
-        sections.push(`Page "${p.title}": ${p.bodySummary}`);
-        if (p.onlineStoreUrl) allowedUrls.push(p.onlineStoreUrl);
+        const suffix = p.onlineStoreUrl ? ` (link: {{page:${p.title}}})` : "";
+        sections.push(`Page "${p.title}": ${p.bodySummary}${suffix}`);
       });
     }
   }
   if (Array.isArray(storeInfo.products) && storeInfo.products.length > 0) {
     const productLines = storeInfo.products
       .filter((p) => p?.title)
-      .map((p) => (p.onlineStoreUrl ? `${p.title}: ${p.onlineStoreUrl}` : p.title));
+      .map((p) => {
+        if (p.onlineStoreUrl) {
+          const token = `{{product:${p.title}}}`;
+          allowedUrls.push(p.onlineStoreUrl);
+          urlMap[token] = p.onlineStoreUrl;
+          return `${p.title}: ${token}`;
+        }
+        return p.title;
+      });
     if (productLines.length) {
       sections.push("Top products (sample): " + productLines.join(" | "));
-      storeInfo.products.forEach((p) => p.onlineStoreUrl && allowedUrls.push(p.onlineStoreUrl));
     }
   }
 
   const text = sections.filter(Boolean).join("\n\n");
-  return { text, allowedUrls: [...new Set(allowedUrls)] };
+  return { text, allowedUrls: [...new Set(allowedUrls)], urlMap };
 }
 
 /**
