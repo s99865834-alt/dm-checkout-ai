@@ -1374,10 +1374,31 @@ export async function generateReplyMessage(brandVoice, productName = null, check
       storeInfo?.storefrontAllProductsUrl,
     ].filter(Boolean);
     const allowedSet = new Set(allowedUrls);
+
+    const policyKeywords = [
+      { aliases: ["refund", "return"], key: "refund" },
+      { aliases: ["shipping", "delivery"], key: "shipping" },
+      { aliases: ["privacy"], key: "privacy" },
+      { aliases: ["terms", "tos"], key: "terms" },
+    ];
+
+    const findClosestAllowed = (url) => {
+      const lower = url.toLowerCase();
+      for (const { aliases } of policyKeywords) {
+        if (aliases.some((a) => lower.includes(a))) {
+          const match = allowedUrls.find((u) => aliases.some((a) => u.toLowerCase().includes(a)));
+          if (match) return match;
+        }
+      }
+      return null;
+    };
+
     const urlRegex = /https?:\/\/[^\s)]+/g;
     let removed = false;
     let cleaned = text.replace(urlRegex, (url) => {
       if (allowedSet.has(url)) return url;
+      const closest = findClosestAllowed(url);
+      if (closest) return closest;
       removed = true;
       return "";
     });
@@ -1557,8 +1578,8 @@ Write the response:`;
             { role: "system", content: systemMessage },
             { role: "user", content: prompt }
           ],
-          temperature: 0.3, // Lower temperature to reduce creativity/hallucination - prioritize accuracy over creativity
-          max_tokens: 250, // Increased from 150 to allow for complete responses with links
+          temperature: 0.3,
+          max_tokens: 350,
         });
 
         if (response?.choices?.[0]?.message?.content) {
