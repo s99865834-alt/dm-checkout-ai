@@ -1,59 +1,60 @@
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { useState } from "react";
-import { Form, useActionData, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
 import { login } from "../../shopify.server";
-import { loginErrorMessage } from "./error.server";
+
+const APP_STORE_URL =
+  (typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL) ||
+  "https://apps.shopify.com/";
 
 export const loader = async ({ request }) => {
-  const url = new URL(request.url);
-  const redirectParam = url.searchParams.get("redirect");
-  
   const loginResult = await login(request);
-  const errors = loginErrorMessage(loginResult);
-  
-  // If login() returned a redirect (OAuth needed), return it
-  // Otherwise return errors for the form
-  if (loginResult && loginResult instanceof Response && loginResult.status >= 300 && loginResult.status < 400) {
-    // This is a redirect response - return it directly
-    // If we have a redirect parameter, we'll need to handle it after OAuth completes
-    // For now, just return the OAuth redirect
+
+  // If the Shopify library produced an OAuth redirect (shop param was present),
+  // return it directly so the install flow proceeds.
+  if (
+    loginResult &&
+    loginResult instanceof Response &&
+    loginResult.status >= 300 &&
+    loginResult.status < 400
+  ) {
     return loginResult;
   }
 
-  return { errors, redirect: redirectParam };
+  return { appStoreUrl: APP_STORE_URL };
 };
 
 export const action = async ({ request }) => {
-  const errors = loginErrorMessage(await login(request));
-
-  return {
-    errors,
-  };
+  const loginResult = await login(request);
+  if (
+    loginResult &&
+    loginResult instanceof Response &&
+    loginResult.status >= 300 &&
+    loginResult.status < 400
+  ) {
+    return loginResult;
+  }
+  return { appStoreUrl: APP_STORE_URL };
 };
 
 export default function Auth() {
-  const loaderData = useLoaderData();
-  const actionData = useActionData();
-  const [shop, setShop] = useState("");
-  const { errors } = actionData || loaderData;
+  const { appStoreUrl } = useLoaderData();
 
   return (
     <AppProvider embedded={false}>
       <s-page>
-        <Form method="post">
-          <s-section heading="Log in">
-            <s-text-field
-              name="shop"
-              label="Shop domain"
-              details="example.myshopify.com"
-              value={shop}
-              onChange={(e) => setShop(e.currentTarget.value)}
-              autocomplete="on"
-              error={errors.shop}
-            ></s-text-field>
-            <s-button type="submit">Log in</s-button>
-          </s-section>
-        </Form>
+        <s-section heading="Install SocialRepl.ai">
+          <s-paragraph>
+            To install this app, visit the Shopify App Store listing and click
+            &quot;Install&quot; from your Shopify admin.
+          </s-paragraph>
+          <s-paragraph>
+            Already have it installed? Open it from your Shopify admin under
+            Apps.
+          </s-paragraph>
+          <s-button href={appStoreUrl} target="_blank" variant="primary">
+            View in Shopify App Store
+          </s-button>
+        </s-section>
       </s-page>
     </AppProvider>
   );

@@ -137,3 +137,47 @@ export async function getCurrentSubscription(admin) {
   
   return subscriptions.find(sub => sub.status === "ACTIVE") || null;
 }
+
+/**
+ * Cancel the shop's current active app subscription via the Shopify Billing API.
+ * Used when a merchant downgrades to the FREE plan so they're no longer charged.
+ * Returns the cancelled subscription payload, or null if there was no active subscription.
+ *
+ * @param {Object} admin - Authenticated Shopify admin API client
+ * @returns {Promise<{id: string, status: string}|null>}
+ */
+export async function cancelCurrentSubscription(admin) {
+  const current = await getCurrentSubscription(admin);
+  if (!current?.id) {
+    return null;
+  }
+
+  const mutation = `
+    mutation appSubscriptionCancel($id: ID!) {
+      appSubscriptionCancel(id: $id) {
+        appSubscription {
+          id
+          status
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const response = await admin.graphql(mutation, {
+    variables: { id: current.id },
+  });
+  const responseJson = await response.json();
+
+  const userErrors = responseJson.data?.appSubscriptionCancel?.userErrors || [];
+  if (userErrors.length > 0) {
+    throw new Error(
+      `Billing API errors: ${userErrors.map((e) => e.message).join(", ")}`
+    );
+  }
+
+  return responseJson.data?.appSubscriptionCancel?.appSubscription || null;
+}

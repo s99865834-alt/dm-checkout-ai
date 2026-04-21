@@ -3,7 +3,8 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import { createChargeViaAPI, getCurrentSubscription } from "../lib/billing.server";
+import { createChargeViaAPI, getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
+import { updateShopPlan } from "../lib/db.server";
 
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
@@ -26,8 +27,21 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const planName = formData.get("plan");
 
-  if (!planName || (planName !== "GROWTH" && planName !== "PRO")) {
+  if (!planName || (planName !== "FREE" && planName !== "GROWTH" && planName !== "PRO")) {
     throw new Response("Invalid plan", { status: 400 });
+  }
+
+  // Downgrade to FREE: cancel the active Shopify subscription via Billing API
+  // so the merchant is no longer charged. No external redirect required.
+  if (planName === "FREE") {
+    try {
+      await cancelCurrentSubscription(admin);
+      await updateShopPlan(shop.id, "FREE");
+      return { downgraded: true, planName: "FREE" };
+    } catch (error) {
+      console.error("Error cancelling subscription:", error);
+      return { error: error.message };
+    }
   }
 
   const storeHandle = session.shop.replace(".myshopify.com", "");
@@ -71,6 +85,13 @@ export default function BillingSelect() {
   useEffect(() => {
     if (fetcher.data?.confirmationUrl) {
       window.open(fetcher.data.confirmationUrl, "_top");
+    }
+  }, [fetcher.data]);
+
+  useEffect(() => {
+    if (fetcher.data?.downgraded) {
+      // Refresh so the Current Plan badge updates to FREE.
+      window.location.reload();
     }
   }, [fetcher.data]);
 
@@ -195,19 +216,7 @@ export default function BillingSelect() {
                     ) : upgrade ? (
                       <PlanActionButton fetcher={fetcher} planName={plan.name} variant="primary" label={`Upgrade to ${plan.name}`} />
                     ) : downgrade && plan.name === "FREE" ? (
-                      <button
-                        className="srSecondaryBtn"
-                        type="button"
-                        onClick={() => {
-                          const handle = shop?.shopify_domain?.replace(".myshopify.com", "");
-                          window.open(
-                            `https://admin.shopify.com/store/${handle}/settings/billing`,
-                            "_top"
-                          );
-                        }}
-                      >
-                        Switch to Free
-                      </button>
+                      <PlanActionButton fetcher={fetcher} planName="FREE" variant="secondary" label="Switch to Free" />
                     ) : downgrade ? (
                       <PlanActionButton fetcher={fetcher} planName={plan.name} variant="secondary" label={`Switch to ${plan.name}`} />
                     ) : null}
