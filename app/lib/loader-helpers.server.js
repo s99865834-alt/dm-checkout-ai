@@ -70,14 +70,17 @@ export async function getShopWithPlan(request) {
       return { shop: null, plan: getPlanConfig("FREE"), session, admin };
     }
   } else if (!shop.active) {
+    // Reinstall / reactivation path. Always reset to FREE so that the merchant
+    // must explicitly re-approve a paid charge via the Billing API before
+    // regaining any paid-plan features — required by Shopify App Store rules.
     try {
       shop = await createOrUpdateShop(shopDomain, {
-        plan: shop.plan || "FREE",
-        monthly_cap: shop.monthly_cap || 100,
+        plan: "FREE",
+        monthly_cap: 100,
         active: true,
         usage_count: 0,
       });
-      logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} (fallback)`);
+      logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} on FREE (fallback)`);
     } catch (error) {
       console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
     }
