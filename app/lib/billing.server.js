@@ -105,6 +105,9 @@ export async function createChargeViaAPI(admin, planName, returnUrl, options = {
  * @returns {Promise<Object|null>}
  */
 export async function getCurrentSubscription(admin) {
+  // Note: lineItems.plan is of type AppPlanV2 (not a union), so the
+  // AppRecurringPricing / AppUsagePricing fragments must be spread on
+  // plan.pricingDetails (AppPricingDetails union), not on plan directly.
   const query = `
     query {
       currentAppInstallation {
@@ -113,15 +116,26 @@ export async function getCurrentSubscription(admin) {
           name
           status
           currentPeriodEnd
+          test
           lineItems {
             id
             plan {
-              ... on AppRecurringPricing {
-                price {
-                  amount
-                  currencyCode
+              pricingDetails {
+                __typename
+                ... on AppRecurringPricing {
+                  price {
+                    amount
+                    currencyCode
+                  }
+                  interval
                 }
-                interval
+                ... on AppUsagePricing {
+                  terms
+                  cappedAmount {
+                    amount
+                    currencyCode
+                  }
+                }
               }
             }
           }
@@ -133,9 +147,15 @@ export async function getCurrentSubscription(admin) {
   const response = await admin.graphql(query);
   const responseJson = await response.json();
 
+  if (responseJson.errors?.length) {
+    throw new Error(
+      `Billing API errors: ${responseJson.errors.map((e) => e.message).join(", ")}`
+    );
+  }
+
   const subscriptions = responseJson.data?.currentAppInstallation?.activeSubscriptions || [];
-  
-  return subscriptions.find(sub => sub.status === "ACTIVE") || null;
+
+  return subscriptions.find((sub) => sub.status === "ACTIVE") || null;
 }
 
 /**
