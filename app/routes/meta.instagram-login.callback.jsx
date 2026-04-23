@@ -105,11 +105,28 @@ export async function loader({ request }) {
       throw new Error(meData.error.message || "Failed to get Instagram account info");
     }
     const mePayload = (meData.data && meData.data[0]) ? meData.data[0] : meData;
-    // Prefer "id" (matches webhook entry.id); check both mePayload and top-level meData; fallback to user_id/userId
-    const rawId = mePayload.id ?? meData.id;
+    // IMPORTANT: Instagram Business Login returns two different IDs from /me:
+    //   - `user_id` = Instagram User ID (IGID) — the same value webhooks send as
+    //     entry.id, and what the Graph API expects for /media, /comments, etc.
+    //   - `id`      = App-Scoped User ID — opaque per-app identifier, NOT the
+    //     IGID. Storing this here (as we previously did) caused every webhook
+    //     to fail resolveShopFromEvent() and silently drop.
+    // `userId` from the token-exchange step is also the IGID per Meta's
+    // Business Login docs, so we use it as a secondary fallback.
     const rawUserId = mePayload.user_id ?? meData.user_id;
-    const igBusinessId = rawId != null ? String(rawId) : (rawUserId != null ? String(rawUserId) : String(userId));
-    logger.debug("[instagram-login] GET /me ids:", { rawId, rawUserId, fromToken: userId, saved: igBusinessId });
+    const rawId = mePayload.id ?? meData.id;
+    const igBusinessId =
+      rawUserId != null
+        ? String(rawUserId)
+        : userId != null
+        ? String(userId)
+        : rawId != null
+        ? String(rawId)
+        : null;
+    if (!igBusinessId) {
+      throw new Error("Could not resolve Instagram user_id from /me response");
+    }
+    logger.debug("[instagram-login] GET /me ids:", { rawUserId, rawId, fromToken: userId, saved: igBusinessId });
 
     // 4. Resolve shop and save auth (use IG business ID from /me for webhooks and API)
     const shopData = await getShopByDomain(targetShop);
