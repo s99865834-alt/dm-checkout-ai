@@ -203,10 +203,12 @@ export const action = async ({ request }) => {
             selectedOptions: v.selectedOptions,
           })),
         };
-        await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle, productOptions);
+        const saved = await saveProductMapping(shop.id, igMediaId, productId, finalVariantId, productHandle, productOptions);
+        console.log(`[home] save-mapping ok shop_id=${shop.id} domain=${session.shop} ig_media_id=${igMediaId} product_id=${productId} row_id=${saved?.id ?? "unknown"}`);
         return {
           success: true,
           actionType: "save-mapping",
+          message: "Mapping saved.",
           mapping: { ig_media_id: igMediaId, product_id: productId, variant_id: finalVariantId, product_handle: productHandle },
         };
       } catch (err) {
@@ -222,7 +224,8 @@ export const action = async ({ request }) => {
       if (!igMediaId) return { error: "Missing Instagram media ID" };
       try {
         await deleteProductMapping(shop.id, igMediaId);
-        return { success: true, actionType: "delete-mapping", igMediaId };
+        console.log(`[home] delete-mapping ok shop_id=${shop.id} domain=${session.shop} ig_media_id=${igMediaId}`);
+        return { success: true, actionType: "delete-mapping", message: "Mapping removed.", igMediaId };
       } catch (err) {
         console.error("[home] Error deleting mapping:", err);
         return { error: err.message || "Failed to delete mapping" };
@@ -322,8 +325,14 @@ export default function Index() {
         const filtered = prev.filter((m) => m.ig_media_id !== postFetcher.data.mapping.ig_media_id);
         return [...filtered, postFetcher.data.mapping];
       });
+      // Re-read from DB so the grid always reflects persisted state,
+      // not just optimistic client state. If the row somehow never landed
+      // in post_product_map, the optimistic mapping will disappear on
+      // revalidate rather than hiding the bug.
+      revalidator.revalidate();
     } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
       setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
+      revalidator.revalidate();
     } else if (actionType === "toggle-post-automation" && postFetcher.data.newEnabledIds) {
       setLocalEnabledPostIds(postFetcher.data.newEnabledIds);
     }

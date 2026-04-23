@@ -49,7 +49,11 @@ async function buildMcpCheckoutUrl(shopDomain, variantGid, qty) {
       null;
     return typeof url === "string" && url.startsWith("https://") ? url : null;
   } catch (err) {
-    logger.warn(`[mcp] update_cart failed: ${err?.message || err}`);
+    if (err?.name === "McpUnavailableError") {
+      logger.debug(`[mcp] update_cart skipped: ${err.reason}`);
+    } else {
+      logger.warn(`[mcp] update_cart failed: ${err?.message || err}`);
+    }
     return null;
   }
 }

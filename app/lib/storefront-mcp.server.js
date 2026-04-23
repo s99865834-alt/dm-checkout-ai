@@ -65,9 +65,30 @@ function nextRequestId() {
 }
 
 /**
+ * Error subclass raised when the MCP endpoint exists but isn't reachable in a
+ * useful way — e.g. the store has storefront password protection, the store
+ * hasn't been enabled for UCP catalog yet, or the endpoint returns HTML
+ * instead of JSON-RPC. Catch these separately so we can fall back silently
+ * without flooding logs.
+ */
+class McpUnavailableError extends Error {
+  constructor(toolName, reason) {
+    super(`MCP ${toolName} unavailable: ${reason}`);
+    this.name = "McpUnavailableError";
+    this.toolName = toolName;
+    this.reason = reason;
+  }
+}
+
+/**
  * Invoke an MCP tool over JSON-RPC 2.0. Throws on network errors,
  * non-2xx responses, or JSON-RPC error payloads. Returns the `result`
  * object from the response (usually `{ content: [...] }`).
+ *
+ * Redirect handling: we set redirect: "manual" so that a storefront-
+ * password-protected store (which 302s every storefront request to
+ * /password) doesn't silently get turned into an HTML page we then
+ * fail to JSON-parse with a confusing "fetch failed" message.
  */
 async function callMcpTool(endpoint, toolName, toolArguments, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -90,9 +111,24 @@ async function callMcpTool(endpoint, toolName, toolArguments, opts = {}) {
         Accept: "application/json",
       },
       body: JSON.stringify(body),
+      redirect: "manual",
     },
     timeoutMs
   );
+
+  // Storefront password or similar gating — Shopify 302s storefront
+  // requests to /password on dev / preview / gated stores.
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location") || "";
+    const reason = /\/password(?:\b|$)/i.test(location)
+      ? "storefront password protected"
+      : `redirected to ${location || "unknown"}`;
+    throw new McpUnavailableError(toolName, reason);
+  }
+
+  if (response.status === 404) {
+    throw new McpUnavailableError(toolName, "endpoint not found (UCP may not be enabled for this store)");
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -101,7 +137,24 @@ async function callMcpTool(endpoint, toolName, toolArguments, opts = {}) {
     );
   }
 
-  const json = await response.json();
+  // Guard against HTML responses (e.g. if Shopify ever serves a
+  // maintenance page instead of JSON-RPC). Parse defensively.
+  const contentType = response.headers.get("content-type") || "";
+  const rawText = await response.text();
+  if (!/json/i.test(contentType) && rawText.trimStart().startsWith("<")) {
+    throw new McpUnavailableError(toolName, "endpoint returned HTML instead of JSON");
+  }
+
+  let json;
+  try {
+    json = JSON.parse(rawText);
+  } catch (err) {
+    throw new McpUnavailableError(
+      toolName,
+      `invalid JSON response (${err?.message || err})`
+    );
+  }
+
   if (json.error) {
     throw new Error(
       `MCP ${toolName} error ${json.error.code}: ${json.error.message}`
@@ -384,7 +437,11 @@ export async function resolveVariantViaMcp(shop, productGid, selected, opts = {}
       opts
     );
   } catch (err) {
-    logger.warn(`[mcp] get_product failed: ${err?.message || err}`);
+    if (err instanceof McpUnavailableError) {
+      logger.debug(`[mcp] get_product skipped: ${err.reason}`);
+    } else {
+      logger.warn(`[mcp] get_product failed: ${err?.message || err}`);
+    }
     return null;
   }
 
@@ -447,7 +504,11 @@ export async function searchCatalogNormalized(shop, query, opts = {}) {
       opts
     );
   } catch (err) {
-    logger.warn(`[mcp] search_catalog failed: ${err?.message || err}`);
+    if (err instanceof McpUnavailableError) {
+      logger.debug(`[mcp] search_catalog skipped: ${err.reason}`);
+    } else {
+      logger.warn(`[mcp] search_catalog failed: ${err?.message || err}`);
+    }
     return [];
   }
 
@@ -469,12 +530,20 @@ export async function searchCatalogNormalized(shop, query, opts = {}) {
  * Wrap an MCP call in a try/catch that returns null on failure.
  * Use this at every call site where the existing Admin API path is the
  * fallback so a Storefront MCP outage doesn't break DM automation.
+ *
+ * McpUnavailableError (store not reachable, password-gated, UCP not
+ * enabled, etc.) is logged at debug — expected, not an error.
+ * Other errors are logged at warn.
  */
 export async function tryMcp(label, fn) {
   try {
     return await fn();
   } catch (err) {
-    logger.warn(`[mcp] ${label} failed: ${err?.message || err}`);
+    if (err instanceof McpUnavailableError) {
+      logger.debug(`[mcp] ${label} skipped: ${err.reason}`);
+    } else {
+      logger.warn(`[mcp] ${label} failed: ${err?.message || err}`);
+    }
     return null;
   }
 }
