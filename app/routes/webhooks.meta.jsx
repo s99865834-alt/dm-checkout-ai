@@ -118,20 +118,40 @@ async function resolveShopFromEvent(pageId, igBusinessId) {
     
     if (error || !data) {
       logger.debug(`[webhook] No shop found for page_id: ${pageId}, ig_business_id: ${igBusinessId}`);
-      // Fallback: if one Instagram-connected shop exists, attribute this event to that shop.
-      // Do NOT overwrite ig_business_id with the webhook's entry.id: our token is for the stored
-      // account. Overwriting caused Code 100 (object does not exist) because we then called the
-      // API with an ID we don't have a token for. Token refresh (Code 190) is handled elsewhere.
+      // Fallback: if exactly one Instagram-connected shop exists, attribute
+      // this event to that shop. We previously did NOT overwrite
+      // ig_business_id here because the stored value was assumed to be
+      // correct (the account our token was issued for). However, a bug in
+      // meta.instagram-login.callback.jsx (now fixed) caused rows to be
+      // saved with the Facebook app-scoped user ID instead of the
+      // Instagram User ID (IGID). In that case the webhook's entry.id IS
+      // the real IGID, so we self-heal the row so future webhooks resolve
+      // directly and Graph API calls use the correct ID too.
       if (igBusinessId) {
         const { data: fallbackRows } = await supabase
           .from("meta_auth")
-          .select("shop_id")
+          .select("shop_id, ig_business_id, auth_type")
           .not("ig_business_id", "is", null);
         if (fallbackRows && fallbackRows.length === 1) {
-          const shopId = fallbackRows[0].shop_id;
+          const row = fallbackRows[0];
+          const shopId = row.shop_id;
           const { data: shop } = await supabase.from("shops").select("id, active").eq("id", shopId).single();
           if (shop?.active) {
-            logger.debug(`[webhook] Using single Instagram shop fallback: shop_id=${shopId} (keeping stored ig_business_id for API calls)`);
+            // If the stored ig_business_id doesn't match this webhook's
+            // entry.id AND the auth_type is Instagram Business Login, the
+            // stored value is almost certainly the legacy app-scoped ID.
+            // Heal it so we don't rely on this single-shop fallback forever.
+            if (row.auth_type === "instagram" && row.ig_business_id !== igBusinessId) {
+              logger.debug(
+                `[webhook] Healing legacy ig_business_id for shop_id=${shopId}: ${row.ig_business_id} -> ${igBusinessId}`
+              );
+              await supabase
+                .from("meta_auth")
+                .update({ ig_business_id: igBusinessId, updated_at: new Date().toISOString() })
+                .eq("shop_id", shopId);
+            } else {
+              logger.debug(`[webhook] Using single Instagram shop fallback: shop_id=${shopId}`);
+            }
             return shopId;
           }
         }
