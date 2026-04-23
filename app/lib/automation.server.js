@@ -26,6 +26,35 @@ import {
 } from "./storefront-mcp.server";
 
 /**
+ * Try to build a real Shopify cart via the Storefront MCP update_cart
+ * tool. Returns the cart's checkout_url on success, or null on any
+ * failure (so callers can fall back to the cart permalink format).
+ *
+ * Note: this creates a cart server-side eagerly. If the customer never
+ * clicks the link, Shopify will let the cart expire naturally — same
+ * net effect as a cart permalink, just a few minutes earlier.
+ */
+async function buildMcpCheckoutUrl(shopDomain, variantGid, qty) {
+  if (!shopDomain || !variantGid) return null;
+  try {
+    const result = await mcpUpdateCart(shopDomain, {
+      lines: [{ merchandise_id: variantGid, quantity: qty }],
+    });
+    if (!result || typeof result !== "object") return null;
+    const url =
+      result.checkout_url ||
+      result.checkoutUrl ||
+      result.cart?.checkout_url ||
+      result.cart?.checkoutUrl ||
+      null;
+    return typeof url === "string" && url.startsWith("https://") ? url : null;
+  } catch (err) {
+    logger.warn(`[mcp] update_cart failed: ${err?.message || err}`);
+    return null;
+  }
+}
+
+/**
  * Build the UCP `selected` options array for get_product.
  *
  * Takes the mapped variant's other option values (so color/material/etc.
@@ -310,19 +339,32 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
 
   const productNumericId = productIdMatch[1];
 
-  // Build the checkout URL
-  // Using cart permalink format: /cart/{variant_id}:{qty} (Shopify's official permalink format)
-  // Only use this format if we have a valid variant ID
-  let checkoutUrl;
-  if (variantNumericId) {
-    // Use variant-specific cart permalink
-    checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
-  } else {
-    // Use product cart URL (will use default variant)
-    checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
+  // Preferred path: ask the Shopify Storefront MCP (update_cart) to
+  // create a real cart server-side and hand back a checkout URL. This
+  // gives the customer a persistent cart (with proper discount /
+  // market / buyer-country handling) rather than a bare permalink that
+  // Shopify re-creates on click.
+  //
+  // If MCP is unavailable or returns an unexpected shape, fall through
+  // to the original /cart/{variantId}:{qty} permalink behavior.
+  let checkoutUrl = null;
+  if (variantNumericId && shop.shopify_domain) {
+    const variantGid = `gid://shopify/ProductVariant/${variantNumericId}`;
+    checkoutUrl = await buildMcpCheckoutUrl(shop.shopify_domain, variantGid, qty);
+    if (checkoutUrl) {
+      logger.debug(`[buildCheckoutLink] Built checkout via MCP update_cart for variant ${variantNumericId}`);
+    }
   }
 
-  // Add UTM parameters and link_id
+  if (!checkoutUrl) {
+    if (variantNumericId) {
+      checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
+    } else {
+      checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
+    }
+  }
+
+  // Attribution params — append to whichever URL we ended up with.
   const params = new URLSearchParams({
     ref: `link_${linkId}`,
     utm_source: "instagram",
@@ -330,7 +372,8 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     utm_campaign: "dm_to_buy",
   });
 
-  const finalUrl = `${checkoutUrl}?${params.toString()}`;
+  const separator = checkoutUrl.includes("?") ? "&" : "?";
+  const finalUrl = `${checkoutUrl}${separator}${params.toString()}`;
 
   return {
     url: finalUrl,
