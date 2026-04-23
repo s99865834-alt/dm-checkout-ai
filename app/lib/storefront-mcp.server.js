@@ -277,6 +277,118 @@ export async function updateCart(shop, args, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Normalisers — adapt UCP catalog shapes to the Admin-API shapes the rest of
+// the codebase already expects, so MCP can be a drop-in for
+// searchProductsByDomain() / getShopifyProductContextForReply().
+// ---------------------------------------------------------------------------
+
+function pickArray(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (Array.isArray(v)) return v;
+  }
+  return [];
+}
+
+function toProductGid(id) {
+  if (!id) return null;
+  if (typeof id !== "string") return null;
+  if (id.startsWith("gid://shopify/Product/")) return id;
+  if (id.startsWith("gid://shopify/ProductVariant/")) return null;
+  if (/^\d+$/.test(id)) return `gid://shopify/Product/${id}`;
+  return null;
+}
+
+function toVariantGid(id) {
+  if (!id) return null;
+  if (typeof id !== "string") return null;
+  if (id.startsWith("gid://shopify/ProductVariant/")) return id;
+  if (/^\d+$/.test(id)) return `gid://shopify/ProductVariant/${id}`;
+  return null;
+}
+
+/**
+ * Normalise a UCP/MCP product record to the shape that
+ * searchProductsByDomain() returns so call sites don't have to branch.
+ *
+ *   { id, title, handle, variants: { nodes: [{ id, title, price }] } }
+ */
+function normalizeMcpProduct(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const productId =
+    toProductGid(raw.id) ||
+    toProductGid(raw.product_id) ||
+    toProductGid(raw.productId) ||
+    toProductGid(raw.gid);
+  if (!productId) return null;
+
+  const variantsRaw = pickArray(raw, ["variants"]);
+  const variantNodes = variantsRaw
+    .map((v) => {
+      const vid =
+        toVariantGid(v?.id) ||
+        toVariantGid(v?.variant_id) ||
+        toVariantGid(v?.variantId);
+      if (!vid) return null;
+      const price =
+        typeof v?.price === "string"
+          ? v.price
+          : v?.price?.amount != null
+          ? String(v.price.amount)
+          : null;
+      return {
+        id: vid,
+        title: v?.title || v?.name || null,
+        price,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    id: productId,
+    title: raw.title || raw.name || "",
+    handle: raw.handle || raw.slug || null,
+    variants: { nodes: variantNodes },
+  };
+}
+
+/**
+ * Run search_catalog and return products in the same shape as
+ * searchProductsByDomain(). Returns [] on any error or empty result so
+ * callers can transparently fall back to the Admin API path.
+ */
+export async function searchCatalogNormalized(shop, query, opts = {}) {
+  if (!query) return [];
+  const shopDomain = normalizeShopDomain(shop);
+  if (!shopDomain) return [];
+
+  let parsed;
+  try {
+    parsed = await searchCatalog(
+      shop,
+      {
+        query,
+        pagination: { limit: opts.limit ?? 5 },
+        ...(opts.context ? { context: opts.context } : {}),
+      },
+      opts
+    );
+  } catch (err) {
+    logger.warn(`[mcp] search_catalog failed: ${err?.message || err}`);
+    return [];
+  }
+
+  if (!parsed) return [];
+  // Try several plausible response shapes.
+  const productsArray = Array.isArray(parsed)
+    ? parsed
+    : pickArray(parsed, ["products", "results", "items", "nodes"]);
+  return productsArray
+    .map(normalizeMcpProduct)
+    .filter((p) => p && p.variants.nodes.length > 0);
+}
+
+// ---------------------------------------------------------------------------
 // Convenience wrapper: swallow errors, return null, log
 // ---------------------------------------------------------------------------
 

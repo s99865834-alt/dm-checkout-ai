@@ -19,7 +19,7 @@ import shopify from "../shopify.server";
 import logger from "./logger.server";
 import {
   searchShopPoliciesAndFaqs,
-  searchCatalog,
+  searchCatalogNormalized,
   getProduct as mcpGetProduct,
   updateCart as mcpUpdateCart,
   tryMcp,
@@ -759,23 +759,39 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
       let matchedProduct = null;
       if (shop.shopify_domain && searchTerm) {
-        try {
-          const candidates = await searchProductsByDomain(shop.shopify_domain, searchTerm, 3);
-          if (candidates.length === 1) {
-            matchedProduct = candidates[0];
-          } else if (candidates.length > 1 && entityProductName) {
-            const lower = entityProductName.toLowerCase();
-            matchedProduct = candidates.find(
-              (p) => p.title.toLowerCase() === lower
-            ) || candidates.find(
-              (p) => p.title.toLowerCase().includes(lower)
-            ) || candidates[0];
+        // Prefer Shopify Storefront MCP search_catalog — it's the UCP-
+        // authoritative catalog search and respects the buyer's intent/
+        // locale. Fall back to the Admin-API title-LIKE search if MCP
+        // returns nothing or errors out.
+        let candidates = await searchCatalogNormalized(
+          shop.shopify_domain,
+          searchTerm,
+          { limit: 3 }
+        );
+        let source = "mcp";
+        if (!candidates || candidates.length === 0) {
+          source = "admin";
+          try {
+            candidates = await searchProductsByDomain(shop.shopify_domain, searchTerm, 3);
+          } catch (err) {
+            console.error("[automation] Product search error:", err?.message);
+            candidates = [];
           }
-          if (matchedProduct) {
-            logger.debug(`[automation] Product search matched: "${matchedProduct.title}" for text "${searchTerm}"`);
-          }
-        } catch (err) {
-          console.error("[automation] Product search error:", err?.message);
+        }
+        if (candidates.length === 1) {
+          matchedProduct = candidates[0];
+        } else if (candidates.length > 1 && entityProductName) {
+          const lower = entityProductName.toLowerCase();
+          matchedProduct = candidates.find(
+            (p) => (p.title || "").toLowerCase() === lower
+          ) || candidates.find(
+            (p) => (p.title || "").toLowerCase().includes(lower)
+          ) || candidates[0];
+        }
+        if (matchedProduct) {
+          logger.debug(
+            `[automation] Product search matched via ${source}: "${matchedProduct.title}" for text "${searchTerm}"`
+          );
         }
       }
 
@@ -1055,7 +1071,67 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 
     // 6. Find product mapping for this media
     const productMappings = await getProductMappings(shop.id);
-    const productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
+    // `let` because the MCP search_catalog fallback below may assign a
+    // synthesized mapping when no explicit post→product mapping exists.
+    let productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
+
+    if (!productMapping) {
+      // Before giving up and sending a homepage link, try the Storefront
+      // MCP search_catalog with the comment text — it's the closest we
+      // get to "which product is this commenter asking about?" when the
+      // merchant hasn't mapped the Instagram post to a product.
+      if (shop.shopify_domain && message.text) {
+        const entityProductName = message.ai_entities?.product_name || null;
+        const searchTerm = entityProductName || message.text;
+        const candidates = await searchCatalogNormalized(
+          shop.shopify_domain,
+          searchTerm,
+          { limit: 3 }
+        );
+        if (candidates.length > 0) {
+          const best = entityProductName
+            ? candidates.find(
+                (p) =>
+                  (p.title || "").toLowerCase() ===
+                  entityProductName.toLowerCase()
+              ) ||
+              candidates.find((p) =>
+                (p.title || "")
+                  .toLowerCase()
+                  .includes(entityProductName.toLowerCase())
+              ) ||
+              candidates[0]
+            : candidates[0];
+          if (best) {
+            const firstVariant = best.variants?.nodes?.[0];
+            const variantGid = firstVariant?.id || null;
+            if (variantGid) {
+              const numericProductId = best.id.replace(
+                "gid://shopify/Product/",
+                ""
+              );
+              const numericVariantId = variantGid.replace(
+                "gid://shopify/ProductVariant/",
+                ""
+              );
+              logger.debug(
+                `[automation] MCP catalog search matched "${best.title}" for unmapped media ${mediaId}; using as product mapping`
+              );
+              // Synthesize a productMapping shape and fall through to the
+              // existing mapped-product flow below by reassigning.
+              productMapping = {
+                product_id: numericProductId,
+                variant_id: numericVariantId,
+                product_handle: best.handle || null,
+                product_options: null,
+                ig_media_id: mediaId,
+                _from: "mcp_search_catalog",
+              };
+            }
+          }
+        }
+      }
+    }
 
     if (!productMapping) {
       const homepageUrl = getShopHomepageUrl(shop);
