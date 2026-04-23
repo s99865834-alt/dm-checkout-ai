@@ -51,6 +51,10 @@ export async function loader({ params, request }) {
   return redirect(row.url, 302);
 }
 
+export async function action() {
+  return new Response("Method Not Allowed", { status: 405 });
+}
+
 export default function RootRedirect() {
   return null;
 }

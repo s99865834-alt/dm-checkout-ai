@@ -83,6 +83,10 @@ export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }
 
+export async function action() {
+  return new Response("Method Not Allowed", { status: 405 });
+}
+
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };

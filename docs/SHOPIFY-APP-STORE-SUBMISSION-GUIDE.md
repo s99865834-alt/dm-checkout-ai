@@ -1,6 +1,6 @@
 # Shopify App Store Submission Guide
 
-Complete checklist for submitting DM Checkout AI to the Shopify App Store.
+Complete checklist for submitting SocialRepl.ai to the Shopify App Store.
 
 ---
 
@@ -96,7 +96,7 @@ Updated to match actual plan caps and follow Shopify's content rules: no stats, 
 
 ### App name
 
-`DM Checkout AI`
+`SocialRepl.ai`
 
 ### Subtitle
 
@@ -104,7 +104,7 @@ Updated to match actual plan caps and follow Shopify's content rules: no stats, 
 
 ### Short description
 
-> Turn Instagram DMs and comments into sales. DM Checkout AI sends AI-powered automated replies with direct checkout links so your customers can buy without leaving the conversation.
+> Turn Instagram DMs and comments into sales. SocialRepl.ai sends AI-powered automated replies with direct checkout links so your customers can buy without leaving the conversation.
 
 ### Key features (bullet points)
 

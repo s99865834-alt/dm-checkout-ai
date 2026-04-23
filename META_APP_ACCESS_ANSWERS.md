@@ -24,7 +24,7 @@ This is an **embedded Shopify app** that runs inside Shopify Admin. To access it
    - Staff account credentials: [Provided separately in review submission]
 
 2. **Navigate to the App:**
-   - In Shopify Admin, go to **Apps** → **DM Checkout AI**
+   - In Shopify Admin, go to **Apps** → **SocialRepl.ai**
    - The app will open in an embedded iframe within Shopify Admin
 
 3. **Key Pages for Testing:**

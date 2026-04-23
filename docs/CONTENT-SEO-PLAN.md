@@ -18,7 +18,7 @@ Publish 2–3 posts in the first month; add more as you scale.
   - Step 2: Map your best-selling products to posts so you can send the right link fast.
   - Step 3: Use automation or templates to reply with checkout links without leaving the app.
   - How to track which sales came from Instagram (attribution).
-  - CTA: DM Checkout AI connects Shopify to Instagram so you can send one-click checkout links from DMs.
+  - CTA: SocialRepl.ai connects Shopify to Instagram so you can send one-click checkout links from DMs.
 - **Length:** 800–1,200 words.
 - **Internal links:** App listing, Privacy, support/help if you have it.
 
@@ -30,7 +30,7 @@ Publish 2–3 posts in the first month; add more as you scale.
   - Why replying in DMs is better than long comment threads (privacy, link sharing, tracking).
   - How comment-to-DM automation works (reply in DM with product link).
   - Best practices: which comments to automate, how to stay within Meta’s policies.
-  - CTA: DM Checkout AI can turn comments into DMs with checkout links automatically.
+  - CTA: SocialRepl.ai can turn comments into DMs with checkout links automatically.
 - **Length:** 600–900 words.
 
 ### Post 3: Best Instagram automation for Shopify stores
@@ -41,7 +41,7 @@ Publish 2–3 posts in the first month; add more as you scale.
   - What to look for: Shopify integration, product mapping, attribution, brand voice.
   - Comparison-style section (your app + 1–2 alternatives, or “features to look for” without naming competitors).
   - Free vs paid: when to upgrade (message volume, comment-to-DM, follow-ups).
-  - CTA: Try DM Checkout AI free (25 messages/month).
+  - CTA: Try SocialRepl.ai free (25 messages/month).
 - **Length:** 700–1,000 words.
 
 ### Post 4 (optional): The 24-hour rule for Instagram messaging
@@ -51,7 +51,7 @@ Publish 2–3 posts in the first month; add more as you scale.
   - What the 24-hour rule is and why Meta enforces it.
   - How to use the window: reply fast, send value (e.g. checkout link), follow up before the window closes.
   - How automation helps (instant reply with link, follow-up before 24h).
-  - CTA: DM Checkout AI sends replies and optional follow-ups within the messaging window.
+  - CTA: SocialRepl.ai sends replies and optional follow-ups within the messaging window.
 - **Length:** 500–700 words.
 
 ---
@@ -66,17 +66,30 @@ Create one 2–3 minute demo video for the landing page and App Store; optionall
 - **Script outline:**
   1. **Hook (0:00–0:15):** “You get DMs asking for prices or links every day. What if every one got a checkout link in seconds?”
   2. **Problem (0:15–0:30):** Manual replies are slow; you miss the 24-hour window or forget to follow up.
-  3. **Solution (0:30–0:45):** DM Checkout AI connects Instagram to Shopify and sends AI-generated replies with one-click checkout links.
+  3. **Solution (0:30–0:45):** SocialRepl.ai connects Instagram to Shopify and sends AI-generated replies with one-click checkout links.
   4. **Demo (0:45–2:00):** Screen recording: open app → show connected Instagram → show product mapping → trigger a test DM (or use existing) → show automated reply with link in app and in Instagram.
-  5. **Result (2:00–2:20):** “Track clicks and revenue from Instagram in one place. Free tier: 25 messages a month.”
+  5. **Result (2:00–2:20):** “Track clicks and revenue from Instagram in one place,” plus your current Free tier message limit (see live pricing / README).
   6. **CTA (2:20–2:35):** “Install from the Shopify App Store. Link in the description.”
 - **Captions:** Add English captions for accessibility and SEO.
 - **Publish:** Embed on landing page and link in App Store listing; upload to YouTube and use title/description with target keywords.
 
-### Video 2 (optional): DM Checkout AI setup in 5 minutes
+### Video 2 (optional): SocialRepl.ai setup in 5 minutes
 
 - **Goal:** Reduce setup friction for new installs.
 - **Outline:** Connect Instagram → map one product → enable automation → send a test DM → show reply. Keep under 5 minutes with clear steps and captions.
+
+### Recording checklist (before you hit record)
+
+Use this so one recording session produces assets for the **App Store**, **landing page**, and **ads**.
+
+- [ ] **Store:** Use a development store or demo store with at least one product and a connected Instagram Business test account (or clearly labeled mock).
+- [ ] **Resolution:** Record at least **1080p**, clear UI, no personal data in frame.
+- [ ] **Flow:** Follow **Video 1** outline: hook → problem → solution → full demo (connect → map post → DM or comment → reply with checkout link) → analytics glance → CTA to install.
+- [ ] **Length:** Keep the flagship cut **under 3 minutes**; trim silence and loading spinners.
+- [ ] **Audio:** If you voice over, reduce background noise; otherwise use captions only.
+- [ ] **Captions:** Export **English captions** (SRT or platform captions) for accessibility and SEO.
+- [ ] **Exports:** Master file + a **compressed** MP4 for the App Store listing; optional **GIF** or short vertical cut for social later.
+- [ ] **Publish:** Upload to YouTube with target keywords in title/description; embed on the marketing site; add the same video (or a link) to the Shopify App Store listing per [SHOPIFY-APP-STORE-SUBMISSION-GUIDE.md](SHOPIFY-APP-STORE-SUBMISSION-GUIDE.md).
 
 ---
 

@@ -23,6 +23,15 @@ Use this checklist to execute the promotion plan in order. Do not skip the found
 - [ ] Collect first 3–5 reviews (ask after first value moment; see [SOCIAL-PROOF-REVIEWS.md](SOCIAL-PROOF-REVIEWS.md)).
 - [ ] Confirm Partner Dashboard shows installs and (if applicable) billing events.
 
+### Soft launch — operator checklist (minimal time)
+
+Use this so “soft launch” is **done deliberately** without extra scope.
+
+1. **Stores:** Install on **one dev store** (you) and, if possible, **one real merchant** (friend or early waitlist). Run through: OAuth, connect Instagram, map one post, trigger one test DM or comment, confirm Analytics shows activity.
+2. **Trial path:** If you use beta codes, redeem **one** code end-to-end on a test shop and confirm `beta_trial_expires_at` and Pro features match the listing ([APP-STORE-LISTING-ASO.md](APP-STORE-LISTING-ASO.md) §2.1).
+3. **Reviews:** Do not ask for a public review until a **value moment** (see [SOCIAL-PROOF-REVIEWS.md](SOCIAL-PROOF-REVIEWS.md)). Track who you asked in a note so you do not double-email.
+4. **Instrumentation:** Enter Week 0 numbers into [metrics-weekly-template.csv](metrics-weekly-template.csv) so later weeks are comparable.
+
 ---
 
 ## Week 1 (turn on paid + organic)

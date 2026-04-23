@@ -17,6 +17,13 @@ import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 import logger from "./logger.server";
+import {
+  searchShopPoliciesAndFaqs,
+  searchCatalog,
+  getProduct as mcpGetProduct,
+  updateCart as mcpUpdateCart,
+  tryMcp,
+} from "./storefront-mcp.server";
 
 // Module-level singleton — one HTTP connection pool for the lifetime of the process.
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -35,6 +42,38 @@ function generateLinkId() {
     id += ID_CHARS[bytes[i] % 62];
   }
   return id;
+}
+
+/**
+ * MCP policy/FAQ responses come back in a few shapes depending on how Shopify
+ * encodes the content block: plain text, JSON with an `answer` key, or a
+ * `{ content: [...] }` wrapper. Normalise to a single answer string or null.
+ */
+function extractMcpAnswerText(mcpResult) {
+  if (!mcpResult) return null;
+  if (typeof mcpResult === "string") {
+    return mcpResult.trim() || null;
+  }
+  if (typeof mcpResult === "object") {
+    const candidate =
+      mcpResult.answer ||
+      mcpResult.text ||
+      mcpResult.response ||
+      mcpResult.result ||
+      null;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+    if (Array.isArray(mcpResult.content)) {
+      const joined = mcpResult.content
+        .filter((c) => c?.type === "text" && typeof c.text === "string")
+        .map((c) => c.text)
+        .join("\n")
+        .trim();
+      if (joined) return joined;
+    }
+  }
+  return null;
 }
 
 /**
@@ -449,12 +488,20 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
     // 5. Handle store_question (general store questions) - doesn't need product mapping
     if (intent === "store_question") {
-      // Fetch brand voice and store context in parallel (independent calls)
-      const [brandVoiceData, storeInfoResult] = await Promise.all([
+      // Fetch brand voice, cached store context, and ask Shopify's Storefront
+      // MCP server (search_shop_policies_and_faqs) in parallel. The MCP answer
+      // is authoritative; cached storeInfo stays around so URL placeholder
+      // tokens ({{refund_policy_url}}, {{page:*}}, etc.) keep resolving.
+      const [brandVoiceData, storeInfoResult, mcpAnswerResult] = await Promise.all([
         getBrandVoice(shop.id),
         getStoredStoreContext(shop.id, 0).catch(() => null),
+        shop.shopify_domain
+          ? tryMcp("search_shop_policies_and_faqs", () =>
+              searchShopPoliciesAndFaqs(shop.shopify_domain, message.text)
+            )
+          : Promise.resolve(null),
       ]);
-      
+
       let storeInfo = storeInfoResult;
       if (storeInfo) {
         logger.debug(`[automation] Using cached store context for shop ${shop.id}:`, {
@@ -464,6 +511,20 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       } else if (shop.shopify_domain) {
         logger.debug(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
         storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
+      }
+
+      const mcpAnswerText = extractMcpAnswerText(mcpAnswerResult);
+      if (mcpAnswerText) {
+        logger.debug(
+          `[automation] Storefront MCP returned a policy answer for shop ${shop.id} (${mcpAnswerText.length} chars)`
+        );
+        // Attach the MCP answer to storeInfo so buildStoreContextForAI surfaces
+        // it as the authoritative section. If we had no cached storeInfo at
+        // all, synthesise a minimal shim so the AI still has something to use.
+        storeInfo = {
+          ...(storeInfo || {}),
+          mcpAnswer: mcpAnswerText,
+        };
       }
       
       let replyText = await generateReplyMessage(

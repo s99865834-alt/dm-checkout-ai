@@ -65,7 +65,7 @@ Category ads show on App Store category/subcategory pages (e.g. Marketing, Sales
 
 ### 3.1 Where to run
 
-- **Categories:** Choose the category/categories where DM Checkout AI is listed (e.g. **Marketing**, **Sales**). You can only advertise within your app’s category.
+- **Categories:** Choose the category/categories where SocialRepl.ai is listed (e.g. **Marketing**, **Sales**). You can only advertise within your app’s category.
 - **Daily budget:** Start **$5–10/day** per category; compare cost-per-install to Search.
 - **Geo / device:** Same as Search (e.g. US, CA, UK, AU; desktop).
 
@@ -99,6 +99,18 @@ Homepage ads show on the App Store homepage. Highest visibility, usually higher 
 | 2 | Add Category ads (1–2 categories). Keep Search. Small Category budget ($5–10/day). |
 | 3 | Optionally add Homepage ($5–10/day). Reallocate from worst-performing placement. |
 | Ongoing | Pause underperforming keywords/placements. Double down on keywords that drive installs and paid plans. |
+
+---
+
+## 5.1 Weekly review (~30 minutes)
+
+Do this **once per week** on the same weekday so spend does not drift. Copy numbers into [metrics-weekly-template.csv](metrics-weekly-template.csv) (or your own sheet).
+
+1. **Partner Dashboard:** Note **new installs** (7 days), **ad spend**, and **impressions/clicks** per Search campaign.
+2. **Search keywords:** For each keyword, compare **clicks** and **installs** (or downstream signups if shown). **Pause** or **lower bid** on keywords with spend but no installs after ~2 weeks of data; **raise slightly** on clear winners.
+3. **Budget:** If cost per install is above your target, **reduce daily budget** or pause the worst keyword before adding Category/Homepage.
+4. **Billing / app:** Note **new paid plans** or **trial acceptances** for the week (from Shopify billing or your database). See [METRICS-TRACKING.md](METRICS-TRACKING.md) for trial→paid.
+5. **One change:** Leave each session with **at most one** structural change (e.g. pause one keyword or add one exact-match variant) so you can tell what worked.
 
 ---
 
