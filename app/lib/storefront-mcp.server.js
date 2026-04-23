@@ -353,6 +353,79 @@ function normalizeMcpProduct(raw) {
 }
 
 /**
+ * Resolve a specific product variant from a set of option selections
+ * (e.g. [{name: 'Size', label: 'L'}, {name: 'Color', label: 'Blue'}]).
+ *
+ * Uses Shopify's get_product tool with the UCP `selected` parameter so
+ * the server picks the matching variant with its own alias handling —
+ * better than client-side string comparison in resolveVariantBySize.
+ *
+ * Returns `{ variant: { id, title, price } }` on success (mirrors the
+ * resolveVariantBySize return shape) or null on any failure so callers
+ * can fall back to the existing Admin-API-backed resolver.
+ *
+ * @param {string} shop
+ * @param {string} productGid - gid://shopify/Product/xxx
+ * @param {Array<{name:string,label:string}>} selected
+ */
+export async function resolveVariantViaMcp(shop, productGid, selected, opts = {}) {
+  if (!productGid || !Array.isArray(selected) || selected.length === 0) return null;
+  const shopDomain = normalizeShopDomain(shop);
+  if (!shopDomain) return null;
+
+  let parsed;
+  try {
+    parsed = await getProduct(
+      shop,
+      {
+        id: productGid,
+        selected,
+      },
+      opts
+    );
+  } catch (err) {
+    logger.warn(`[mcp] get_product failed: ${err?.message || err}`);
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // Shopify may surface the resolved variant under a few names depending on
+  // the UCP version. Probe each in turn.
+  const candidate =
+    parsed.selected_variant ||
+    parsed.matched_variant ||
+    parsed.variant ||
+    (Array.isArray(parsed.variants) && parsed.variants.length === 1
+      ? parsed.variants[0]
+      : null) ||
+    (Array.isArray(parsed.variants)
+      ? parsed.variants.find(
+          (v) => v?.selected === true || v?.is_selected === true
+        )
+      : null);
+
+  const variantGid =
+    toVariantGid(candidate?.id) ||
+    toVariantGid(candidate?.variant_id) ||
+    toVariantGid(candidate?.variantId);
+  if (!variantGid) return null;
+
+  return {
+    variant: {
+      id: variantGid,
+      title: candidate?.title || candidate?.name || null,
+      price:
+        typeof candidate?.price === "string"
+          ? candidate.price
+          : candidate?.price?.amount != null
+          ? String(candidate.price.amount)
+          : null,
+    },
+  };
+}
+
+/**
  * Run search_catalog and return products in the same shape as
  * searchProductsByDomain(). Returns [] on any error or empty result so
  * callers can transparently fall back to the Admin API path.

@@ -20,10 +20,30 @@ import logger from "./logger.server";
 import {
   searchShopPoliciesAndFaqs,
   searchCatalogNormalized,
-  getProduct as mcpGetProduct,
+  resolveVariantViaMcp,
   updateCart as mcpUpdateCart,
   tryMcp,
 } from "./storefront-mcp.server";
+
+/**
+ * Build the UCP `selected` options array for get_product.
+ *
+ * Takes the mapped variant's other option values (so color/material/etc.
+ * are preserved) and adds the size we want to switch to. Returns null if
+ * we don't have enough info to make a meaningful call.
+ */
+function buildSelectedForSizeSwitch(allVariants, mappedVariantId, sizeOptionName, chosenSize) {
+  if (!sizeOptionName || !chosenSize) return null;
+  const mapped = Array.isArray(allVariants)
+    ? allVariants.find((v) => v?.id === mappedVariantId)
+    : null;
+  const nonSize = (mapped?.selectedOptions || []).filter(
+    (o) => o?.name && o.name.toLowerCase() !== sizeOptionName.toLowerCase()
+  );
+  const selected = nonSize.map((o) => ({ name: o.name, label: o.value }));
+  selected.push({ name: sizeOptionName, label: chosenSize });
+  return selected;
+}
 
 // Module-level singleton — one HTTP connection pool for the lifetime of the process.
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -611,7 +631,38 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
           if (inferredSize && sizeCheck) {
             const allVariants = productOpts?.variants?.nodes || productOpts?.variants || [];
-            const resolved = resolveVariantBySize(allVariants, lastProductLink.variant_id, sizeCheck.sizeOptionName, inferredSize);
+
+            // Prefer the Storefront MCP (get_product with `selected`) since
+            // it does server-side variant matching with Shopify's own
+            // option-alias handling. Fall back to the local
+            // resolveVariantBySize helper on failure.
+            const mcpSelected = buildSelectedForSizeSwitch(
+              allVariants,
+              lastProductLink.variant_id,
+              sizeCheck.sizeOptionName,
+              inferredSize
+            );
+            const productGid = lastProductLink.product_id?.startsWith(
+              "gid://shopify/Product/"
+            )
+              ? lastProductLink.product_id
+              : `gid://shopify/Product/${lastProductLink.product_id}`;
+            let resolved =
+              mcpSelected && shop.shopify_domain
+                ? await resolveVariantViaMcp(
+                    shop.shopify_domain,
+                    productGid,
+                    mcpSelected
+                  )
+                : null;
+            if (!resolved) {
+              resolved = resolveVariantBySize(
+                allVariants,
+                lastProductLink.variant_id,
+                sizeCheck.sizeOptionName,
+                inferredSize
+              );
+            }
 
             const resolvedVariantId = resolved?.variant?.id || lastProductLink.variant_id;
 
@@ -1243,11 +1294,39 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         return { sent: true, reason: "Asked customer which size they want" };
       }
 
-      // Customer specified a size in their comment — resolve to the correct variant
-      const resolved = resolveVariantBySize(sizeInfo.variants, productMapping.variant_id, sizeInfo.sizeOptionName, customerSize);
+      // Customer specified a size in their comment — resolve to the correct variant.
+      // Prefer MCP get_product (server-side matching) with fallback to local
+      // resolveVariantBySize on any failure.
+      const mcpSelected = buildSelectedForSizeSwitch(
+        sizeInfo.variants,
+        productMapping.variant_id,
+        sizeInfo.sizeOptionName,
+        customerSize
+      );
+      const productGid = productMapping.product_id?.startsWith(
+        "gid://shopify/Product/"
+      )
+        ? productMapping.product_id
+        : `gid://shopify/Product/${productMapping.product_id}`;
+      let resolved =
+        mcpSelected && shop.shopify_domain
+          ? await resolveVariantViaMcp(shop.shopify_domain, productGid, mcpSelected)
+          : null;
+      let resolutionSource = resolved ? "mcp" : null;
+      if (!resolved) {
+        resolved = resolveVariantBySize(
+          sizeInfo.variants,
+          productMapping.variant_id,
+          sizeInfo.sizeOptionName,
+          customerSize
+        );
+        if (resolved) resolutionSource = "local";
+      }
       if (resolved) {
         productMapping.variant_id = resolved.variant.id;
-        logger.debug(`[automation] Resolved comment size "${customerSize}" → variant ${resolved.variant.id} (exact=${resolved.exactMatch})`);
+        logger.debug(
+          `[automation] Resolved comment size "${customerSize}" → variant ${resolved.variant.id} via ${resolutionSource}`
+        );
       }
     }
 
