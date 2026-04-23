@@ -1,6 +1,6 @@
 # App Store Listing & ASO (App Store Optimization)
 
-Use this copy and checklist when submitting or updating the DM Checkout AI listing on the Shopify App Store. Optimize before spending on paid promotion so every click converts.
+Use this copy and checklist when submitting or updating the SocialRepl.ai listing on the Shopify App Store. Optimize before spending on paid promotion so every click converts.
 
 ---
 
@@ -8,8 +8,8 @@ Use this copy and checklist when submitting or updating the DM Checkout AI listi
 
 **App name (title):** Keep short; include one high-intent keyword.
 
-- **Option A:** `DM Checkout AI` (brand + category)
-- **Option B:** `DM Checkout AI – Instagram to Sales` (add outcome)
+- **Option A:** `SocialRepl.ai` (brand + category)
+- **Option B:** `SocialRepl.ai – Instagram to Sales` (add outcome)
 
 **Subtitle (if supported):** One line with keywords for search and ad relevance.
 
@@ -25,14 +25,25 @@ Use for the main visible description; lead with the outcome, then features.
 
 **Lead (first 1–2 sentences):**
 
-> Transform Instagram DMs and comments into sales. DM Checkout AI sends AI-powered automated replies with one-click checkout links so you never miss a DM sale.
+> Transform Instagram DMs and comments into sales. SocialRepl.ai sends AI-powered automated replies with one-click checkout links so you never miss a DM sale.
 
 **Bullets (outcome-focused):**
 
 - Connect your Instagram Business account and map products to posts
 - AI replies to DMs and comments with personalized checkout links
 - Track clicks and revenue from Instagram in one dashboard
-- Free tier: 25 automated messages/month—no credit card required
+- Free tier: automated messages each month with DM automation—no credit card required (see pricing for limits)
+
+### 2.1 Two-month Pro trial (Shopify Partner billing + in-app beta codes)
+
+Align **App Store listing trial settings** in the Partner Dashboard (trial length, which plan) with what merchants see in the app.
+
+- **Shopify App Store listing:** If you offer a **paid-plan trial** on install (e.g. Growth or Pro), state the **duration** (e.g. 2 months / 60 days), **what is included**, and **what happens when the trial ends** (price, how to cancel). Merchants should never be surprised at billing.
+- **Beta / invite codes:** The in-app **Pro trial** redemption flow lives at `/app/pro-trial` (trial codes grant a **2-month / 60-day** Pro trial per your `beta_codes.trial_days` configuration). Listing copy can mention “Pro trial available with code” if you distribute codes publicly; otherwise keep codes off the public listing and share them in communities or email.
+
+**Suggested one-liner for optional public mention:**
+
+> Optional: Redeem a code in-app for a 2-month Pro trial (all Pro features); see app onboarding after install.
 
 ---
 
@@ -73,7 +84,7 @@ Transform Instagram DMs and comments into sales with AI-powered automated respon
 - All Growth features included
 - Priority support
 
-**Why DM Checkout AI**
+**Why SocialRepl.ai**
 
 - Built for Shopify: connects natively with your store and products.
 - Respects Instagram’s 24-hour messaging window and Meta’s policies.
@@ -132,8 +143,14 @@ Ensure the pricing section in the App Store and any in-app billing screens clear
 - [ ] Title and subtitle include at least one high-intent keyword (e.g. Instagram DM, Instagram checkout).
 - [ ] Short description leads with outcome and mentions free tier.
 - [ ] Full description includes all three tiers and main features.
+- [ ] **Trial:** Partner Dashboard trial settings match in-app messaging; listing text explains duration, what’s included, and post-trial price / cancel path (if you offer a listing-level trial).
+- [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test); Pro trial redemption linked from onboarding (`/app/pro-trial`) where relevant.
 - [ ] 5–8 screenshots in order: connect → map → automation → reply with link → analytics (and optional attribution/brand voice).
 - [ ] Captions on every screenshot.
 - [ ] Icon 1200×1200 and readable at small size.
 - [ ] Pricing clearly shown (Free / Growth / Pro with differentiators).
-- [ ] Optional: One short demo video or interactive demo under 3 minutes.
+- [ ] Optional: One short demo video or interactive demo under 3 minutes (see recording checklist in [CONTENT-SEO-PLAN.md](CONTENT-SEO-PLAN.md)).
+
+### 8.1 Screenshot & video production (manual)
+
+Screenshots and the demo recording are **not generated in-repo**: capture them from a **clean dev or staging store** with realistic data. Use the table in **§4 Screenshot captions** as a shot list; export at the resolution Shopify requires. For the video, follow the **Recording checklist** in [CONTENT-SEO-PLAN.md](CONTENT-SEO-PLAN.md), then upload to the listing and (optionally) YouTube and embed on your marketing site.

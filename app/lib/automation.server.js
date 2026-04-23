@@ -17,6 +17,62 @@ import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 import logger from "./logger.server";
+import {
+  searchShopPoliciesAndFaqs,
+  searchCatalogNormalized,
+  resolveVariantViaMcp,
+  updateCart as mcpUpdateCart,
+  tryMcp,
+} from "./storefront-mcp.server";
+
+/**
+ * Try to build a real Shopify cart via the Storefront MCP update_cart
+ * tool. Returns the cart's checkout_url on success, or null on any
+ * failure (so callers can fall back to the cart permalink format).
+ *
+ * Note: this creates a cart server-side eagerly. If the customer never
+ * clicks the link, Shopify will let the cart expire naturally — same
+ * net effect as a cart permalink, just a few minutes earlier.
+ */
+async function buildMcpCheckoutUrl(shopDomain, variantGid, qty) {
+  if (!shopDomain || !variantGid) return null;
+  try {
+    const result = await mcpUpdateCart(shopDomain, {
+      lines: [{ merchandise_id: variantGid, quantity: qty }],
+    });
+    if (!result || typeof result !== "object") return null;
+    const url =
+      result.checkout_url ||
+      result.checkoutUrl ||
+      result.cart?.checkout_url ||
+      result.cart?.checkoutUrl ||
+      null;
+    return typeof url === "string" && url.startsWith("https://") ? url : null;
+  } catch (err) {
+    logger.warn(`[mcp] update_cart failed: ${err?.message || err}`);
+    return null;
+  }
+}
+
+/**
+ * Build the UCP `selected` options array for get_product.
+ *
+ * Takes the mapped variant's other option values (so color/material/etc.
+ * are preserved) and adds the size we want to switch to. Returns null if
+ * we don't have enough info to make a meaningful call.
+ */
+function buildSelectedForSizeSwitch(allVariants, mappedVariantId, sizeOptionName, chosenSize) {
+  if (!sizeOptionName || !chosenSize) return null;
+  const mapped = Array.isArray(allVariants)
+    ? allVariants.find((v) => v?.id === mappedVariantId)
+    : null;
+  const nonSize = (mapped?.selectedOptions || []).filter(
+    (o) => o?.name && o.name.toLowerCase() !== sizeOptionName.toLowerCase()
+  );
+  const selected = nonSize.map((o) => ({ name: o.name, label: o.value }));
+  selected.push({ name: sizeOptionName, label: chosenSize });
+  return selected;
+}
 
 // Module-level singleton — one HTTP connection pool for the lifetime of the process.
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -35,6 +91,38 @@ function generateLinkId() {
     id += ID_CHARS[bytes[i] % 62];
   }
   return id;
+}
+
+/**
+ * MCP policy/FAQ responses come back in a few shapes depending on how Shopify
+ * encodes the content block: plain text, JSON with an `answer` key, or a
+ * `{ content: [...] }` wrapper. Normalise to a single answer string or null.
+ */
+function extractMcpAnswerText(mcpResult) {
+  if (!mcpResult) return null;
+  if (typeof mcpResult === "string") {
+    return mcpResult.trim() || null;
+  }
+  if (typeof mcpResult === "object") {
+    const candidate =
+      mcpResult.answer ||
+      mcpResult.text ||
+      mcpResult.response ||
+      mcpResult.result ||
+      null;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+    if (Array.isArray(mcpResult.content)) {
+      const joined = mcpResult.content
+        .filter((c) => c?.type === "text" && typeof c.text === "string")
+        .map((c) => c.text)
+        .join("\n")
+        .trim();
+      if (joined) return joined;
+    }
+  }
+  return null;
 }
 
 /**
@@ -251,19 +339,32 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
 
   const productNumericId = productIdMatch[1];
 
-  // Build the checkout URL
-  // Using cart permalink format: /cart/{variant_id}:{qty} (Shopify's official permalink format)
-  // Only use this format if we have a valid variant ID
-  let checkoutUrl;
-  if (variantNumericId) {
-    // Use variant-specific cart permalink
-    checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
-  } else {
-    // Use product cart URL (will use default variant)
-    checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
+  // Preferred path: ask the Shopify Storefront MCP (update_cart) to
+  // create a real cart server-side and hand back a checkout URL. This
+  // gives the customer a persistent cart (with proper discount /
+  // market / buyer-country handling) rather than a bare permalink that
+  // Shopify re-creates on click.
+  //
+  // If MCP is unavailable or returns an unexpected shape, fall through
+  // to the original /cart/{variantId}:{qty} permalink behavior.
+  let checkoutUrl = null;
+  if (variantNumericId && shop.shopify_domain) {
+    const variantGid = `gid://shopify/ProductVariant/${variantNumericId}`;
+    checkoutUrl = await buildMcpCheckoutUrl(shop.shopify_domain, variantGid, qty);
+    if (checkoutUrl) {
+      logger.debug(`[buildCheckoutLink] Built checkout via MCP update_cart for variant ${variantNumericId}`);
+    }
   }
 
-  // Add UTM parameters and link_id
+  if (!checkoutUrl) {
+    if (variantNumericId) {
+      checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
+    } else {
+      checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
+    }
+  }
+
+  // Attribution params — append to whichever URL we ended up with.
   const params = new URLSearchParams({
     ref: `link_${linkId}`,
     utm_source: "instagram",
@@ -271,7 +372,8 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     utm_campaign: "dm_to_buy",
   });
 
-  const finalUrl = `${checkoutUrl}?${params.toString()}`;
+  const separator = checkoutUrl.includes("?") ? "&" : "?";
+  const finalUrl = `${checkoutUrl}${separator}${params.toString()}`;
 
   return {
     url: finalUrl,
@@ -449,12 +551,20 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
     // 5. Handle store_question (general store questions) - doesn't need product mapping
     if (intent === "store_question") {
-      // Fetch brand voice and store context in parallel (independent calls)
-      const [brandVoiceData, storeInfoResult] = await Promise.all([
+      // Fetch brand voice, cached store context, and ask Shopify's Storefront
+      // MCP server (search_shop_policies_and_faqs) in parallel. The MCP answer
+      // is authoritative; cached storeInfo stays around so URL placeholder
+      // tokens ({{refund_policy_url}}, {{page:*}}, etc.) keep resolving.
+      const [brandVoiceData, storeInfoResult, mcpAnswerResult] = await Promise.all([
         getBrandVoice(shop.id),
         getStoredStoreContext(shop.id, 0).catch(() => null),
+        shop.shopify_domain
+          ? tryMcp("search_shop_policies_and_faqs", () =>
+              searchShopPoliciesAndFaqs(shop.shopify_domain, message.text)
+            )
+          : Promise.resolve(null),
       ]);
-      
+
       let storeInfo = storeInfoResult;
       if (storeInfo) {
         logger.debug(`[automation] Using cached store context for shop ${shop.id}:`, {
@@ -464,6 +574,20 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       } else if (shop.shopify_domain) {
         logger.debug(`[automation] No cached store context for shop ${shop.id}, attempting live fetch`);
         storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
+      }
+
+      const mcpAnswerText = extractMcpAnswerText(mcpAnswerResult);
+      if (mcpAnswerText) {
+        logger.debug(
+          `[automation] Storefront MCP returned a policy answer for shop ${shop.id} (${mcpAnswerText.length} chars)`
+        );
+        // Attach the MCP answer to storeInfo so buildStoreContextForAI surfaces
+        // it as the authoritative section. If we had no cached storeInfo at
+        // all, synthesise a minimal shim so the AI still has something to use.
+        storeInfo = {
+          ...(storeInfo || {}),
+          mcpAnswer: mcpAnswerText,
+        };
       }
       
       let replyText = await generateReplyMessage(
@@ -550,7 +674,38 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
           if (inferredSize && sizeCheck) {
             const allVariants = productOpts?.variants?.nodes || productOpts?.variants || [];
-            const resolved = resolveVariantBySize(allVariants, lastProductLink.variant_id, sizeCheck.sizeOptionName, inferredSize);
+
+            // Prefer the Storefront MCP (get_product with `selected`) since
+            // it does server-side variant matching with Shopify's own
+            // option-alias handling. Fall back to the local
+            // resolveVariantBySize helper on failure.
+            const mcpSelected = buildSelectedForSizeSwitch(
+              allVariants,
+              lastProductLink.variant_id,
+              sizeCheck.sizeOptionName,
+              inferredSize
+            );
+            const productGid = lastProductLink.product_id?.startsWith(
+              "gid://shopify/Product/"
+            )
+              ? lastProductLink.product_id
+              : `gid://shopify/Product/${lastProductLink.product_id}`;
+            let resolved =
+              mcpSelected && shop.shopify_domain
+                ? await resolveVariantViaMcp(
+                    shop.shopify_domain,
+                    productGid,
+                    mcpSelected
+                  )
+                : null;
+            if (!resolved) {
+              resolved = resolveVariantBySize(
+                allVariants,
+                lastProductLink.variant_id,
+                sizeCheck.sizeOptionName,
+                inferredSize
+              );
+            }
 
             const resolvedVariantId = resolved?.variant?.id || lastProductLink.variant_id;
 
@@ -698,23 +853,39 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
       let matchedProduct = null;
       if (shop.shopify_domain && searchTerm) {
-        try {
-          const candidates = await searchProductsByDomain(shop.shopify_domain, searchTerm, 3);
-          if (candidates.length === 1) {
-            matchedProduct = candidates[0];
-          } else if (candidates.length > 1 && entityProductName) {
-            const lower = entityProductName.toLowerCase();
-            matchedProduct = candidates.find(
-              (p) => p.title.toLowerCase() === lower
-            ) || candidates.find(
-              (p) => p.title.toLowerCase().includes(lower)
-            ) || candidates[0];
+        // Prefer Shopify Storefront MCP search_catalog — it's the UCP-
+        // authoritative catalog search and respects the buyer's intent/
+        // locale. Fall back to the Admin-API title-LIKE search if MCP
+        // returns nothing or errors out.
+        let candidates = await searchCatalogNormalized(
+          shop.shopify_domain,
+          searchTerm,
+          { limit: 3 }
+        );
+        let source = "mcp";
+        if (!candidates || candidates.length === 0) {
+          source = "admin";
+          try {
+            candidates = await searchProductsByDomain(shop.shopify_domain, searchTerm, 3);
+          } catch (err) {
+            console.error("[automation] Product search error:", err?.message);
+            candidates = [];
           }
-          if (matchedProduct) {
-            logger.debug(`[automation] Product search matched: "${matchedProduct.title}" for text "${searchTerm}"`);
-          }
-        } catch (err) {
-          console.error("[automation] Product search error:", err?.message);
+        }
+        if (candidates.length === 1) {
+          matchedProduct = candidates[0];
+        } else if (candidates.length > 1 && entityProductName) {
+          const lower = entityProductName.toLowerCase();
+          matchedProduct = candidates.find(
+            (p) => (p.title || "").toLowerCase() === lower
+          ) || candidates.find(
+            (p) => (p.title || "").toLowerCase().includes(lower)
+          ) || candidates[0];
+        }
+        if (matchedProduct) {
+          logger.debug(
+            `[automation] Product search matched via ${source}: "${matchedProduct.title}" for text "${searchTerm}"`
+          );
         }
       }
 
@@ -994,7 +1165,67 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 
     // 6. Find product mapping for this media
     const productMappings = await getProductMappings(shop.id);
-    const productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
+    // `let` because the MCP search_catalog fallback below may assign a
+    // synthesized mapping when no explicit post→product mapping exists.
+    let productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
+
+    if (!productMapping) {
+      // Before giving up and sending a homepage link, try the Storefront
+      // MCP search_catalog with the comment text — it's the closest we
+      // get to "which product is this commenter asking about?" when the
+      // merchant hasn't mapped the Instagram post to a product.
+      if (shop.shopify_domain && message.text) {
+        const entityProductName = message.ai_entities?.product_name || null;
+        const searchTerm = entityProductName || message.text;
+        const candidates = await searchCatalogNormalized(
+          shop.shopify_domain,
+          searchTerm,
+          { limit: 3 }
+        );
+        if (candidates.length > 0) {
+          const best = entityProductName
+            ? candidates.find(
+                (p) =>
+                  (p.title || "").toLowerCase() ===
+                  entityProductName.toLowerCase()
+              ) ||
+              candidates.find((p) =>
+                (p.title || "")
+                  .toLowerCase()
+                  .includes(entityProductName.toLowerCase())
+              ) ||
+              candidates[0]
+            : candidates[0];
+          if (best) {
+            const firstVariant = best.variants?.nodes?.[0];
+            const variantGid = firstVariant?.id || null;
+            if (variantGid) {
+              const numericProductId = best.id.replace(
+                "gid://shopify/Product/",
+                ""
+              );
+              const numericVariantId = variantGid.replace(
+                "gid://shopify/ProductVariant/",
+                ""
+              );
+              logger.debug(
+                `[automation] MCP catalog search matched "${best.title}" for unmapped media ${mediaId}; using as product mapping`
+              );
+              // Synthesize a productMapping shape and fall through to the
+              // existing mapped-product flow below by reassigning.
+              productMapping = {
+                product_id: numericProductId,
+                variant_id: numericVariantId,
+                product_handle: best.handle || null,
+                product_options: null,
+                ig_media_id: mediaId,
+                _from: "mcp_search_catalog",
+              };
+            }
+          }
+        }
+      }
+    }
 
     if (!productMapping) {
       const homepageUrl = getShopHomepageUrl(shop);
@@ -1106,11 +1337,39 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         return { sent: true, reason: "Asked customer which size they want" };
       }
 
-      // Customer specified a size in their comment — resolve to the correct variant
-      const resolved = resolveVariantBySize(sizeInfo.variants, productMapping.variant_id, sizeInfo.sizeOptionName, customerSize);
+      // Customer specified a size in their comment — resolve to the correct variant.
+      // Prefer MCP get_product (server-side matching) with fallback to local
+      // resolveVariantBySize on any failure.
+      const mcpSelected = buildSelectedForSizeSwitch(
+        sizeInfo.variants,
+        productMapping.variant_id,
+        sizeInfo.sizeOptionName,
+        customerSize
+      );
+      const productGid = productMapping.product_id?.startsWith(
+        "gid://shopify/Product/"
+      )
+        ? productMapping.product_id
+        : `gid://shopify/Product/${productMapping.product_id}`;
+      let resolved =
+        mcpSelected && shop.shopify_domain
+          ? await resolveVariantViaMcp(shop.shopify_domain, productGid, mcpSelected)
+          : null;
+      let resolutionSource = resolved ? "mcp" : null;
+      if (!resolved) {
+        resolved = resolveVariantBySize(
+          sizeInfo.variants,
+          productMapping.variant_id,
+          sizeInfo.sizeOptionName,
+          customerSize
+        );
+        if (resolved) resolutionSource = "local";
+      }
       if (resolved) {
         productMapping.variant_id = resolved.variant.id;
-        logger.debug(`[automation] Resolved comment size "${customerSize}" → variant ${resolved.variant.id} (exact=${resolved.exactMatch})`);
+        logger.debug(
+          `[automation] Resolved comment size "${customerSize}" → variant ${resolved.variant.id} via ${resolutionSource}`
+        );
       }
     }
 

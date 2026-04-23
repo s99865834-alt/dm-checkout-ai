@@ -1,4 +1,4 @@
-# DM Checkout AI
+# SocialRepl.ai
 
 Transform Instagram DMs and comments into sales with AI-powered automated responses and checkout links.
 

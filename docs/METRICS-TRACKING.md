@@ -50,6 +50,8 @@ When you send traffic from **outside** the Shopify App Store (e.g. Facebook, Goo
 - **Trial → paid rate:** % of installs (e.g. in the last 14 days) that started a paid plan.
 - **Reviews:** New reviews and average rating (aim 4.5+).
 
+**Template:** Copy [metrics-weekly-template.csv](metrics-weekly-template.csv) to Google Sheets or Excel and fill one row per week. Follow the **Weekly review** steps in [ADS-CAMPAIGN-SETUP.md](ADS-CAMPAIGN-SETUP.md) §5.1 when running App Store ads.
+
 ---
 
 ## 4. When to increase or decrease spend

@@ -47,7 +47,7 @@ Based on Meta's official requirements, here's everything you need for app approv
    - **What**: Record a video showing your app's functionality
    - **Duration**: 2-5 minutes recommended
    - **Must Show**:
-     - Open Shopify Admin → Apps → **DM Checkout AI**
+     - Open Shopify Admin → Apps → **SocialRepl.ai**
      - Navigate to **Webhook Demo** (`/app/webhook-demo`)
      - Send a **test webhook** (Direct DM and/or Comment → DM)
      - Show **AI classification** + **automation decision** (Step 2)
@@ -149,7 +149,7 @@ Before submitting, ensure:
 [Link to your video]
 
 **Instructions:**
-1. Log into the provided Shopify test store Admin → Apps → **DM Checkout AI**
+1. Log into the provided Shopify test store Admin → Apps → **SocialRepl.ai**
 2. Go to **Webhook Demo** (`/app/webhook-demo`)
 3. Select **Direct DM** and send “I want to buy this product”
 4. Expected: intent “purchase” with **no product context** → PRO asks clarifying question; non‑PRO sends no response

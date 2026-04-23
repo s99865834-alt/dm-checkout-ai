@@ -185,6 +185,16 @@ export function buildStoreContextForAI(storeInfo) {
   const allowedUrls = [];
   const urlMap = {};
 
+  // When the Storefront MCP returned an authoritative answer for this
+  // question, put it first so the AI prefers it over any cached storeInfo
+  // fields. The rest of storeInfo is still included so URL placeholder
+  // tokens (e.g. {{refund_policy_url}}) continue to resolve.
+  if (typeof storeInfo.mcpAnswer === "string" && storeInfo.mcpAnswer.trim()) {
+    sections.push(
+      `Authoritative answer from merchant's store (use this verbatim when it answers the question): ${storeInfo.mcpAnswer.trim()}`
+    );
+  }
+
   if (storeInfo.name) sections.push(`Store name: ${storeInfo.name}`);
   if (storeInfo.email) {
     sections.push(`Contact email: ${storeInfo.email}`);

@@ -28,7 +28,7 @@ This is an **embedded Shopify app**, so you must open it inside Shopify Admin.
 1. Log into the provided Shopify test store Admin:
    - **Store**: `dmteststore-2.myshopify.com`
    - **Staff account**: (provided separately in the review submission)
-2. In Shopify Admin, go to **Apps** → open **DM Checkout AI**.
+2. In Shopify Admin, go to **Apps** → open **SocialRepl.ai**.
 3. In the app navigation, open **Webhook Demo** (`/app/webhook-demo`).
 
 ## Method 1 (recommended): In-app Webhook Demo
@@ -107,7 +107,7 @@ curl -X POST https://dm-checkout-ai-production.up.railway.app/meta/test-webhook 
 - **Deletion**: supported via Meta’s data deletion callback URL above.
 
 ## Troubleshooting
-- If you can’t access the embedded app UI, ensure you are opening it inside Shopify Admin (Apps → DM Checkout AI).
+- If you can’t access the embedded app UI, ensure you are opening it inside Shopify Admin (Apps → SocialRepl.ai).
 - If events don’t appear, confirm the webhook receiver URL is reachable:
   - `https://dm-checkout-ai-production.up.railway.app/webhooks/meta`
 
