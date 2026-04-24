@@ -6,7 +6,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
-import { createOrUpdateShop } from "./lib/db.server";
+import { createOrUpdateShop, getShopByDomain } from "./lib/db.server";
 import logger from "./lib/logger.server";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
@@ -29,15 +29,38 @@ const shopify = shopifyApp({
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
   afterAuth: async ({ session }) => {
-    // Create or update shop in database when OAuth completes
+    // afterAuth fires on every OAuth completion — in the embedded-app
+    // token-exchange flow that's essentially every fresh app load, not
+    // just install/reinstall. createOrUpdateShop unconditionally resets
+    // usage_count and plan (by design — it's the reinstall primitive),
+    // so calling it here on every auth would wipe usage_count back to 0
+    // and knock paid plans back to FREE every time the merchant opens
+    // the app. We only want that behaviour on genuine installs or
+    // reinstalls (where the shop is missing or was marked inactive by
+    // the app/uninstalled webhook).
     logger.debug(`[afterAuth] OAuth completed for shop: ${session.shop}`);
     try {
-      const result = await createOrUpdateShop(session.shop, {
-        plan: "FREE",
-        monthly_cap: 100,
-        active: true,
-      });
-      logger.debug(`[afterAuth] Shop ${session.shop} created/updated in database - active: ${result.active}, usage_count: ${result.usage_count}`);
+      const existing = await getShopByDomain(session.shop);
+      if (!existing) {
+        const result = await createOrUpdateShop(session.shop, {
+          plan: "FREE",
+          monthly_cap: 100,
+          active: true,
+        });
+        logger.debug(`[afterAuth] Created new shop ${session.shop}: active=${result.active}, usage_count=${result.usage_count}`);
+      } else if (!existing.active) {
+        // Reinstall path. App Store requires paid plans be re-approved
+        // after an uninstall, so reset plan/usage here too.
+        const result = await createOrUpdateShop(session.shop, {
+          plan: "FREE",
+          monthly_cap: 100,
+          active: true,
+          usage_count: 0,
+        });
+        logger.debug(`[afterAuth] Reactivated shop ${session.shop} on FREE: active=${result.active}, usage_count=${result.usage_count}`);
+      } else {
+        logger.debug(`[afterAuth] Shop ${session.shop} already active; leaving plan/usage untouched`);
+      }
     } catch (error) {
       console.error(`[afterAuth] Error creating/updating shop ${session.shop}:`, error);
       // Don't throw - allow OAuth to complete even if DB update fails
