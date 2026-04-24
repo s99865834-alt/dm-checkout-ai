@@ -176,29 +176,50 @@ function getShopHomepageUrl(shop) {
  * {@link getClickTrackingUrlForMessage}) and persist a `links_sent` row for
  * click tracking. PDP link IDs are prefixed with "pdp_" so analytics CTR (which
  * only counts checkout clicks) stays accurate.
+ *
+ * Returns null (instead of throwing) when we can't resolve a handle — the PDP
+ * link is a nice-to-have and must never block the main reply flow. Callers
+ * already destructure `pdpResult?.url`, so null flows through cleanly and the
+ * reply falls back to the checkout link.
+ *
  * @param {Object} shop - Shop object with shopify_domain
  * @param {string} productId - Shopify product ID (gid format)
  * @param {string|null} variantId - Shopify variant ID (gid format, optional)
  * @param {string|null} productHandle - Product handle (optional; fetched from API if missing)
- * @returns {Promise<{url: string, linkId: string}>} - PDP URL and link ID
+ * @returns {Promise<{url: string, linkId: string} | null>} - PDP URL + link ID, or null if the handle couldn't be resolved
  */
 export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, _shorten = true) {
   const shopHost = getShopDomainHost(shop);
   if (!shopHost) {
-    throw new Error("Shop domain is required");
+    logger.warn("[buildProductPageLink] Missing shop domain; skipping PDP link");
+    return null;
   }
 
   if (!productId) {
-    throw new Error("Product ID is required");
+    logger.warn("[buildProductPageLink] Missing product ID; skipping PDP link");
+    return null;
   }
 
   let handle = (productHandle || "").trim() || null;
   if (!handle && shop.shopify_domain) {
-    const raw = await getShopifyProductContextForReply(shop.shopify_domain, productId);
-    handle = (raw?.handle || "").trim() || null;
+    try {
+      const raw = await getShopifyProductContextForReply(shop.shopify_domain, productId);
+      handle = (raw?.handle || "").trim() || null;
+    } catch (err) {
+      logger.warn(
+        `[buildProductPageLink] Handle lookup failed for ${productId}: ${err?.message || err}`
+      );
+    }
   }
   if (!handle) {
-    throw new Error("Product handle is required for PDP URL; could not resolve from product ID. Ensure the product exists and the app has read_products scope.");
+    // No session / product not found / missing scope — the PDP URL is
+    // optional, so fall back to the checkout link instead of crashing the
+    // whole Promise.all that built this alongside brand voice, product info,
+    // and the checkout link.
+    logger.warn(
+      `[buildProductPageLink] Could not resolve product handle for ${productId} on ${shop.shopify_domain}; skipping PDP link`
+    );
+    return null;
   }
 
   // Prefix "pdp_" so analytics CTR (which only counts checkout links) doesn't
