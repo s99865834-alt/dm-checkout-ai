@@ -77,12 +77,15 @@ export async function processFollowups() {
     const twentyThreeHoursAgo = new Date(now.getTime() - 23 * 60 * 60 * 1000);
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // Get all PRO shops with followup_enabled = true
+    // Get all PRO (or beta-trial) shops with followup_enabled = true.
+    // Beta-trial shops are stored as plan="FREE" but get PRO features at
+    // runtime, so we need to include them via beta_trial_expires_at.
+    const nowIso = now.toISOString();
     const { data: proShops, error: shopsError } = await supabase
       .from("shops")
-      .select("id, shopify_domain, plan")
-      .eq("plan", "PRO")
-      .eq("active", true);
+      .select("id, shopify_domain, plan, beta_trial_expires_at")
+      .eq("active", true)
+      .or(`plan.eq.PRO,beta_trial_expires_at.gt.${nowIso}`);
 
     if (shopsError) {
       console.error("[followup] Error fetching PRO shops:", shopsError);

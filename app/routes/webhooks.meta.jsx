@@ -19,7 +19,6 @@ if (typeof global.crypto === "undefined") {
 import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
-import { getPlanConfig } from "../lib/plans";
 import supabase from "../lib/supabase.server";
 import { incCounter, recordTiming } from "../lib/metrics.server";
 import logger from "../lib/logger.server";
@@ -498,7 +497,11 @@ export const action = async ({ request }) => {
 
                     if (!shopData) return;
 
-                    const plan = getPlanConfig(shopData.plan || "FREE");
+                    // Use the beta-aware plan that getShopPlanAndUsage already
+                    // resolved (raw shopData.plan ignores active beta trials,
+                    // which would incorrectly gate PRO features like clarifying
+                    // questions for merchants on the beta).
+                    const plan = usageData.plan;
                     const automationResult = await handleIncomingDm(updatedMessage, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
                     if (automationResult.sent) {
                       incCounter("automations_sent");
@@ -618,7 +621,9 @@ export const action = async ({ request }) => {
 
                     if (!shopData) return;
 
-                    const plan = getPlanConfig(shopData.plan || "FREE");
+                    // Use the beta-aware plan that getShopPlanAndUsage already
+                    // resolved (see note in the DM branch above).
+                    const plan = usageData.plan;
                     const automationResult = await handleIncomingComment(updatedMessage, parsed.mediaId, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
                     if (automationResult.sent) {
                       incCounter("automations_sent");
