@@ -331,13 +331,14 @@ export const action = async ({ request }) => {
                       
                       if (classification.intent === "product_question" || classification.intent === "variant_inquiry") {
                         // For product questions and variant inquiries, use PDP link first
-                        productPageUrl = await buildProductPageLink(
+                        const pdpResult = await buildProductPageLink(
                           shop,
                           productMapping.product_id,
                           productMapping.variant_id,
                           productMapping.product_handle || null,
-                          true // Shorten URLs
+                          true
                         );
+                        productPageUrl = pdpResult?.url || null;
                         // Also generate checkout link for after they see product details
                         const checkoutLink = await buildCheckoutLink(
                           shop,

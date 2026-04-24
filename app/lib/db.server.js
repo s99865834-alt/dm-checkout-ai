@@ -1266,10 +1266,14 @@ export async function getAnalytics(shopId, planName, options = {}) {
     }
 
     // Checkout link_ids are plain 8-char base62 strings. Non-checkout entries
-    // (claim slots, size questions, info/policy short links) use prefixed IDs
-    // and should not inflate click/CTR metrics.
+    // (claim slots, size questions, info/policy short links, PDP links) use
+    // prefixed IDs and should not inflate click/CTR metrics.
     const isCheckoutLinkId = (id) =>
-      !!id && !id.startsWith("dm_reply_") && !id.startsWith("size_q_") && !id.startsWith("info_");
+      !!id &&
+      !id.startsWith("dm_reply_") &&
+      !id.startsWith("size_q_") &&
+      !id.startsWith("info_") &&
+      !id.startsWith("pdp_");
 
     // Count only checkout links sent (used for CTR denominator)
     analytics.linksSent = (linksSent || []).filter(l => isCheckoutLinkId(l.link_id)).length;
@@ -1540,7 +1544,11 @@ export async function getProAnalytics(shopId, options = {}) {
 
     if (!linksError && linksSent) {
       const isCheckoutLinkId = (id) =>
-        !!id && !id.startsWith("dm_reply_") && !id.startsWith("size_q_") && !id.startsWith("info_");
+        !!id &&
+        !id.startsWith("dm_reply_") &&
+        !id.startsWith("size_q_") &&
+        !id.startsWith("info_") &&
+        !id.startsWith("pdp_");
       const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
       const messageToLink = {};
       linksSent.forEach(link => {
