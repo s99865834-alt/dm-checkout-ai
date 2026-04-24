@@ -485,6 +485,16 @@ s-page s-box.srCardCompact {
   gap: 16px;
 }
 
+/* On desktop, the Pro analytics group (4 cards) reads better as a
+   2x2 grid than 3-across-with-an-orphan. Force exactly two columns
+   at >=768px so the rhythm is even and no card ends up stranded on
+   its own row. */
+@media (min-width: 768px) {
+  .srGridAuto280 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .srDividerTop {
   margin-top: 10px;
   padding-top: 10px;
