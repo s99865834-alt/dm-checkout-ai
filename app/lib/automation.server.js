@@ -171,11 +171,16 @@ function getShopHomepageUrl(shop) {
 /**
  * Build a Shopify product detail page (PDP) link.
  * Always uses product HANDLE in the path (/products/{handle}), never numeric ID.
+ * Mirrors the shape of {@link buildCheckoutLink}: returns a {url, linkId} pair so
+ * callers can wrap the URL with the srai.link shortener (via
+ * {@link getClickTrackingUrlForMessage}) and persist a `links_sent` row for
+ * click tracking. PDP link IDs are prefixed with "pdp_" so analytics CTR (which
+ * only counts checkout clicks) stays accurate.
  * @param {Object} shop - Shop object with shopify_domain
  * @param {string} productId - Shopify product ID (gid format)
  * @param {string|null} variantId - Shopify variant ID (gid format, optional)
  * @param {string|null} productHandle - Product handle (optional; fetched from API if missing)
- * @returns {Promise<string>} - Product detail page URL
+ * @returns {Promise<{url: string, linkId: string}>} - PDP URL and link ID
  */
 export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, _shorten = true) {
   const shopHost = getShopDomainHost(shop);
@@ -196,24 +201,25 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
     throw new Error("Product handle is required for PDP URL; could not resolve from product ID. Ensure the product exists and the app has read_products scope.");
   }
 
+  // Prefix "pdp_" so analytics CTR (which only counts checkout links) doesn't
+  // fold PDP clicks into the checkout-link denominator.
+  const linkId = `pdp_${generateLinkId()}`;
+
   const variantIdMatch = variantId ? variantId.match(/\/(\d+)$/) : null;
 
-  // Always use handle in path (Shopify storefront expects /products/{handle})
   const pdpUrl = `https://${shopHost}/products/${handle}`;
 
-  // Add variant parameter if provided
   const params = new URLSearchParams();
   if (variantIdMatch) {
     params.set("variant", variantIdMatch[1]);
   }
-  
-  // Add UTM parameters
+  params.set("ref", `link_${linkId}`);
   params.set("utm_source", "instagram");
   params.set("utm_medium", "ig_dm");
   params.set("utm_campaign", "product_question");
 
-  const finalUrl = params.toString() ? `${pdpUrl}?${params.toString()}` : pdpUrl;
-  return finalUrl;
+  const finalUrl = `${pdpUrl}?${params.toString()}`;
+  return { url: finalUrl, linkId };
 }
 
 /**
@@ -746,20 +752,22 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             : Promise.resolve({ productName: null, productPrice: null }),
         ]);
 
-        const productPageUrl = pdpResult;
+        const productPageUrl = pdpResult?.url || null;
+        const pdpLinkId = pdpResult?.linkId || null;
         const checkoutUrl = checkoutLink.url;
         const linkId = checkoutLink.linkId;
         const productName = productInfo.productName;
         const productPrice = productInfo.productPrice;
 
         const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+        const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
         const replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
           checkoutUrlForMessage,
           intent,
           productPrice,
-          productPageUrl,
+          productPageUrlForMessage,
           message.text,
           null,
           {
@@ -789,17 +797,29 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         }
         await incrementUsage(shop.id, 1);
 
+        // Log both the checkout link and (when present) the PDP link. Each gets
+        // its own links_sent row so the /{linkId} redirect can resolve them
+        // independently and clicks are attributed to the right URL.
         await logLinkSent({
           shopId: shop.id,
           messageId: message.id,
           productId: productMapping.product_id,
           variantId: productMapping.variant_id,
-          url: (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
-            ? productPageUrl
-            : checkoutUrl,
-          linkId: linkId,
-          replyText: replyText,
+          url: checkoutUrl,
+          linkId,
+          replyText,
         });
+        if (productPageUrl && pdpLinkId) {
+          await logLinkSent({
+            shopId: shop.id,
+            messageId: message.id,
+            productId: productMapping.product_id,
+            variantId: productMapping.variant_id,
+            url: productPageUrl,
+            linkId: pdpLinkId,
+            replyText,
+          });
+        }
 
         logger.debug(
           `[automation] ✅ Contextual DM reply sent for message ${message.id} (origin=${originChannel})`
@@ -909,13 +929,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           getShopifyProductInfo(shop.shopify_domain, gid, variantGid),
         ]);
 
-        const productPageUrl = pdpResult;
+        const productPageUrl = pdpResult?.url || null;
+        const pdpLinkId = pdpResult?.linkId || null;
         const checkoutUrl = checkoutLink.url;
         const linkId = checkoutLink.linkId;
         const productName = productInfo.productName || matchedProduct.title;
         const productPrice = productInfo.productPrice || firstVariant?.price;
 
         const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+        const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
 
         const replyText = await generateReplyMessage(
           brandVoiceData,
@@ -923,7 +945,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           checkoutUrlForMessage,
           intent,
           productPrice,
-          productPageUrl,
+          productPageUrlForMessage,
           message.text,
           null,
           {
@@ -950,12 +972,21 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           messageId: message.id,
           productId: `gid://shopify/Product/${numericProductId}`,
           variantId: variantGid,
-          url: (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
-            ? productPageUrl
-            : checkoutUrl,
+          url: checkoutUrl,
           linkId,
           replyText,
         });
+        if (productPageUrl && pdpLinkId) {
+          await logLinkSent({
+            shopId: shop.id,
+            messageId: message.id,
+            productId: `gid://shopify/Product/${numericProductId}`,
+            variantId: variantGid,
+            url: productPageUrl,
+            linkId: pdpLinkId,
+            replyText,
+          });
+        }
 
         logger.debug(`[automation] ✅ Product-matched DM reply sent for message ${message.id} (product: ${productName})`);
         return { sent: true };
@@ -1355,9 +1386,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 
     // Build PDP URL (needs rawProductContext for handle, so runs after parallel batch)
     let productPageUrl = null;
+    let pdpLinkId = null;
     if (needsPdpComment) {
       const productHandle = (productMapping.product_handle || rawProductContext?.handle || "").trim() || null;
-      productPageUrl = await buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productHandle, true);
+      const pdpResult = await buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productHandle, true);
+      productPageUrl = pdpResult?.url || null;
+      pdpLinkId = pdpResult?.linkId || null;
     }
 
     let productContextForReply = null;
@@ -1373,13 +1407,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       };
     }
     const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+    const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
       checkoutUrlForMessage,
       message.ai_intent,
       productPrice,
-      productPageUrl,
+      productPageUrlForMessage,
       message.text,
       null,
       {
@@ -1387,9 +1422,9 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         inboundChannel: "comment",
         triggerChannel: "comment",
         lastProductLink: {
-          url: (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") && productPageUrl
-            ? productPageUrl
-            : checkoutUrl,
+          url: (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") && productPageUrlForMessage
+            ? productPageUrlForMessage
+            : checkoutUrlForMessage,
           product_id: productMapping.product_id,
           variant_id: productMapping.variant_id,
           trigger_channel: "comment",
@@ -1422,16 +1457,29 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     // 10. Increment usage count
     await incrementUsage(shop.id, 1);
 
-    // 11. Log the sent link (comment claim already recorded via claimCommentReply)
+    // 11. Log the sent link(s). Checkout + PDP get their own links_sent rows
+    // so the srai.link redirect resolves each correctly and click tracking
+    // stays attributed to the right destination.
     await logLinkSent({
       shopId: shop.id,
-      messageId: message.id, // Link this to the comment message
+      messageId: message.id,
       productId: productMapping.product_id,
       variantId: productMapping.variant_id,
-      url: (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") && productPageUrl ? productPageUrl : checkoutUrl,
-      linkId: linkId,
-      replyText: replyText,
+      url: checkoutUrl,
+      linkId,
+      replyText,
     });
+    if (productPageUrl && pdpLinkId) {
+      await logLinkSent({
+        shopId: shop.id,
+        messageId: message.id,
+        productId: productMapping.product_id,
+        variantId: productMapping.variant_id,
+        url: productPageUrl,
+        linkId: pdpLinkId,
+        replyText,
+      });
+    }
 
     logger.debug(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
