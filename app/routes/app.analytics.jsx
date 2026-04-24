@@ -621,13 +621,13 @@ export default function AnalyticsPage() {
                           <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
                             <div className="srCardPad srVStack">
                               <span className="srTextStrong">Follow-Up Performance</span>
-                              <div className="srVStackTight">
-                                <span className="srTextSubdued">With Follow-Up</span>
-                                <span className="srStatRow"><span className="srStatLabel">Messages: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.messages}</span></span>
-                                <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.ctr.toFixed(1)}%</span></span>
-                                <span className="srStatRow"><span className="srStatLabel">Revenue: </span><span className="srStatValue">{formatCurrency(proAnalytics.followUpPerformance.withFollowup.revenue, proAnalytics.revenueAttribution.currency)}</span></span>
-                              </div>
-                              <div className="srDividerTop">
+                              <div className="srFollowupSplit">
+                                <div className="srVStackTight">
+                                  <span className="srTextSubdued">With Follow-Up</span>
+                                  <span className="srStatRow"><span className="srStatLabel">Messages: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.messages}</span></span>
+                                  <span className="srStatRow"><span className="srStatLabel">CTR: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withFollowup.ctr.toFixed(1)}%</span></span>
+                                  <span className="srStatRow"><span className="srStatLabel">Revenue: </span><span className="srStatValue">{formatCurrency(proAnalytics.followUpPerformance.withFollowup.revenue, proAnalytics.revenueAttribution.currency)}</span></span>
+                                </div>
                                 <div className="srVStackTight">
                                   <span className="srTextSubdued">Without Follow-Up</span>
                                   <span className="srStatRow"><span className="srStatLabel">Messages: </span><span className="srStatValue">{proAnalytics.followUpPerformance.withoutFollowup.messages}</span></span>

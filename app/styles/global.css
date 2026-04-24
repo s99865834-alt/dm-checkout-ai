@@ -416,8 +416,55 @@ s-page s-box.srCardCompact {
 /* Analytics layout */
 .srKpiGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+/* On desktop, force the 5 KPI tiles onto a single row.
+   minmax(0, 1fr) lets them shrink past their min content width
+   so long values still fit without wrapping the row. */
+@media (min-width: 768px) {
+  .srKpiGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .srKpiGrid .srHeadingLg {
+    font-size: 20px;
+  }
+  .srKpiGrid .srCardPad {
+    padding: 12px;
+  }
+}
+
+/* Follow-Up Performance: stacked on mobile, two-column on desktop.
+   Replaces the old top-divider stack so With/Without sit side-by-side
+   with a vertical separator instead of a horizontal one. */
+.srFollowupSplit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.srFollowupSplit > * + * {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e3e5;
+}
+@media (min-width: 768px) {
+  .srFollowupSplit {
+    flex-direction: row;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .srFollowupSplit > * {
+    flex: 1;
+    min-width: 0;
+  }
+  .srFollowupSplit > * + * {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    padding-left: 16px;
+    border-left: 1px solid #e1e3e5;
+  }
 }
 
 .srWrapRow {
