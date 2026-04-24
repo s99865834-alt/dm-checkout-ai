@@ -1310,23 +1310,33 @@ export async function getAnalytics(shopId, planName, options = {}) {
       analytics.responseRate = (messagesWithLinks.length / analytics.messagesReceived) * 100;
     }
 
-    // Get clicks for ALL link_ids (not just those linked to messages)
+    // Get clicks for ALL link_ids (not just those linked to messages).
+    // We track BOTH total click events (so the "Clicks" KPI keeps reflecting
+    // every individual click) AND the count of unique link_ids that were
+    // clicked at least once (so CTR can be reported as a real rate that
+    // never exceeds 100% even when a customer hammers the same link).
+    let uniqueLinksClicked = 0;
     if (linkIds.length > 0) {
-      let clicksQuery = supabase
+      const { data: clicksData, error: clicksError } = await supabase
         .from("clicks")
-        .select("id, link_id", { count: "exact" })
+        .select("link_id")
         .in("link_id", linkIds);
 
-      const { count: clicksCount, error: clicksError } = await clicksQuery;
-
-      if (!clicksError && clicksCount !== null) {
-        analytics.clicks = clicksCount;
+      if (!clicksError && Array.isArray(clicksData)) {
+        analytics.clicks = clicksData.length;
+        const uniq = new Set();
+        clicksData.forEach((c) => {
+          if (c?.link_id) uniq.add(c.link_id);
+        });
+        uniqueLinksClicked = uniq.size;
       }
     }
 
-    // Calculate CTR
+    // CTR = (links that received at least one click) / (links sent).
+    // Using total click events here lets it run past 100% when a customer
+    // re-clicks (which is how socialreplai's overview was showing 500%).
     if (analytics.linksSent > 0) {
-      analytics.ctr = (analytics.clicks / analytics.linksSent) * 100;
+      analytics.ctr = (uniqueLinksClicked / analytics.linksSent) * 100;
     }
 
     // Top trigger phrases (group by ai_intent)
