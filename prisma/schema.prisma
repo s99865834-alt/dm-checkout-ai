@@ -1,16 +1,21 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Session storage is backed by Supabase Postgres so that Shopify offline
+// access tokens persist across deploys and server restarts. See the
+// Supabase "Connection pooling" panel for the two URLs below:
+//   - DATABASE_URL  : Supavisor transaction pooler (port 6543), add
+//                     ?pgbouncer=true&connection_limit=1
+//   - DIRECT_URL    : direct connection (port 5432), used by prisma migrate
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Session {
