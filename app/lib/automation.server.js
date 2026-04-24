@@ -1692,20 +1692,41 @@ export async function generateReplyMessage(brandVoice, productName = null, check
 
   const replaceTokensAndSanitize = (text, urlMap) => {
     if (!text) return text;
+    const originalText = text;
+    const safeMap = urlMap && typeof urlMap === "object" ? urlMap : {};
     let result = text;
-    if (urlMap && typeof urlMap === "object") {
-      for (const [token, url] of Object.entries(urlMap)) {
-        result = result.split(token).join(url);
-      }
-    }
-    result = result.replace(/\{\{[^}]+\}\}/g, "");
-    result = result.replace(/https?:\/\/[^\s)]+/g, "");
-    result = result.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
 
-    if (urlMap && !/https?:\/\//.test(result)) {
+    // 1. Substitute known tokens with their real URLs (keep these in the output).
+    for (const [token, url] of Object.entries(safeMap)) {
+      if (!url) continue;
+      result = result.split(token).join(url);
+    }
+
+    // 2. Strip unmapped/hallucinated {{tokens}} together with their carrier
+    // phrase (e.g. "please check our refund policy here: {{refund_policy_url}}")
+    // so we don't leave broken fragments like "...here:." behind.
+    result = result.replace(
+      /\s*(?:please\s+)?(?:you\s+can\s+)?(?:feel\s+free\s+to\s+)?(?:check|visit|find|see|review|read|go\s+to)(?:\s+(?:it|this|them|out|up|our))?\s+(?:[\w\s]{0,40}?\s+)?(?:here|link|page|url|at)\s*:\s*\{\{[^}]+\}\}/gi,
+      ""
+    );
+    // Any remaining bare unmapped tokens (no carrier phrase)
+    result = result.replace(/\{\{[^}]+\}\}/g, "");
+    // Orphaned "here:" / "link:" immediately before punctuation (belt-and-suspenders)
+    result = result.replace(/\s*\b(?:here|link|page|url)\s*:\s*(?=[.!?,;]|\s*$)/gi, "");
+
+    result = result
+      .replace(/\s+([.!?,;])/g, "$1")
+      .replace(/([.!?,;])\1+/g, "$1")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    // 3. Fallback: if the AI's original reply mentioned a policy topic but we
+    // ended up with no link in the output, append the matching URL. Uses the
+    // original text because cleanup may have stripped the topic phrase.
+    if (!/https?:\/\//.test(result)) {
       for (const { pattern, token } of POLICY_KEYWORDS) {
-        if (pattern.test(result) && urlMap[token]) {
-          result = result.replace(/[.:!?]*\s*$/, "") + ": " + urlMap[token];
+        if (pattern.test(originalText) && safeMap[token]) {
+          result = result.replace(/[.:!?]*\s*$/, "") + ": " + safeMap[token];
           break;
         }
       }
@@ -1736,6 +1757,17 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           intent === "store_question" && storeInfo
             ? buildStoreContextForAI(storeInfo)
             : null;
+
+        // Explicit allowlist of link tokens the AI can actually use. Only tokens
+        // present here resolve to a real URL in replaceTokensAndSanitize; any
+        // other `{{placeholder}}` the AI invents will be stripped and leave
+        // broken sentence fragments (e.g. "check our refund policy here:.").
+        const availableLinkTokens =
+          storeContextForReply?.urlMap && typeof storeContextForReply.urlMap === "object"
+            ? Object.keys(storeContextForReply.urlMap)
+            : [];
+        const storeContactEmail =
+          intent === "store_question" && storeInfo?.email ? storeInfo.email : null;
 
         // Use AI to generate a response based on the custom instruction or product_question intent
         let promptBase = `Generate an Instagram DM reply to a customer`;
@@ -1831,7 +1863,7 @@ ${intent === "price_request" && productPrice ? `The exact price is ${productPric
 ${intent === "price_request" && !productPrice ? `You don't have the exact price, but you MUST acknowledge their price question. Tell them they can see the price when they click the checkout link.` : ""}
 ${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
 ${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
-${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers and contact details from the context. When referencing a link, use the exact {{placeholder}} token from the store context (e.g. {{refund_policy_url}}). Do NOT write out any URLs yourself. If the answer is not in the context, say so.` : ""}
+${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers and contact details from the context. ${availableLinkTokens.length > 0 ? `When referencing a link, you MUST use ONLY one of these exact placeholder tokens (copy them character for character): ${availableLinkTokens.join(", ")}. Do NOT invent any other placeholders — only these exact tokens exist. If none of these tokens match what the customer is asking about, do NOT include any link.` : `Do NOT include any link or {{placeholder}} token — none are available for this store.`} Do NOT write out any URLs yourself. ${storeContactEmail ? `If the customer's question is not answered by the context, say you don't have that information and offer the contact email: ${storeContactEmail}.` : `If the customer's question is not answered by the context, say you don't have that information.`}` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `CRITICAL: Answer using ONLY the product context below. If the product context says "only one variant" or "does NOT come in different sizes or colors", you MUST answer NO to the customer (e.g. "No, it only comes in one option" or "We don't have other colors"). If they ask about a variant we don't have, say NO clearly and include the product page and checkout URLs from this prompt - copy those exact URLs into your reply.` : ""}
 ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
@@ -1845,13 +1877,13 @@ ${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge the
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl && checkoutUrl ? `- Then, if they're ready to buy, you can optionally mention the checkout link (${checkoutUrl}) at the end` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
-${intent === "store_question" ? `- Answer from the store context only. When linking to a policy or page, use the exact {{placeholder}} token from the store context. Do NOT write out any URLs yourself.` : ""}
+${intent === "store_question" ? `- Answer from the store context only.${availableLinkTokens.length > 0 ? ` When linking to a policy or page, use ONLY one of these exact placeholder tokens: ${availableLinkTokens.join(", ")}. Do NOT invent any other placeholder.` : ` Do NOT include any link or {{placeholder}} token — none exist for this store.`} Do NOT write out any URLs yourself.${storeContactEmail ? ` If you don't have the info the customer asked for, say so and offer the contact email: ${storeContactEmail}.` : ""}` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the product or checkout link for available options.` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl && !safeChannelContext?.isHomepageFallback ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- Include the store homepage link so they can browse (use this URL exactly): ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
-- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? `When you want to include a link, use the exact {{placeholder}} token from the store context (e.g. "check our refund policy here: {{refund_policy_url}}"). The placeholder will be replaced with the real URL automatically.` : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
+- CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? (availableLinkTokens.length > 0 ? `When you want to include a link, use ONLY one of these exact placeholder tokens from the store context (copy character-for-character, no other tokens exist): ${availableLinkTokens.join(", ")}. The placeholder will be replaced with the real URL automatically. If none of these tokens match what the customer asked about, do NOT include any link — just answer the question or say you don't have that info.` : `No link placeholders are available for this store. Do NOT include any link or {{placeholder}} token. Answer in plain text only.`) : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? "- Structure: Acknowledge question → Direct to product page link for details/variants → Optionally mention checkout link at the end if ready to buy" : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- CRITICAL: Don't make up details you don't know - just acknowledge their question and direct them to the link for full details. If you don't know the answer, say so." : ""}
