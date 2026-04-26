@@ -79,6 +79,20 @@ function inferChannel(utmMedium, utmSource) {
   return null;
 }
 
+/**
+ * orders/create webhook handler — revenue attribution for Instagram-driven
+ * orders.
+ *
+ * Data minimization (relevant for protected customer data review):
+ *   Although Shopify's orders/create payload contains customer PII
+ *   (customer.email, customer.name, billing/shipping addresses, etc.), this
+ *   handler intentionally only reads non-customer fields needed for
+ *   attribution: order id, order_number, total_price, currency, landing_site,
+ *   and referring_site. No customer.* field is ever read, persisted, or
+ *   forwarded. The recordAttribution() call writes only orderId, linkId,
+ *   channel, and amount to the attribution table — see
+ *   app/lib/db.server.js -> recordAttribution.
+ */
 export const action = async ({ request }) => {
   logger.debug(`[webhook] orders/create webhook received`);
   
@@ -98,7 +112,8 @@ export const action = async ({ request }) => {
       });
     }
 
-    // Parse order data
+    // Read ONLY non-PII fields from the payload. We deliberately do not
+    // touch payload.customer or any address/email/phone field.
     const orderId = payload.id?.toString() || payload.order_number?.toString();
     const totalPrice = parseFloat(payload.total_price || payload.current_total_price || "0");
     const currency = payload.currency || payload.presentment_currency_code || "USD";

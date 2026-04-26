@@ -1,8 +1,24 @@
 /**
  * Mandatory Shopify compliance webhooks (GDPR / customer privacy).
- * Topics: customers/data_request, customers/redact, shop/redact.
- * Uses authenticate.webhook() which handles HMAC verification and returns
- * 401 Unauthorized automatically for invalid signatures.
+ * Topics handled: customers/data_request, customers/redact, shop/redact.
+ *
+ * authenticate.webhook() performs HMAC verification and returns 401 for
+ * invalid signatures, so this handler only runs for genuine Shopify requests.
+ *
+ * Customer-data posture (relevant for App Store / privacy review):
+ *   This app does NOT read, store, or process any Shopify customer PII.
+ *   The orders/create webhook payload contains customer data, but our
+ *   handler in app/routes/webhooks.shopify.orders.jsx only reads order ID,
+ *   total_price, currency, landing_site, and referring_site — never any
+ *   customer.* field. We have no customer_id, email, name, address, or
+ *   phone column in our database (verifiable in prisma/schema.prisma and
+ *   the Supabase migrations).
+ *
+ *   As a result, customers/data_request and customers/redact are
+ *   intentional no-ops: there is no customer-scoped data to return or
+ *   erase. shop/redact does perform a full cascade delete of all shop-
+ *   scoped data (messages, links, attribution, settings, etc.) so that a
+ *   merchant who uninstalls is wiped 48 hours later as required.
  */
 
 import crypto from "crypto";
@@ -34,12 +50,25 @@ export const action = async ({ request }) => {
 
     switch (topic) {
       case "CUSTOMERS_DATA_REQUEST": {
-        logger.debug(`[webhook/compliance] customers/data_request for ${shop}`);
+        // We don't store any per-customer data, so the only honest response
+        // is an empty data set. We log the request so we can prove it was
+        // received and acknowledged.
+        const customerId = payload?.customer?.id ?? null;
+        logger.debug(
+          `[webhook/compliance] customers/data_request for shop=${shop} ` +
+            `customer_id=${customerId} -> no stored data`
+        );
         break;
       }
 
       case "CUSTOMERS_REDACT": {
-        logger.debug(`[webhook/compliance] customers/redact for ${shop}`);
+        // Same posture: there is nothing customer-scoped to delete because
+        // we never wrote any. Acknowledge and move on.
+        const customerId = payload?.customer?.id ?? null;
+        logger.debug(
+          `[webhook/compliance] customers/redact for shop=${shop} ` +
+            `customer_id=${customerId} -> no stored data to erase`
+        );
         break;
       }
 
