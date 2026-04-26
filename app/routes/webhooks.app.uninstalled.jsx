@@ -47,13 +47,14 @@ export const action = async ({ request }) => {
       logger.debug(`[webhook] Shop data found:`, shopData);
     }
 
-    // Note: Shopify automatically cancels subscriptions when an app is uninstalled,
-    // but we should also handle it here for consistency and to update our database.
-    // TODO: In Week 4, add billing cancellation logic here:
-    // - If shop has GROWTH or PRO plan, cancel the Shopify subscription via Billing API
-    // - This is a safety measure (Shopify handles it automatically, but good to be explicit)
-    
-    // Mark shop as inactive and reset to FREE plan in Supabase
+    // Shopify automatically cancels any active app subscription when a merchant
+    // uninstalls the app (per the Billing API contract), and revokes the access
+    // token shortly after. Calling appSubscriptionCancel here is therefore
+    // unnecessary and would actually fail because we no longer have a valid
+    // session to authenticate the request. We only need to mirror the billing
+    // state in our own DB so the merchant goes through the re-approval flow on
+    // reinstall (handled by afterAuth + loader-helpers).
+    // Reset plan to FREE and mark inactive in Supabase.
     if (shopData) {
       logger.debug(`[webhook] Resetting plan to FREE for shop ID: ${shopData.id}`);
       try {

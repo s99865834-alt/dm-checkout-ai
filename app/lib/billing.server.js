@@ -18,6 +18,11 @@ const PLAN_PRICING = {
  * @param {string} returnUrl - The URL to redirect to after confirmation
  * @param {Object} [options]
  * @param {number} [options.trialDays] - Number of free trial days (null = no trial)
+ * @param {"STANDARD"|"APPLY_ON_NEXT_BILLING_CYCLE"} [options.replacementBehavior]
+ *   How the new subscription interacts with an existing active one.
+ *   STANDARD (default): the existing subscription is cancelled and replaced
+ *   immediately when the merchant approves the new charge. Used for both
+ *   upgrades (e.g. GROWTH -> PRO) and downgrades (e.g. PRO -> GROWTH).
  * @returns {Promise<{confirmationUrl: string, subscriptionId: string}>}
  */
 export async function createChargeViaAPI(admin, planName, returnUrl, options = {}) {
@@ -34,14 +39,29 @@ export async function createChargeViaAPI(admin, planName, returnUrl, options = {
 
   const isTestCharge = process.env.SHOPIFY_BILLING_TEST === "true";
 
+  // Shopify allows only one active subscription per app per shop. When a merchant
+  // already has an active subscription (e.g. switching GROWTH ↔ PRO),
+  // appSubscriptionCreate produces a new pending subscription and the existing
+  // one is automatically cancelled the moment the merchant approves the new
+  // confirmationUrl. We pass STANDARD explicitly so the intent is obvious in
+  // code and so any future default change on Shopify's side won't silently
+  // alter our upgrade/downgrade UX.
   const mutation = `
-    mutation appSubscriptionCreate($name: String!, $returnUrl: URL!, $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int, $test: Boolean) {
+    mutation appSubscriptionCreate(
+      $name: String!,
+      $returnUrl: URL!,
+      $lineItems: [AppSubscriptionLineItemInput!]!,
+      $trialDays: Int,
+      $test: Boolean,
+      $replacementBehavior: AppSubscriptionReplacementBehavior
+    ) {
       appSubscriptionCreate(
         name: $name
         returnUrl: $returnUrl
         lineItems: $lineItems
         trialDays: $trialDays
         test: $test
+        replacementBehavior: $replacementBehavior
       ) {
         appSubscription {
           id
@@ -76,6 +96,7 @@ export async function createChargeViaAPI(admin, planName, returnUrl, options = {
     ],
     trialDays: options.trialDays ?? null,
     test: isTestCharge || null,
+    replacementBehavior: options.replacementBehavior || "STANDARD",
   };
 
   const response = await admin.graphql(mutation, {

@@ -28,7 +28,7 @@ SocialRepl.ai is a Shopify app that automatically responds to Instagram DMs and 
 
 ## Why it's valuable
 
-Instagram is one of the highest-intent sales channels for e-commerce, but most stores lose sales because they can't reply to DMs and comments fast enough. SocialRepl.ai closes that gap instantly — 24/7, in the merchant's own brand voice, with a direct path to purchase. Merchants report converting interactions that previously went unanswered into actual orders.
+Instagram is one of the highest-intent sales channels for e-commerce, but most stores lose sales because they can't reply to DMs and comments fast enough. SocialRepl.ai closes that gap instantly — 24/7, in the merchant's own brand voice, with a direct path to purchase. Every reply contains a tracked checkout or product link so merchants can measure clicks and attributed orders directly in the app's analytics dashboard.
 
 ## Technical details
 

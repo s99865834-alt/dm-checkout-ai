@@ -1,5 +1,4 @@
 import { redirect } from "react-router";
-import { useState } from "react";
 
 const SHOPIFY_APP_STORE_URL =
   typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL
@@ -103,16 +102,6 @@ export const meta = () => [
 ];
 
 export default function LandingPage() {
-  const [email, setEmail] = useState("");
-  const [emailSubmitted, setEmailSubmitted] = useState(false);
-
-  const handleEmailSubmit = (e) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-    // TODO: Wire to your email provider (Mailchimp, ConvertKit, Supabase, etc.) or add a Remix action
-    setEmailSubmitted(true);
-  };
-
   return (
     <div className="srMarketingLanding">
       <script
@@ -172,24 +161,15 @@ export default function LandingPage() {
 
       <section className="srMarketingSection">
         <div className="srMarketingEmail">
-          <h3>Get launch updates</h3>
-          {emailSubmitted ? (
-            <p className="srMarketingEmailSuccess">
-              Thanks! We&apos;ll be in touch.
-            </p>
-          ) : (
-            <form onSubmit={handleEmailSubmit}>
-              <input
-                type="email"
-                placeholder="Your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                aria-label="Email for updates"
-              />
-              <button type="submit">Notify me</button>
-            </form>
-          )}
+          <h3>Ready to recover your Instagram sales?</h3>
+          <a
+            className="srMarketingCta"
+            href={SHOPIFY_APP_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Install from Shopify App Store
+          </a>
         </div>
       </section>
 
