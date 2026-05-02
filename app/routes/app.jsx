@@ -1,11 +1,41 @@
-import { Outlet, useLoaderData, useRouteError, useNavigate } from "react-router";
+import { Outlet, redirect, useLoaderData, useRouteError, useNavigate } from "react-router";
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
+import { syncShopPlanWithSubscription } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
+
+  // Sync shop.plan with the merchant's active Shopify subscription on
+  // every entry to /app/*. This is the canonical place to do it because:
+  //   - The embedded session is reliably set up at this layer (it isn't
+  //     always at the bare app root /, where App Bridge can race with
+  //     authenticate.admin and bounce us into /auth/login).
+  //   - It catches the post-Managed-Pricing-approval flow: Shopify
+  //     redirects merchants back to the app's main URL with no charge_id,
+  //     so we have to re-derive plan state from the active subscription.
+  //
+  // If the sync changed the plan AND we're not already on the billing
+  // page, send the merchant to /app/billing/select so they immediately
+  // see the updated "Current Plan" badge.
+  if (shop?.id) {
+    try {
+      const { changed, planAfter } = await syncShopPlanWithSubscription(admin, shop);
+      if (changed) {
+        const url = new URL(request.url);
+        if (!url.pathname.startsWith("/app/billing")) {
+          throw redirect("/app/billing/select");
+        }
+        // Reflect the new plan in this render without a revalidation.
+        plan.name = planAfter;
+      }
+    } catch (err) {
+      if (err instanceof Response) throw err;
+      console.error("[app] Plan sync error:", err.message);
+    }
+  }
 
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",

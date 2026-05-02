@@ -3,11 +3,7 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import {
-  getCurrentSubscription,
-  cancelCurrentSubscription,
-  syncShopPlanWithSubscription,
-} from "../lib/billing.server";
+import { getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
@@ -19,26 +15,9 @@ import { updateShopPlan } from "../lib/db.server";
 const APP_HANDLE = "dm-checkout-ai";
 
 export const loader = async ({ request }) => {
+  // Plan sync from Shopify subscription happens in app.jsx parent loader,
+  // so by the time this loader runs `shop.plan` is already canonical.
   const { shop, plan, admin } = await getShopWithPlan(request);
-
-  // Sync DB plan with the active Shopify subscription so the "Current
-  // Plan" badge always reflects the canonical Shopify state. This makes
-  // the page resilient to merchants who land here directly (e.g. via a
-  // bookmark) without first going through /_index where the same sync
-  // already runs.
-  let effectivePlan = plan;
-  if (shop?.id) {
-    try {
-      const { changed, planAfter } = await syncShopPlanWithSubscription(admin, shop);
-      if (changed) {
-        // Reflect the new plan in this render without requiring a full
-        // revalidation — the badge comes off `plan.name`.
-        effectivePlan = { ...(plan || {}), name: planAfter };
-      }
-    } catch (e) {
-      console.error("[billing] Error syncing plan:", e.message);
-    }
-  }
 
   let subscription = null;
   try {
@@ -47,7 +26,7 @@ export const loader = async ({ request }) => {
     console.error("[billing] Error fetching subscription:", e.message);
   }
 
-  return { shop, plan: effectivePlan, subscription };
+  return { shop, plan, subscription };
 };
 
 export const action = async ({ request }) => {
