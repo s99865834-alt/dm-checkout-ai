@@ -560,7 +560,11 @@ export default function AnalyticsPage() {
                       ) : null}
                     </PlanGate>
 
-                    {/* Pro Tier Metrics */}
+                    {/* Pro Tier Metrics — only render the upgrade callout
+                        for GROWTH users. FREE users already see the
+                        Channel Performance Analytics callout above; we don't
+                        want to stack three "upgrade" prompts on the same page. */}
+                    {!isFree && (
                     <PlanGate requiredPlan="PRO" feature="Pro Analytics">
                       {proAnalytics ? (
                         <div className="srGridAuto280">
@@ -640,6 +644,7 @@ export default function AnalyticsPage() {
                         </div>
                       ) : null}
                     </PlanGate>
+                    )}
                   </div>
                 )}
               </>
@@ -648,7 +653,9 @@ export default function AnalyticsPage() {
             )}
           </s-section>
 
-          {/* Order Attribution (Growth+) */}
+          {/* Order Attribution (Growth+) — hidden entirely for FREE so we
+              show only one consolidated upgrade prompt on the analytics page. */}
+          {!isFree && (
           <PlanGate requiredPlan="GROWTH" feature="Order Attribution">
           <s-section heading="Order Attribution">
             <div className="srVStack">
@@ -738,8 +745,11 @@ export default function AnalyticsPage() {
             </div>
           </s-section>
           </PlanGate>
+          )}
 
-          {/* Message Log */}
+          {/* Message Log — hidden entirely for FREE so we show only one
+              consolidated upgrade prompt on the analytics page. */}
+          {!isFree && (
           <PlanGate requiredPlan="GROWTH" feature="Message Log">
             <s-section heading="Message Log">
               <div className="srVStack">
@@ -895,6 +905,7 @@ export default function AnalyticsPage() {
               </div>
             </s-section>
           </PlanGate>
+          )}
       </s-page>
     );
   }
