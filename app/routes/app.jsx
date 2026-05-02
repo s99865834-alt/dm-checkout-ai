@@ -26,7 +26,13 @@ export const loader = async ({ request }) => {
       if (changed) {
         const url = new URL(request.url);
         if (!url.pathname.startsWith("/app/billing")) {
-          throw redirect("/app/billing/select");
+          // Preserve embedded auth params (id_token, host, shop, embedded,
+          // hmac, locale, session, timestamp) so the next request still
+          // authenticates. A bare /app/billing/select redirect would land
+          // at the framework's auth middleware with no credentials and
+          // bounce the merchant to /auth/login (the install page).
+          url.pathname = "/app/billing/select";
+          throw redirect(`${url.pathname}${url.search}`);
         }
         // Reflect the new plan in this render without a revalidation.
         plan.name = planAfter;
