@@ -46,8 +46,19 @@ export default function PrivacyPolicy() {
         <h3>2.3 Information from Third Parties</h3>
         <p>We receive information from third-party services you connect to our Service:</p>
         <ul>
-          <li><strong>Shopify:</strong> Store data, product information, order data, and customer information</li>
-          <li><strong>Meta (Facebook/Instagram):</strong> Instagram account data, messages, comments, and media content</li>
+          <li>
+            <strong>Shopify:</strong> Store metadata, product catalog data,
+            store policies and pages, and order metadata (order ID, total
+            amount, currency, attribution URLs such as <code>landing_site</code>
+            and <code>referring_site</code>). We do not request or store
+            individual Shopify customer profiles, addresses, emails, or
+            payment information.
+          </li>
+          <li>
+            <strong>Meta (Facebook/Instagram):</strong> Instagram account
+            data, messages, comments, and media content for the connected
+            Instagram Business account.
+          </li>
         </ul>
       </section>
 
@@ -111,10 +122,43 @@ export default function PrivacyPolicy() {
       <section>
         <h2>7. Data Retention and Deletion</h2>
         <p>
-          We retain your information for as long as necessary to provide our Service and fulfill the purposes outlined in this Privacy Policy, unless a longer retention period is required or permitted by law. When you delete your account or uninstall the app, we will delete or anonymize your data in accordance with our data retention policies.
+          We retain your information only as long as necessary to provide
+          the Service. While the app is installed on your Shopify store,
+          message and click data is retained so we can power analytics,
+          attribution, and follow-up automation. When you uninstall the app
+          from Shopify, all shop-scoped data — including messages, checkout
+          links, click records, follow-ups, attribution, settings, and
+          brand voice configuration — is automatically deleted within
+          48 hours of uninstall via Shopify's mandatory{" "}
+          <code>shop/redact</code> compliance webhook.
         </p>
+
+        <h3>7.1 Shopify privacy compliance</h3>
         <p>
-          We support Meta's data deletion callbacks. When an Instagram user requests deletion of their data through Meta, we automatically remove their messages, checkout links, click records, follow-up records, and attribution data from our systems. You can also request data deletion by contacting us directly.
+          We comply with Shopify's mandatory privacy webhooks
+          (<code>customers/data_request</code>,{" "}
+          <code>customers/redact</code>, and <code>shop/redact</code>) per
+          Shopify's privacy law compliance requirements. Because we do not
+          store individual Shopify customer profiles, the customer-scoped
+          webhooks are processed and acknowledged but require no data
+          deletion on our side. The shop-scoped webhook performs the full
+          cascade delete described above.
+        </p>
+
+        <h3>7.2 Meta (Instagram) data deletion</h3>
+        <p>
+          We support Meta's Data Deletion Callback. The callback endpoint
+          is{" "}
+          <code>
+            https://dm-checkout-ai-production.up.railway.app/meta/data-deletion
+          </code>
+          . When an Instagram user requests deletion of their data through
+          Meta, we automatically remove their messages, checkout links,
+          click records, follow-up records, and attribution data from our
+          systems. End-users can also email{" "}
+          <a href="mailto:support@socialrepl.ai">support@socialrepl.ai</a>{" "}
+          to request deletion of their data; we will respond within 30
+          days.
         </p>
       </section>
 
@@ -130,6 +174,57 @@ export default function PrivacyPolicy() {
         </ul>
         <p>
           To exercise these rights, please contact us using the information provided in the "Contact Us" section below.
+        </p>
+
+        <h3>8.1 California residents (CCPA / CPRA)</h3>
+        <p>
+          Under the California Consumer Privacy Act (CCPA), as amended by
+          the California Privacy Rights Act (CPRA), California residents
+          have the following rights regarding their personal information:
+        </p>
+        <ul>
+          <li>
+            <strong>Right to know:</strong> Request disclosure of the
+            categories and specific pieces of personal information we
+            collect, the sources of that information, the purposes for
+            collecting it, and the categories of third parties with whom
+            we share it.
+          </li>
+          <li>
+            <strong>Right to delete:</strong> Request deletion of personal
+            information we have collected from you, subject to certain
+            exceptions.
+          </li>
+          <li>
+            <strong>Right to correct:</strong> Request correction of
+            inaccurate personal information.
+          </li>
+          <li>
+            <strong>Right to opt out of sale or sharing:</strong>{" "}
+            <strong>
+              We do not sell personal information, and we do not share
+              personal information for cross-context behavioral
+              advertising.
+            </strong>
+          </li>
+          <li>
+            <strong>Right to limit use of sensitive personal
+            information:</strong> We do not use or disclose sensitive
+            personal information for purposes other than providing the
+            Service.
+          </li>
+          <li>
+            <strong>Right to non-discrimination:</strong> We will not
+            discriminate against you for exercising any of your CCPA
+            rights.
+          </li>
+        </ul>
+        <p>
+          To exercise these rights, email{" "}
+          <a href="mailto:support@socialrepl.ai">support@socialrepl.ai</a>.
+          We will respond within 45 days of receiving a verifiable request.
+          You may also designate an authorized agent to make a request on
+          your behalf.
         </p>
       </section>
 

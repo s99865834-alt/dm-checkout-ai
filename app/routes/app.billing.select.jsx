@@ -6,8 +6,12 @@ import { PLANS } from "../lib/plans";
 import { getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
 
-// Managed Pricing apps cannot call appSubscriptionCreate; merchants must pick
-// and approve a plan on Shopify's hosted pricing page instead.
+// Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
+// on Shopify's hosted pricing page; the merchant approves there and Shopify
+// returns them to /app/billing/activate where we sync shop.plan from the
+// active subscription. Any per-plan trial is a property of the plan itself
+// in the Partner Dashboard and applies uniformly to every merchant who
+// subscribes — there is no trial logic to maintain in this code.
 const APP_HANDLE = "dm-checkout-ai";
 
 export const loader = async ({ request }) => {
@@ -48,8 +52,8 @@ export const action = async ({ request }) => {
     }
   }
 
-  // Under Managed Pricing, plan selection happens on Shopify's hosted page.
-  // We can't pre-select GROWTH vs PRO from here — the merchant picks on Shopify.
+  // Under Managed Pricing, plan selection happens on Shopify's hosted page;
+  // we can't pre-select GROWTH vs PRO from here. The merchant picks on Shopify.
   const storeHandle = session.shop.replace(".myshopify.com", "");
   const pricingUrl = `https://admin.shopify.com/store/${storeHandle}/charges/${APP_HANDLE}/pricing_plans`;
 

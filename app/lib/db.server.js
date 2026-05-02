@@ -1855,96 +1855,16 @@ export async function saveStoredStoreContext(shopId, storeInfo) {
 // ---------------------------------------------------------------------------
 // Beta Trial
 // ---------------------------------------------------------------------------
-
-/**
- * Save a beta code as "pending" on the shop so it can be auto-redeemed
- * after Shopify billing approval, regardless of where the redirect lands.
- */
-export async function setPendingBetaCode(shopId, code) {
-  const { error } = await supabase
-    .from("shops")
-    .update({ pending_beta_code: code.trim().toUpperCase() })
-    .eq("id", shopId);
-  if (error) console.error("setPendingBetaCode error:", error);
-}
-
-/**
- * Check if the shop has a pending beta code and an active Shopify subscription.
- * If both conditions are met, redeem the code and clear the pending state.
- * Meant to run on every page load so the beta activates automatically.
- */
-export async function tryRedeemPendingBeta(shopId, admin) {
-  const { data: shop } = await supabase
-    .from("shops")
-    .select("pending_beta_code, beta_trial_expires_at")
-    .eq("id", shopId)
-    .single();
-
-  if (!shop?.pending_beta_code) return false;
-
-  const alreadyActive = shop.beta_trial_expires_at &&
-    new Date(shop.beta_trial_expires_at) > new Date();
-  if (alreadyActive) {
-    await supabase.from("shops").update({ pending_beta_code: null }).eq("id", shopId);
-    return false;
-  }
-
-  try {
-    const { getCurrentSubscription } = await import("./billing.server.js");
-    const subscription = await getCurrentSubscription(admin);
-    if (!subscription || subscription.status !== "ACTIVE") return false;
-  } catch {
-    return false;
-  }
-
-  const result = await validateAndRedeemBetaCode(shopId, shop.pending_beta_code);
-  if (result.success) {
-    await supabase.from("shops").update({ pending_beta_code: null }).eq("id", shopId);
-    await updateShopPlan(shopId, "PRO");
-  }
-  return result.success;
-}
-
-/**
- * Validate a beta code WITHOUT redeeming it.
- * Returns { success, trialDays } or { success: false, message }.
- */
-export async function validateBetaCode(shopId, code) {
-  const trimmed = (code || "").trim().toUpperCase();
-  if (!trimmed) return { success: false, message: "No code provided." };
-
-  const { data: betaCode, error: fetchErr } = await supabase
-    .from("beta_codes")
-    .select("*")
-    .eq("code", trimmed)
-    .single();
-
-  if (fetchErr || !betaCode) {
-    return { success: false, message: "Invalid beta code." };
-  }
-  if (!betaCode.active) {
-    return { success: false, message: "This beta code has been deactivated." };
-  }
-  if (betaCode.expires_at && new Date(betaCode.expires_at) < new Date()) {
-    return { success: false, message: "This beta code has expired." };
-  }
-  if (betaCode.times_used >= betaCode.max_uses) {
-    return { success: false, message: "This beta code has already been fully redeemed." };
-  }
-
-  const { data: existing } = await supabase
-    .from("beta_redemptions")
-    .select("id")
-    .eq("beta_code_id", betaCode.id)
-    .eq("shop_id", shopId)
-    .maybeSingle();
-
-  if (existing) {
-    return { success: false, message: "You have already redeemed this beta code." };
-  }
-
-  return { success: true, trialDays: betaCode.trial_days };
-}
+//
+// The merchant-facing beta-code redemption flow has been retired in favour of
+// per-plan Shopify Managed Pricing trials. The helpers below remain so that:
+//   - Existing redeemed trials (beta_trial_expires_at in the future) keep
+//     granting PRO features until they expire — entitlement is read directly
+//     from shop.beta_trial_expires_at in loader-helpers.server.js,
+//     app._index.jsx, and followup.server.js.
+//   - Operators can still manually grant a trial to a specific shop by
+//     calling validateAndRedeemBetaCode from a script or admin task.
+//   - getBetaTrialStatus is exported for future admin tooling.
 
 /**
  * Validate a beta code and redeem it for a shop.

@@ -152,7 +152,7 @@ export default function ProductContextPreview() {
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                   <s-text variant="strong">Fix: get a new token with read_products</s-text>
                   <s-text>
-                    1) In Railway (or your host), set <code>SCOPES=read_products,write_products,read_orders</code> and redeploy.
+                    1) In Railway (or your host), set <code>SCOPES=read_products,read_orders,read_legal_policies,read_content</code> and redeploy.
                   </s-text>
                   <s-text>
                     2) Re-authorize the app so Shopify issues a new token: open{" "}

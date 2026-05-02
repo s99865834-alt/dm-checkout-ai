@@ -1,13 +1,15 @@
-import { redirect, useLoaderData, useSearchParams, useRouteError, useNavigate } from "react-router";
-import { useEffect } from "react";
+import { redirect, useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { updateShopPlan, validateAndRedeemBetaCode } from "../lib/db.server";
+import { updateShopPlan } from "../lib/db.server";
 import { getCurrentSubscription } from "../lib/billing.server";
-import { getPlanConfig } from "../lib/plans";
 
+// Return URL after a merchant approves a Managed Pricing plan on Shopify's
+// hosted page. We re-query the active subscription and sync shop.plan in our
+// DB. Any trial period is a property of the plan itself (configured in the
+// Partner Dashboard), so there is no per-merchant trial logic to handle here.
 export const loader = async ({ request }) => {
-  const { admin, session, shop } = await getShopWithPlan(request);
+  const { admin, shop } = await getShopWithPlan(request);
 
   if (!shop) {
     throw new Response("Shop not found", { status: 404 });
@@ -16,40 +18,16 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const chargeId = url.searchParams.get("charge_id");
   const planParam = url.searchParams.get("plan");
-  const betaCode = url.searchParams.get("beta_code");
-
-  if (!chargeId) {
-    try {
-      const subscription = await getCurrentSubscription(admin);
-      if (subscription && subscription.status === "ACTIVE") {
-        const planToSet = planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
-
-        await updateShopPlan(shop.id, planToSet);
-
-        if (betaCode) {
-          await validateAndRedeemBetaCode(shop.id, betaCode);
-        }
-
-        return {
-          success: true,
-          plan: planToSet,
-          isBeta: !!betaCode,
-          message: betaCode
-            ? `Pro trial activated! You have full Pro access for 60 days free.`
-            : `Successfully upgraded to ${planToSet} plan!`,
-        };
-      }
-    } catch (error) {
-      console.error("Error checking subscription:", error);
-    }
-
-    throw redirect("/app/billing/select?error=no_charge");
-  }
 
   try {
     const subscription = await getCurrentSubscription(admin);
 
     if (!subscription || subscription.status !== "ACTIVE") {
+      // Without an active subscription, treat a missing charge_id as
+      // "merchant cancelled mid-flow" and a present charge_id as declined.
+      if (!chargeId) {
+        throw redirect("/app/billing/select?error=no_charge");
+      }
       return {
         success: false,
         error: "charge_declined",
@@ -61,19 +39,13 @@ export const loader = async ({ request }) => {
 
     await updateShopPlan(shop.id, planToSet);
 
-    if (betaCode) {
-      await validateAndRedeemBetaCode(shop.id, betaCode);
-    }
-
     return {
       success: true,
       plan: planToSet,
-      isBeta: !!betaCode,
-      message: betaCode
-        ? `Pro trial activated! You have full Pro access for 60 days free. After the trial, you'll be billed $99/month.`
-        : `Successfully upgraded to ${planToSet} plan!`,
+      message: `Successfully upgraded to ${planToSet} plan!`,
     };
   } catch (error) {
+    if (error instanceof Response) throw error;
     console.error("Error activating billing:", error);
     return {
       success: false,
@@ -86,15 +58,7 @@ export const loader = async ({ request }) => {
 export default function BillingActivate() {
   const data = useLoaderData();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const error = searchParams.get("error");
-
-  useEffect(() => {
-    if (data?.success && data?.isBeta) {
-      const timer = setTimeout(() => navigate("/app"), 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [data, navigate]);
 
   if (error === "no_charge") {
     return (
@@ -115,16 +79,14 @@ export default function BillingActivate() {
 
   if (data.success) {
     return (
-      <s-page heading={data.isBeta ? "Pro Trial Activated" : "Plan Activated"}>
+      <s-page heading="Plan Activated">
         <s-section>
-          <s-callout variant="success" title={data.isBeta ? "Pro Trial Activated!" : "Upgrade Successful!"}>
+          <s-callout variant="success" title="Upgrade Successful!">
             <s-paragraph>
               <s-text variant="strong">{data.message}</s-text>
             </s-paragraph>
             <s-paragraph>
-              {data.isBeta
-                ? "Redirecting you to the dashboard…"
-                : `Your plan has been updated and you now have access to all ${data.plan} plan features.`}
+              Your plan has been updated and you now have access to all {data.plan} plan features.
             </s-paragraph>
             <s-button href="/app" variant="primary">
               Go to Dashboard

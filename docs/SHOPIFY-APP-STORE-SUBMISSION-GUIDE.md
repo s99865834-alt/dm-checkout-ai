@@ -175,7 +175,6 @@ If Shopify asks why you need each scope, here is the justification:
 | Scope | Justification |
 |-------|---------------|
 | `read_products` | Required to fetch product titles, descriptions, prices, variants, and handles for AI-generated replies and checkout link generation. The AI needs real product data to answer customer questions accurately. |
-| `write_products` | Used to store product-to-Instagram-post mappings via metafields. When a merchant maps a product to an Instagram post, the mapping is persisted. |
 | `read_orders` | Required for order attribution. When a customer completes checkout via a DM checkout link, the app matches the order's `landing_site` URL parameter to the link ID to attribute the sale to Instagram. |
 | `read_legal_policies` | The AI uses the store's refund policy, shipping policy, and terms of service to answer customer questions like "What's your return policy?" accurately instead of fabricating responses. |
 | `read_content` | The AI uses the store's pages (FAQ, About Us, etc.) to answer general store questions from customers in DMs. This prevents hallucinated responses. |
