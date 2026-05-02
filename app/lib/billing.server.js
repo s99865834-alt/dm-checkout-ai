@@ -109,20 +109,26 @@ export async function cancelCurrentSubscription(admin) {
 }
 
 /**
- * Map a Shopify Managed Pricing subscription to our internal plan enum
- * (FREE | GROWTH | PRO). Returns FREE if there's no active subscription.
+ * Map a Shopify Managed Pricing subscription to our internal plan enum.
+ *
+ * Returns:
+ *   - "FREE" if there's no active subscription (the merchant is genuinely
+ *     on the free tier)
+ *   - "PRO" or "GROWTH" if the subscription name unambiguously matches
+ *     (case-insensitive)
+ *   - null if there IS an active subscription but its name doesn't map
+ *     to one of our known plans. Callers MUST treat null as "I don't
+ *     know — leave shop.plan alone" rather than silently downgrading.
  *
  * @param {Object|null} subscription - Result of getCurrentSubscription()
- * @returns {"FREE" | "GROWTH" | "PRO"}
+ * @returns {"FREE" | "GROWTH" | "PRO" | null}
  */
 export function planFromSubscription(subscription) {
   if (!subscription || subscription.status !== "ACTIVE") return "FREE";
-  const name = subscription.name || "";
-  if (name.includes("Pro")) return "PRO";
-  if (name.includes("Growth")) return "GROWTH";
-  // Active subscription with an unrecognised name. Default to GROWTH so
-  // we never accidentally downgrade a paying merchant. Caller should log.
-  return "GROWTH";
+  const name = (subscription.name || "").toLowerCase();
+  if (name.includes("pro")) return "PRO";
+  if (name.includes("growth")) return "GROWTH";
+  return null;
 }
 
 /**
@@ -155,19 +161,18 @@ export async function syncShopPlanWithSubscription(admin, shop) {
     return { changed: false, planBefore, planAfter: planBefore };
   }
 
-  const planAfter = planFromSubscription(subscription);
-  if (subscription?.status === "ACTIVE" && planAfter === "GROWTH" && !subscription.name?.includes("Growth")) {
-    // planFromSubscription defaulted to GROWTH on an unrecognised name —
-    // surface this in the logs so we notice plan-name drift in Shopify.
+  const mapped = planFromSubscription(subscription);
+  if (mapped === null) {
     console.warn(
-      `[billing.sync] Unknown active subscription name "${subscription.name}" for ${shop.shopify_domain}; defaulting to GROWTH`
+      `[billing.sync] Unknown active subscription name "${subscription?.name}" for ${shop.shopify_domain}; leaving shop.plan="${planBefore}" untouched`
     );
+    return { changed: false, planBefore, planAfter: planBefore };
   }
 
-  if (planBefore === planAfter) {
-    return { changed: false, planBefore, planAfter };
+  if (planBefore === mapped) {
+    return { changed: false, planBefore, planAfter: mapped };
   }
 
-  await updateShopPlan(shop.id, planAfter);
-  return { changed: true, planBefore, planAfter };
+  await updateShopPlan(shop.id, mapped);
+  return { changed: true, planBefore, planAfter: mapped };
 }

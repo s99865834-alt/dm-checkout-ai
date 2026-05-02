@@ -15,8 +15,14 @@ import { updateShopPlan } from "../lib/db.server";
 const APP_HANDLE = "dm-checkout-ai";
 
 export const loader = async ({ request }) => {
-  // Plan sync from Shopify subscription happens in app.jsx parent loader,
-  // so by the time this loader runs `shop.plan` is already canonical.
+  // shop.plan is read straight from the DB. It's written authoritatively by:
+  //   - /app/billing/activate (Managed Pricing return URL — uses the plan=
+  //     query param Shopify appends after charge approval)
+  //   - the FREE downgrade action below (cancels the active subscription
+  //     and writes shop.plan = "FREE")
+  // We deliberately do NOT re-derive shop.plan from getCurrentSubscription
+  // here. That race-conditions with both write paths above and was silently
+  // reverting just-confirmed plan changes.
   const { shop, plan, admin } = await getShopWithPlan(request);
 
   let subscription = null;

@@ -2,7 +2,9 @@ import { redirect, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan } from "../lib/db.server";
-import { getCurrentSubscription } from "../lib/billing.server";
+import { getCurrentSubscription, planFromSubscription } from "../lib/billing.server";
+
+const VALID_PLANS = new Set(["FREE", "GROWTH", "PRO"]);
 
 // Return URL after a merchant approves a Managed Pricing plan on Shopify's
 // hosted page. We re-query the active subscription, sync shop.plan in our
@@ -56,10 +58,25 @@ export const loader = async ({ request }) => {
       return redirect(buildBillingSelectUrl(request, message));
     }
 
+    // Source of truth for the new plan, in priority order:
+    //   1. The plan= URL param Shopify appends after Managed Pricing
+    //      approval (always one of FREE/GROWTH/PRO when present).
+    //   2. The active subscription name from Shopify (case-insensitive
+    //      match against "pro" / "growth").
+    //   3. If neither resolves, leave shop.plan alone — silently
+    //      downgrading a paying merchant is the worst outcome here.
+    const normalizedParam = planParam ? planParam.toUpperCase() : null;
     const planToSet =
-      planParam || (subscription.name.includes("Growth") ? "GROWTH" : "PRO");
+      (normalizedParam && VALID_PLANS.has(normalizedParam) && normalizedParam) ||
+      planFromSubscription(subscription);
 
-    await updateShopPlan(shop.id, planToSet);
+    if (planToSet) {
+      await updateShopPlan(shop.id, planToSet);
+    } else {
+      console.warn(
+        `[billing] Could not resolve plan for charge_id=${chargeId} subscription="${subscription?.name}"; leaving shop.plan untouched`
+      );
+    }
 
     return redirect(buildBillingSelectUrl(request));
   } catch (error) {

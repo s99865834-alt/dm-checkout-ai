@@ -1,47 +1,19 @@
-import { Outlet, redirect, useLoaderData, useRouteError, useNavigate } from "react-router";
+import { Outlet, useLoaderData, useRouteError, useNavigate } from "react-router";
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { syncShopPlanWithSubscription } from "../lib/billing.server";
 
+// shop.plan is the source of truth in the DB. It's written authoritatively
+// by /app/billing/activate (after Managed Pricing approval, using the
+// plan=… URL param Shopify sends) and by the FREE downgrade action in
+// /app/billing/select. We deliberately do NOT re-sync from the active
+// Shopify subscription here — doing so on every /app/* request races
+// with both of those write paths and silently reverts correctly-set
+// plans (e.g. just-upgraded PRO -> GROWTH, or just-cancelled FREE ->
+// previous paid plan).
 export const loader = async ({ request }) => {
-  const { shop, plan, admin } = await getShopWithPlan(request);
-
-  // Sync shop.plan with the merchant's active Shopify subscription on
-  // every entry to /app/*. This is the canonical place to do it because:
-  //   - The embedded session is reliably set up at this layer (it isn't
-  //     always at the bare app root /, where App Bridge can race with
-  //     authenticate.admin and bounce us into /auth/login).
-  //   - It catches the post-Managed-Pricing-approval flow: Shopify
-  //     redirects merchants back to the app's main URL with no charge_id,
-  //     so we have to re-derive plan state from the active subscription.
-  //
-  // If the sync changed the plan AND we're not already on the billing
-  // page, send the merchant to /app/billing/select so they immediately
-  // see the updated "Current Plan" badge.
-  if (shop?.id) {
-    try {
-      const { changed, planAfter } = await syncShopPlanWithSubscription(admin, shop);
-      if (changed) {
-        const url = new URL(request.url);
-        if (!url.pathname.startsWith("/app/billing")) {
-          // Preserve embedded auth params (id_token, host, shop, embedded,
-          // hmac, locale, session, timestamp) so the next request still
-          // authenticates. A bare /app/billing/select redirect would land
-          // at the framework's auth middleware with no credentials and
-          // bounce the merchant to /auth/login (the install page).
-          url.pathname = "/app/billing/select";
-          throw redirect(`${url.pathname}${url.search}`);
-        }
-        // Reflect the new plan in this render without a revalidation.
-        plan.name = planAfter;
-      }
-    } catch (err) {
-      if (err instanceof Response) throw err;
-      console.error("[app] Plan sync error:", err.message);
-    }
-  }
+  const { shop, plan } = await getShopWithPlan(request);
 
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
