@@ -34,31 +34,16 @@ export function PlanGate({ requiredPlan, feature, children }) {
     return <>{children}</>;
   }
 
-  const planNames = {
-    GROWTH: "Growth",
-    PRO: "Pro",
-  };
-
-  const pricing = {
-    GROWTH: "$39/month",
-    PRO: "$99/month",
-  };
-
   return (
-    <s-callout variant="info" title={`${feature} requires ${planNames[requiredPlan]} plan`}>
+    <s-callout variant="info">
       <s-stack direction="block" gap="base">
-        <s-paragraph>
-          <s-text>
-            This feature is available on the <s-text variant="strong">{planNames[requiredPlan]}</s-text> plan ({pricing[requiredPlan]}).
-          </s-text>
-        </s-paragraph>
         <s-paragraph>
           <s-text variant="subdued">
             Upgrade to unlock {feature} and other premium features.
           </s-text>
         </s-paragraph>
         <s-button href="/app/billing/select" variant="primary">
-          Upgrade to {planNames[requiredPlan]}
+          Upgrade
         </s-button>
       </s-stack>
     </s-callout>

@@ -736,7 +736,10 @@ export default function Index() {
       </s-section>
 
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
-      {isConnected && (
+      {/* Hidden on FREE: post-by-post mapping and per-post automation toggles
+          are part of the paid DM/comment automation experience. FREE merchants
+          see the upgrade banners above instead. */}
+      {isConnected && !isFree && (
         <s-section heading="Your Instagram Posts">
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <span className="srCardDesc">
