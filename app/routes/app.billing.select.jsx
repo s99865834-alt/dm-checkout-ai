@@ -3,12 +3,8 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import { getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
+import { createChargeViaAPI, getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
-
-// Managed Pricing apps cannot call appSubscriptionCreate; merchants must pick
-// and approve a plan on Shopify's hosted pricing page instead.
-const APP_HANDLE = "dm-checkout-ai";
 
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
@@ -48,12 +44,16 @@ export const action = async ({ request }) => {
     }
   }
 
-  // Under Managed Pricing, plan selection happens on Shopify's hosted page.
-  // We can't pre-select GROWTH vs PRO from here — the merchant picks on Shopify.
   const storeHandle = session.shop.replace(".myshopify.com", "");
-  const pricingUrl = `https://admin.shopify.com/store/${storeHandle}/charges/${APP_HANDLE}/pricing_plans`;
+  const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=${planName}`;
 
-  return { confirmationUrl: pricingUrl, planName };
+  try {
+    const { confirmationUrl } = await createChargeViaAPI(admin, planName, returnUrl);
+    return { confirmationUrl, planName };
+  } catch (error) {
+    console.error("Error creating charge:", error);
+    return { error: error.message };
+  }
 };
 
 function PlanActionButton({ fetcher, planName, variant, label }) {

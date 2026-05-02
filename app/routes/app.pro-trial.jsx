@@ -2,13 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useRouteError, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getBetaTrialStatus, validateAndRedeemBetaCode } from "../lib/db.server";
-
-// Managed Pricing apps cannot apply per-merchant trialDays via the Billing API,
-// so we grant the trial entitlement directly in our DB. PRO features are gated
-// on beta_trial_expires_at throughout the app, so no Shopify charge is needed
-// during the trial. After it ends, the merchant subscribes to PRO via Shopify's
-// hosted pricing page to keep PRO access.
+import { validateBetaCode, getBetaTrialStatus, setPendingBetaCode } from "../lib/db.server";
+import { createChargeViaAPI } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
   const { shop } = await getShopWithPlan(request);
@@ -19,18 +14,31 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { shop } = await getShopWithPlan(request);
+  const { shop, admin, session } = await getShopWithPlan(request);
   if (!shop) throw new Response("Shop not found", { status: 404 });
 
   const formData = await request.formData();
   const code = formData.get("code");
 
-  const result = await validateAndRedeemBetaCode(shop.id, code);
-  if (!result.success) {
-    return { error: result.message };
+  const validation = await validateBetaCode(shop.id, code);
+  if (!validation.success) {
+    return { error: validation.message };
   }
 
-  return { redeemed: true, trialExpiresAt: result.trialExpiresAt };
+  await setPendingBetaCode(shop.id, code);
+
+  const storeHandle = session.shop.replace(".myshopify.com", "");
+  const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/dm-checkout-ai/app/billing/activate?plan=PRO&beta_code=${encodeURIComponent(code.trim().toUpperCase())}`;
+
+  try {
+    const { confirmationUrl } = await createChargeViaAPI(admin, "PRO", returnUrl, {
+      trialDays: validation.trialDays,
+    });
+    return { confirmationUrl };
+  } catch (err) {
+    console.error("Trial charge creation error:", err);
+    return { error: err.message || "Failed to create subscription. Please try again." };
+  }
 };
 
 export default function BetaRedeem() {
@@ -40,10 +48,8 @@ export default function BetaRedeem() {
   const [code, setCode] = useState("");
 
   useEffect(() => {
-    if (fetcher.data?.redeemed) {
-      // Reload so the loader picks up the now-active beta_trial_expires_at
-      // and renders the success state below.
-      window.location.reload();
+    if (fetcher.data?.confirmationUrl) {
+      window.open(fetcher.data.confirmationUrl, "_top");
     }
   }, [fetcher.data]);
 
@@ -68,8 +74,8 @@ export default function BetaRedeem() {
               <s-paragraph tone="subdued">
                 {betaStatus.daysRemaining} day
                 {betaStatus.daysRemaining !== 1 ? "s" : ""} remaining. After
-                the trial ends, subscribe to the Pro plan from the Billing page
-                to keep Pro features. You won't be charged during the trial.
+                the trial you will be billed $99/month for the Pro plan. You can
+                cancel anytime before the trial ends.
               </s-paragraph>
               <s-button href="/app" variant="primary">Go to Dashboard</s-button>
             </s-stack>
@@ -91,47 +97,66 @@ export default function BetaRedeem() {
         </s-section>
       )}
 
-      <s-section>
-        <s-card>
-          <s-stack direction="block" gap="base">
-            <s-heading level="2">Enter your trial code</s-heading>
-            <s-paragraph tone="subdued">
-              Your free trial includes all Pro plan features. You won't be
-              charged during the trial. After it ends, subscribe to the Pro
-              plan from the Billing page to keep Pro features.
-            </s-paragraph>
-            <fetcher.Form method="post" ref={formRef}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <label className="srFieldLabel">
-                  <span className="srCardTitle">Trial Code</span>
-                  <input
-                    type="text"
-                    name="code"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="XXXX-XXXX-XXXX"
-                    required
-                    className="srInput"
-                    style={{ fontFamily: "monospace", letterSpacing: "1px" }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="srPrimaryBtn"
-                  disabled={!code.trim() || fetcher.state === "submitting"}
-                  onClick={() => {
-                    if (formRef.current && code.trim()) {
-                      fetcher.submit(formRef.current);
-                    }
-                  }}
-                >
-                  {fetcher.state === "submitting" ? "Activating…" : "Start Free Trial"}
-                </button>
-              </div>
-            </fetcher.Form>
-          </s-stack>
-        </s-card>
-      </s-section>
+      {fetcher.data?.confirmationUrl && (
+        <s-section>
+          <s-callout variant="info" title="Approve Your Free Trial">
+            <s-stack direction="block" gap="tight">
+              <s-paragraph>
+                A new window should have opened for you to confirm the 60-day
+                free trial.
+              </s-paragraph>
+              <s-paragraph tone="subdued">
+                You will not be charged during the trial. After 60 days your
+                plan will automatically convert to Pro at $99/month. You can
+                cancel anytime before the trial ends to avoid being charged.
+              </s-paragraph>
+            </s-stack>
+          </s-callout>
+        </s-section>
+      )}
+
+      {!fetcher.data?.confirmationUrl && (
+        <s-section>
+          <s-card>
+            <s-stack direction="block" gap="base">
+              <s-heading level="2">Enter your trial code</s-heading>
+              <s-paragraph tone="subdued">
+                Your 60-day free trial includes all Pro plan features. After the
+                trial you will be billed $99/month. Cancel anytime.
+              </s-paragraph>
+              <fetcher.Form method="post" ref={formRef}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <label className="srFieldLabel">
+                    <span className="srCardTitle">Trial Code</span>
+                    <input
+                      type="text"
+                      name="code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.toUpperCase())}
+                      placeholder="XXXX-XXXX-XXXX"
+                      required
+                      className="srInput"
+                      style={{ fontFamily: "monospace", letterSpacing: "1px" }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="srPrimaryBtn"
+                    disabled={!code.trim() || fetcher.state === "submitting"}
+                    onClick={() => {
+                      if (formRef.current && code.trim()) {
+                        fetcher.submit(formRef.current);
+                      }
+                    }}
+                  >
+                    {fetcher.state === "submitting" ? "Activating…" : "Start Free Trial"}
+                  </button>
+                </div>
+              </fetcher.Form>
+            </s-stack>
+          </s-card>
+        </s-section>
+      )}
     </s-page>
   );
 }
