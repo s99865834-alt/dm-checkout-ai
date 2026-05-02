@@ -1,41 +1,28 @@
 import { redirect } from "react-router";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
-import { getShopByDomain } from "../lib/db.server";
-import { syncShopPlanWithSubscription } from "../lib/billing.server";
 
-// Shopify's hosted Managed Pricing page redirects merchants back to the
-// app's root (application_url) after charge approval — it does NOT send
-// a charge_id query param to a custom return URL we control. So we can't
-// rely on /app/billing/activate to handle the post-approval flow.
+// Bare app root forwards to /app, which is the standard embedded entry
+// point that @shopify/shopify-app-react-router knows how to authenticate.
 //
-// Instead, we sync shop.plan with the merchant's active Shopify
-// subscription on entry to the app. If the sync changes anything, the
-// merchant most likely just approved (or cancelled) a plan on Shopify's
-// hosted page — route them to /app/billing/select so they immediately
-// see the updated "Current Plan" badge. Otherwise, send them to the
-// dashboard (the normal app entry).
+// Why we DON'T call authenticate.admin() here:
+//   - When Shopify's hosted Managed Pricing page redirects merchants
+//     back to the app's main URL after a charge change, the iframe is
+//     loaded at / before App Bridge has had a chance to install the
+//     session token. authenticate.admin() then has nothing to validate
+//     against and bounces the merchant to /auth/login (the install
+//     page) — which manifests as "Install SocialRepl.ai" rendered
+//     outside the Shopify admin chrome.
+//   - /app/* doesn't have this problem because the framework's embedded
+//     entry middleware ensures App Bridge is wired up before the loader
+//     runs.
 //
-// This route also covers the simple case of the merchant clicking the
-// app icon in Shopify admin (which opens the app's main URL — i.e. /).
+// Plan-from-subscription sync moved into app.jsx's parent loader, where
+// it runs reliably on every /app/* navigation including the post-billing
+// landing.
+//
+// Query params (shop, host, embedded, id_token, etc.) are preserved on
+// the redirect so the framework's embedded entry handler at /app gets
+// everything it needs.
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-
-  let landTarget = "/app";
-
-  try {
-    const shop = await getShopByDomain(session.shop);
-    if (shop?.id) {
-      const { changed } = await syncShopPlanWithSubscription(admin, shop);
-      if (changed) landTarget = "/app/billing/select";
-    }
-  } catch (err) {
-    // Never block app entry on a sync failure — fall through to the
-    // dashboard. Stale plan badge is recoverable; broken app entry is not.
-    console.error("[index] Error syncing plan on entry:", err);
-  }
-
-  return redirect(landTarget);
+  const url = new URL(request.url);
+  return redirect(`/app${url.search}`);
 };
-
-export const headers = (headersArgs) => boundary.headers(headersArgs);
