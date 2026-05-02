@@ -28,7 +28,7 @@ Use this checklist to execute the promotion plan in order. Do not skip the found
 Use this so “soft launch” is **done deliberately** without extra scope.
 
 1. **Stores:** Install on **one dev store** (you) and, if possible, **one real merchant** (friend or early waitlist). Run through: OAuth, connect Instagram, map one post, trigger one test DM or comment, confirm Analytics shows activity.
-2. **Trial path:** If you use beta codes, redeem **one** code end-to-end on a test shop and confirm `beta_trial_expires_at` and Pro features match the listing ([APP-STORE-LISTING-ASO.md](APP-STORE-LISTING-ASO.md) §2.1).
+2. **Upgrade path:** Click "Upgrade to Growth" on `/app/billing/select`, complete the test charge on Shopify's hosted pricing page, return to `/app/billing/activate`, and confirm `shop.plan` updates to GROWTH and Pro/Growth features unlock. Repeat for Pro. (Trials via Partner Dashboard are currently disabled — see [APP-STORE-LISTING-ASO.md](APP-STORE-LISTING-ASO.md) §2.1.)
 3. **Reviews:** Do not ask for a public review until a **value moment** (see [SOCIAL-PROOF-REVIEWS.md](SOCIAL-PROOF-REVIEWS.md)). Track who you asked in a note so you do not double-email.
 4. **Instrumentation:** Enter Week 0 numbers into [metrics-weekly-template.csv](metrics-weekly-template.csv) so later weeks are comparable.
 

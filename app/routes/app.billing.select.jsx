@@ -9,8 +9,9 @@ import { updateShopPlan } from "../lib/db.server";
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
 // on Shopify's hosted pricing page; the merchant approves there and Shopify
 // returns them to /app/billing/activate where we sync shop.plan from the
-// active subscription. Trial periods are configured per-plan in the Partner
-// Dashboard so they apply uniformly to every merchant who subscribes.
+// active subscription. Any per-plan trial is a property of the plan itself
+// in the Partner Dashboard and applies uniformly to every merchant who
+// subscribes — there is no trial logic to maintain in this code.
 const APP_HANDLE = "dm-checkout-ai";
 
 export const loader = async ({ request }) => {

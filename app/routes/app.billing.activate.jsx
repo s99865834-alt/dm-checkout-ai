@@ -6,8 +6,8 @@ import { getCurrentSubscription } from "../lib/billing.server";
 
 // Return URL after a merchant approves a Managed Pricing plan on Shopify's
 // hosted page. We re-query the active subscription and sync shop.plan in our
-// DB. Trials are configured per-plan in the Partner Dashboard, so there is
-// no per-merchant trial logic to handle here.
+// DB. Any trial period is a property of the plan itself (configured in the
+// Partner Dashboard), so there is no per-merchant trial logic to handle here.
 export const loader = async ({ request }) => {
   const { admin, shop } = await getShopWithPlan(request);
 

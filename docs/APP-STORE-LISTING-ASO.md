@@ -34,16 +34,30 @@ Use for the main visible description; lead with the outcome, then features.
 - Track clicks and revenue from Instagram in one dashboard
 - Free tier: automated messages each month with DM automation—no credit card required (see pricing for limits)
 
-### 2.1 Two-month Pro trial (Shopify Partner billing + in-app beta codes)
+### 2.1 Free trials (currently disabled)
 
-Align **App Store listing trial settings** in the Partner Dashboard (trial length, which plan) with what merchants see in the app.
+The app uses **Shopify Managed Pricing**. Trials are configured per plan in
+the Partner Dashboard (Apps → dm-checkout-ai → Distribution → Pricing →
+edit each plan → Trial period in days). They are **not currently enabled**
+on Growth or Pro.
 
-- **Shopify App Store listing:** If you offer a **paid-plan trial** on install (e.g. Growth or Pro), state the **duration** (e.g. 2 months / 60 days), **what is included**, and **what happens when the trial ends** (price, how to cancel). Merchants should never be surprised at billing.
-- **Beta / invite codes:** The in-app **Pro trial** redemption flow lives at `/app/pro-trial` (trial codes grant a **2-month / 60-day** Pro trial per your `beta_codes.trial_days` configuration). Listing copy can mention “Pro trial available with code” if you distribute codes publicly; otherwise keep codes off the public listing and share them in communities or email.
+While trials are disabled:
 
-**Suggested one-liner for optional public mention:**
+- **Do not mention "free trial" in the App Store listing copy.** Reviewers
+  reject listings that promise a trial the app does not deliver.
+- The **FREE plan** is the entry point — emphasise the free tier in the
+  listing instead of a trial.
+- The in-app beta-code redemption flow (`/app/pro-trial`) has been retired.
+  The route now redirects to the unified billing page.
 
-> Optional: Redeem a code in-app for a 2-month Pro trial (all Pro features); see app onboarding after install.
+To enable trials later (after app approval):
+
+1. Partner Dashboard → edit the Growth and/or Pro plan → set "Trial period
+   in days" (e.g. 14).
+2. Update the App Store listing copy to mention the trial duration, what is
+   included, and what happens when the trial ends (price, cancel path).
+3. No code changes required — the in-app upgrade flow already redirects to
+   Shopify's hosted pricing page, which renders the trial automatically.
 
 ---
 
@@ -143,8 +157,8 @@ Ensure the pricing section in the App Store and any in-app billing screens clear
 - [ ] Title and subtitle include at least one high-intent keyword (e.g. Instagram DM, Instagram checkout).
 - [ ] Short description leads with outcome and mentions free tier.
 - [ ] Full description includes all three tiers and main features.
-- [ ] **Trial:** Partner Dashboard trial settings match in-app messaging; listing text explains duration, what’s included, and post-trial price / cancel path (if you offer a listing-level trial).
-- [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test); Pro trial redemption linked from onboarding (`/app/pro-trial`) where relevant.
+- [ ] **Trial:** Trials are currently disabled. Listing text must NOT promise a free trial. (When enabled later, listing text must match Partner Dashboard trial settings — duration, what's included, post-trial price, cancel path.)
+- [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test). The FREE plan is the entry point; no trial redemption flow.
 - [ ] 5–8 screenshots in order: connect → map → automation → reply with link → analytics (and optional attribution/brand voice).
 - [ ] Captions on every screenshot.
 - [ ] Icon 1200×1200 and readable at small size.
