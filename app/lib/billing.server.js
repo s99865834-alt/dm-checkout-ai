@@ -3,6 +3,8 @@
 // and approval. We only query for the active subscription (to sync shop.plan)
 // and cancel on FREE downgrade (which is permitted under Managed Pricing).
 
+import { updateShopPlan } from "./db.server";
+
 /**
  * Get the current active subscription for a shop
  * @param {Object} admin - Authenticated Shopify admin API client
@@ -104,4 +106,68 @@ export async function cancelCurrentSubscription(admin) {
   }
 
   return responseJson.data?.appSubscriptionCancel?.appSubscription || null;
+}
+
+/**
+ * Map a Shopify Managed Pricing subscription to our internal plan enum
+ * (FREE | GROWTH | PRO). Returns FREE if there's no active subscription.
+ *
+ * @param {Object|null} subscription - Result of getCurrentSubscription()
+ * @returns {"FREE" | "GROWTH" | "PRO"}
+ */
+export function planFromSubscription(subscription) {
+  if (!subscription || subscription.status !== "ACTIVE") return "FREE";
+  const name = subscription.name || "";
+  if (name.includes("Pro")) return "PRO";
+  if (name.includes("Growth")) return "GROWTH";
+  // Active subscription with an unrecognised name. Default to GROWTH so
+  // we never accidentally downgrade a paying merchant. Caller should log.
+  return "GROWTH";
+}
+
+/**
+ * Sync shop.plan in our DB with the merchant's currently active Shopify
+ * subscription. This is the source of truth for paid plans under Managed
+ * Pricing — Shopify owns the subscription, we just mirror the state.
+ *
+ * Returns { changed, planBefore, planAfter }.
+ *
+ * Designed to be safe to call on every app entry: a fetch failure leaves
+ * shop.plan untouched (returns changed=false) so we never block app entry
+ * or accidentally downgrade on a transient Shopify API error.
+ *
+ * @param {Object} admin - Authenticated Shopify admin API client
+ * @param {Object} shop - Shop row from the DB (must include id, plan, shopify_domain)
+ * @returns {Promise<{changed: boolean, planBefore: string, planAfter: string}>}
+ */
+export async function syncShopPlanWithSubscription(admin, shop) {
+  const planBefore = shop?.plan || "FREE";
+  if (!shop?.id) return { changed: false, planBefore, planAfter: planBefore };
+
+  let subscription = null;
+  try {
+    subscription = await getCurrentSubscription(admin);
+  } catch (err) {
+    console.error(
+      `[billing.sync] Error fetching subscription for ${shop.shopify_domain}:`,
+      err.message
+    );
+    return { changed: false, planBefore, planAfter: planBefore };
+  }
+
+  const planAfter = planFromSubscription(subscription);
+  if (subscription?.status === "ACTIVE" && planAfter === "GROWTH" && !subscription.name?.includes("Growth")) {
+    // planFromSubscription defaulted to GROWTH on an unrecognised name —
+    // surface this in the logs so we notice plan-name drift in Shopify.
+    console.warn(
+      `[billing.sync] Unknown active subscription name "${subscription.name}" for ${shop.shopify_domain}; defaulting to GROWTH`
+    );
+  }
+
+  if (planBefore === planAfter) {
+    return { changed: false, planBefore, planAfter };
+  }
+
+  await updateShopPlan(shop.id, planAfter);
+  return { changed: true, planBefore, planAfter };
 }
