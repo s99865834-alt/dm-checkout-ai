@@ -11,7 +11,7 @@ import logger from "./lib/logger.server";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
 // Using env var with hardcoded fallback so it's never accidentally empty.
-const REQUIRED_SCOPES = ["write_products", "read_products", "read_orders", "read_legal_policies", "read_content"];
+const REQUIRED_SCOPES = ["read_products", "read_orders", "read_legal_policies", "read_content"];
 const scopesFromEnv = process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
 const merged = new Set([...scopesFromEnv, ...REQUIRED_SCOPES]);
 const scopes = [...merged];

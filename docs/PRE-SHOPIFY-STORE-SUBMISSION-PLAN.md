@@ -54,7 +54,6 @@
 
 ## 3. Test / debug / internal routes (before store submission)
 
-- **app.billing.test.jsx**: Test billing—ensure this is **disabled or removed** in production or only reachable in development (e.g. env check or removed before submission).
 - **app.attribution-debug.jsx**: Debug view—same as above; disable in production or restrict to internal/dev.
 - **app.webhook-demo.jsx**: Webhook testing—decide if this stays for merchants or is dev-only; if dev-only, gate or remove for store build.
 - **meta.test-webhook.jsx**, **meta.test-comments-api.jsx**, **meta.test-messages-api.jsx**: Meta API tests—ensure these are not publicly usable in a way that could confuse merchants or reviewers (e.g. behind admin/env or removed for store).

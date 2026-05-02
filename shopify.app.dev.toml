@@ -20,7 +20,7 @@ api_version = "2026-01"
   uri = "/webhooks/app/scopes_update"
 
 [access_scopes]
-scopes = "write_products,read_products,read_orders,read_legal_policies,read_content"
+scopes = "read_products,read_orders,read_legal_policies,read_content"
 
 [auth]
 redirect_urls = [ "https://dm-checkout-ai-develop.up.railway.app/auth/callback" ]
