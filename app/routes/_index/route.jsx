@@ -104,29 +104,14 @@ export const meta = () => [
 function Logo({ className = "" }) {
   return (
     <span className={`srLogo ${className}`}>
-      <svg
+      <img
         className="srLogoMark"
-        width="28"
-        height="28"
-        viewBox="0 0 28 28"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+        src="/landing/icon.svg"
+        alt=""
+        width="32"
+        height="32"
         aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="srLogoG" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#F472B6" />
-            <stop offset="1" stopColor="#7C3AED" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M4 7.5C4 6.12 5.12 5 6.5 5h15A2.5 2.5 0 0 1 24 7.5v9A2.5 2.5 0 0 1 21.5 19H17l-3.2 3.6a1 1 0 0 1-1.6-.2L11 19H6.5A2.5 2.5 0 0 1 4 16.5v-9Z"
-          fill="url(#srLogoG)"
-        />
-        <circle cx="10" cy="12" r="1.4" fill="#fff" />
-        <circle cx="14" cy="12" r="1.4" fill="#fff" />
-        <circle cx="18" cy="12" r="1.4" fill="#fff" />
-      </svg>
+      />
       <span className="srLogoText">
         SocialRepl<span className="srLogoTextAccent">.ai</span>
       </span>
