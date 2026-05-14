@@ -1035,7 +1035,13 @@ s-page .srBtnCompact {
   text-decoration: none;
   color: var(--sr-ink);
 }
-.srMarketingLanding .srLogoMark { display: block; }
+.srMarketingLanding .srLogoMark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
 .srMarketingLanding .srLogoText {
   font-size: 18px;
   font-weight: 700;
