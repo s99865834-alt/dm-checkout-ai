@@ -219,6 +219,38 @@ export async function saveMetaAuth(params) {
   }
 }
 
+/**
+ * Detect whether a different ACTIVE shop is already connected to the given
+ * Instagram Business account. Used at OAuth connect time to refuse a second
+ * shop trying to attach the same IG (which would make webhook routing
+ * non-deterministic).
+ *
+ * Returns null if no conflict, otherwise the conflicting shop row
+ * `{ shop_id, shopify_domain }`.
+ */
+export async function findActiveShopWithSameInstagram(currentShopId, igBusinessId) {
+  if (!igBusinessId) return null;
+
+  const { data, error } = await supabase
+    .from("meta_auth")
+    .select("shop_id, shops(id, shopify_domain, active)")
+    .eq("ig_business_id", igBusinessId)
+    .neq("shop_id", currentShopId);
+
+  if (error) {
+    console.error("findActiveShopWithSameInstagram error", error);
+    return null;
+  }
+
+  const conflict = (data || []).find((row) => row.shops?.active === true);
+  if (!conflict) return null;
+
+  return {
+    shop_id: conflict.shop_id,
+    shopify_domain: conflict.shops?.shopify_domain || null,
+  };
+}
+
 export async function getMetaAuth(shopId) {
   const { data, error } = await supabase
     .from("meta_auth")
