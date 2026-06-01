@@ -8,7 +8,7 @@
  */
 
 import { redirect } from "react-router";
-import { getShopByDomain } from "../lib/db.server";
+import { getShopByDomain, findActiveShopWithSameInstagram } from "../lib/db.server";
 import {
   saveMetaAuthForInstagram,
   INSTAGRAM_TOKEN_URL,
@@ -132,6 +132,19 @@ export async function loader({ request }) {
     const shopData = await getShopByDomain(targetShop);
     if (!shopData) {
       return redirect(`/app?error=${encodeURIComponent("Shop not found")}&shop=${encodeURIComponent(targetShop)}`);
+    }
+
+    // Refuse if this Instagram account is already linked to a different active shop.
+    const conflict = await findActiveShopWithSameInstagram(shopData.id, igBusinessId);
+    if (conflict) {
+      const otherDomain = conflict.shopify_domain || "another store";
+      console.error(
+        `[oauth][instagram-login] Refusing connect: IG ${igBusinessId} already linked to active shop ${otherDomain} (${conflict.shop_id})`
+      );
+      const msg = `This Instagram account is already connected to ${otherDomain}. Please disconnect it from that store before connecting it here.`;
+      return redirect(
+        `/app?error=${encodeURIComponent(msg)}&shop=${encodeURIComponent(targetShop)}`
+      );
     }
 
     await saveMetaAuthForInstagram(shopData.id, igBusinessId, longLivedToken, tokenExpiresAt);

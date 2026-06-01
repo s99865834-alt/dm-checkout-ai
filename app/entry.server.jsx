@@ -4,8 +4,20 @@ import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import { startScheduler } from "./lib/scheduler.server";
 
 export const streamTimeout = 5000;
+
+// Start the in-process scheduler exactly once when the server module loads.
+// Production-only by default to avoid noisy ticks during local dev / HMR.
+// Set ENABLE_SCHEDULER_DEV=true to also run it locally; DISABLE_SCHEDULER=true
+// to suppress it in production (e.g. when running an external cron scheduler).
+if (
+  process.env.NODE_ENV === "production" ||
+  process.env.ENABLE_SCHEDULER_DEV === "true"
+) {
+  startScheduler();
+}
 
 export default async function handleRequest(
   request,

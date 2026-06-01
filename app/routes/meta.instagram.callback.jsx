@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { getShopByDomain } from "../lib/db.server";
+import { getShopByDomain, findActiveShopWithSameInstagram } from "../lib/db.server";
 import { saveMetaAuth, metaGraphAPI, subscribeToWebhooks } from "../lib/meta.server";
 import logger from "../lib/logger.server";
 
@@ -290,6 +290,20 @@ export async function loader({ request }) {
     if (!shopData) {
       console.error(`[oauth] Shop not found in database: ${targetShop}`);
       return redirect(`/app/instagram?error=${encodeURIComponent("Shop not found")}`);
+    }
+
+    // Refuse if this Instagram account is already linked to a different active shop.
+    // Connecting the same IG to multiple shops makes webhook routing non-deterministic.
+    const conflict = await findActiveShopWithSameInstagram(shopData.id, igBusinessId);
+    if (conflict) {
+      const otherDomain = conflict.shopify_domain || "another store";
+      console.error(
+        `[oauth] Refusing connect: IG ${igBusinessId} already linked to active shop ${otherDomain} (${conflict.shop_id})`
+      );
+      const msg = `This Instagram account is already connected to ${otherDomain}. Please disconnect it from that store before connecting it here.`;
+      return redirect(
+        `/app?error=${encodeURIComponent(msg)}&shop=${encodeURIComponent(targetShop)}`
+      );
     }
 
     // Save Meta auth
