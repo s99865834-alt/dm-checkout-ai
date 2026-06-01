@@ -785,9 +785,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           product_handle: null,
         };
 
-        // Build links, brand voice, and product info in parallel (all independent)
+        // Build links, brand voice, product info, and (for product_question /
+        // variant_inquiry) full product variant context in parallel. The
+        // variant context lets the AI directly answer follow-up questions
+        // like "does this come in any other colors?" instead of just
+        // pointing the customer at the PDP. Mirrors the comment-to-DM
+        // path so behaviour is consistent across channels.
         const needsPdp = intent === "product_question" || intent === "variant_inquiry";
-        const [pdpResult, checkoutLink, brandVoiceData, productInfo] = await Promise.all([
+        const needsProductContext = needsPdp && shop.shopify_domain && productMapping.product_id;
+        const [pdpResult, checkoutLink, brandVoiceData, productInfo, rawProductContext] = await Promise.all([
           needsPdp
             ? buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productMapping.product_handle)
             : Promise.resolve(null),
@@ -796,6 +802,9 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           shop.shopify_domain && productMapping.product_id
             ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
             : Promise.resolve({ productName: null, productPrice: null }),
+          needsProductContext
+            ? getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         const productPageUrl = pdpResult?.url || null;
@@ -804,6 +813,22 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         const linkId = checkoutLink.linkId;
         const productName = productInfo.productName;
         const productPrice = productInfo.productPrice;
+
+        // Build the product context document (variants, options, description)
+        // when we need it, falling back to a string that tells the AI to be
+        // honest about not knowing — so it can't hallucinate variants.
+        let productContextForReply = null;
+        if (rawProductContext) {
+          productContextForReply = buildProductContextForAI(rawProductContext);
+          const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
+          logger.debug(
+            `[automation] Product context attached for DM follow-up: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0}`
+          );
+        } else if (needsProductContext) {
+          productContextForReply = {
+            text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
+          };
+        }
 
         const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
         const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
@@ -830,7 +855,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               .filter((m) => m.id !== message.id)
               .slice(0, 8)
               .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
-          }
+          },
+          productContextForReply
         );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -966,13 +992,17 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         };
 
         const needsPdp = intent === "product_question" || intent === "variant_inquiry";
-        const [pdpResult, checkoutLink, brandVoiceData, productInfo] = await Promise.all([
+        const needsProductContext = needsPdp && !!shop.shopify_domain;
+        const [pdpResult, checkoutLink, brandVoiceData, productInfo, rawProductContext] = await Promise.all([
           needsPdp
             ? buildProductPageLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, productMapping.product_handle)
             : Promise.resolve(null),
           buildCheckoutLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, 1),
           getBrandVoice(shop.id),
           getShopifyProductInfo(shop.shopify_domain, gid, variantGid),
+          needsProductContext
+            ? getShopifyProductContextForReply(shop.shopify_domain, gid).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         const productPageUrl = pdpResult?.url || null;
@@ -981,6 +1011,19 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         const linkId = checkoutLink.linkId;
         const productName = productInfo.productName || matchedProduct.title;
         const productPrice = productInfo.productPrice || firstVariant?.price;
+
+        let productContextForReply = null;
+        if (rawProductContext) {
+          productContextForReply = buildProductContextForAI(rawProductContext);
+          const variantCount = rawProductContext?.variants?.nodes?.length ?? 0;
+          logger.debug(
+            `[automation] Product context attached for direct-match DM reply: productId=${gid} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0}`
+          );
+        } else if (needsProductContext) {
+          productContextForReply = {
+            text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
+          };
+        }
 
         const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
         const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
@@ -1003,7 +1046,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               .filter((m) => m.id !== message.id)
               .slice(0, 8)
               .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
-          }
+          },
+          productContextForReply
         );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
