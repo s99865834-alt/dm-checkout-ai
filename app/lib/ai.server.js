@@ -164,12 +164,31 @@ Respond with ONLY a valid JSON object (no markdown, no code blocks) with the fol
 
 Intent meanings:
 - "purchase": Customer wants to buy something, is ready to purchase, or expresses enthusiasm/interest that suggests they would want to learn more or buy (e.g., "love this!", "I need this", "want this", "this is amazing", "this is so awesome", "where can I get this", "😍", "🔥"). When in doubt on a product post, lean toward "purchase" for positive/enthusiastic comments.
-- "product_question": Customer is asking about a specific product (features, details, materials, how it works, etc.)
-- "variant_inquiry": Customer is asking about specific variants (size, color, availability, etc.)
-- "price_request": Customer is asking about pricing for a specific product
-- "store_question": Customer is asking about the store in general (return policy, shipping, sales, store hours, general policies, etc.) - does NOT require a specific product
-- "clarification_needed": Customer message is too vague to determine what they want
-- "not_relevant": Message is clearly spam, unrelated chatter, or has zero connection to the products or business (e.g., "lol", random tags, arguments between users)
+- "product_question": Customer is asking about ONE specific product they have in mind — its features, details, materials, sizing, how it works, etc. Must reference a specific item, not the catalog as a whole.
+- "variant_inquiry": Customer is asking about specific variants (size, color, availability) of a specific product.
+- "price_request": Customer is asking about pricing for a specific product.
+- "store_question": Customer is asking about THE STORE / BUSINESS itself, not a single product. This includes:
+    • policies (returns, refunds, shipping, privacy, terms)
+    • operations (store hours, contact, location, sales/discounts)
+    • the catalog as a whole — e.g. "how many products do you carry?", "what products do you sell?", "what kind of items do you have?", "do you carry shoes?", "do you sell anything for kids?", "what brands do you stock?", "is your store still open?"
+  IMPORTANT: questions that mention "products" / "items" / "things" in the **plural and generic** ("products you carry", "do you have...", "what do you sell") are store_question, NOT product_question, even though the word "product" appears.
+- "clarification_needed": Customer message is too vague to determine what they want.
+- "not_relevant": Message is clearly spam, unrelated chatter, or has zero connection to the products or business (e.g., "lol", random tags, arguments between users).
+
+Disambiguation tie-breakers:
+1. If the message could refer to ONE specific item → product_question / variant_inquiry / price_request.
+2. If the message refers to the store's overall catalog, what they sell, or how the business runs → store_question.
+3. Treat the message in isolation. Do NOT assume it's about a previously-discussed product unless the message itself references that product.
+
+Examples (study these):
+- "How many products do you carry?" → store_question (catalog scope)
+- "What kinds of products do you sell?" → store_question (catalog scope)
+- "Do you ship internationally?" → store_question (policy)
+- "Whats your return policy?" → store_question (policy)
+- "Does this come in red?" → variant_inquiry (specific item)
+- "How does it work?" → product_question (specific item)
+- "How much is it?" → price_request (specific item)
+- "I want this!" → purchase
 
 Confidence: How confident you are in the classification (0.0 = not confident, 1.0 = very confident)
 Sentiment: Overall tone of the message
