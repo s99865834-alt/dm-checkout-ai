@@ -8,6 +8,7 @@ import {
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
+import { getInstagramAccountInfo } from "../lib/meta.server";
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -37,9 +38,25 @@ export const loader = async ({ request }) => {
     const shopId = url.searchParams.get("queue_shop_id") || null;
     const status = url.searchParams.get("queue_status") || null;
     const stores = await getAdminDashboardStores();
+
+    // Live-lookup Instagram usernames for connected shops in parallel.
+    // Falls back to null on failure so a single bad token doesn't break the table.
+    const igLookups = await Promise.allSettled(
+      stores.map((s) =>
+        s.instagram_connected
+          ? getInstagramAccountInfo(s.ig_business_id, s.shop_id)
+          : Promise.resolve(null)
+      )
+    );
+    const storesWithIg = stores.map((s, i) => {
+      const result = igLookups[i];
+      const info = result.status === "fulfilled" ? result.value : null;
+      return { ...s, instagram_username: info?.username || null };
+    });
+
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
-    return { authenticated: true, stores, queueOverview, queueItems, queueFilters: { shopId, status } };
+    return { authenticated: true, stores: storesWithIg, queueOverview, queueItems, queueFilters: { shopId, status } };
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
     return { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) };
@@ -173,6 +190,7 @@ export default function Admin() {
           <thead>
             <tr>
               <th style={styles.th}>Store</th>
+              <th style={styles.th}>Instagram</th>
               <th style={styles.th}>Tenure</th>
               <th style={styles.th}>Messages sent</th>
               <th style={styles.th}>Revenue attribution</th>
@@ -186,6 +204,15 @@ export default function Admin() {
                     <span style={styles.domain}>{row.shopify_domain}</span>
                     {!row.active && <span style={styles.badge}>inactive</span>}
                   </td>
+                  <td style={styles.td}>
+                    {row.instagram_username ? (
+                      <span style={styles.igHandle}>@{row.instagram_username}</span>
+                    ) : row.instagram_connected ? (
+                      <span style={styles.igConnected}>Connected</span>
+                    ) : (
+                      <span style={styles.igMuted}>Not connected</span>
+                    )}
+                  </td>
                   <td style={styles.td}>{formatTenure(row.created_at)}</td>
                   <td style={styles.td}>{row.messages_sent.toLocaleString()}</td>
                   <td style={styles.td}>{formatRevenue(row.revenue)}</td>
@@ -193,7 +220,7 @@ export default function Admin() {
               ))
             ) : (
               <tr>
-                <td colSpan={4} style={styles.tdEmpty}>
+                <td colSpan={5} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
               </tr>
@@ -487,6 +514,21 @@ const styles = {
   },
   domain: {
     fontWeight: 500,
+  },
+  igHandle: {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: "0.8125rem",
+    color: "#e2e8f0",
+  },
+  igConnected: {
+    fontSize: "0.8125rem",
+    color: "#22d3ee",
+  },
+  igMuted: {
+    fontSize: "0.8125rem",
+    color: "#64748b",
+    fontStyle: "italic",
   },
   badge: {
     marginLeft: "0.5rem",

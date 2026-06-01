@@ -1765,6 +1765,24 @@ export async function getOutboundQueueItems(filters = {}) {
 }
 
 async function buildAdminStoresResult(shops) {
+  const shopIds = shops.map((s) => s.id);
+
+  const { data: metaAuthRows, error: metaAuthError } = shopIds.length
+    ? await supabase
+        .from("meta_auth")
+        .select("shop_id, ig_business_id")
+        .in("shop_id", shopIds)
+    : { data: [], error: null };
+
+  if (metaAuthError) {
+    console.error("getAdminDashboardStores meta_auth error", metaAuthError);
+  }
+
+  const metaAuthByShop = new Map();
+  (metaAuthRows || []).forEach((row) => {
+    metaAuthByShop.set(row.shop_id, row);
+  });
+
   const { data: linksRows, error: linksError } = await supabase
     .from("links_sent")
     .select("shop_id");
@@ -1794,14 +1812,19 @@ async function buildAdminStoresResult(shops) {
     revenueByShop.set(id, (revenueByShop.get(id) || 0) + amount);
   });
 
-  return shops.map((s) => ({
-    shop_id: s.id,
-    shopify_domain: s.shopify_domain,
-    created_at: s.created_at,
-    active: s.active,
-    messages_sent: messagesByShop.get(s.id) || 0,
-    revenue: revenueByShop.get(s.id) || 0,
-  }));
+  return shops.map((s) => {
+    const metaAuth = metaAuthByShop.get(s.id) || null;
+    return {
+      shop_id: s.id,
+      shopify_domain: s.shopify_domain,
+      created_at: s.created_at,
+      active: s.active,
+      messages_sent: messagesByShop.get(s.id) || 0,
+      revenue: revenueByShop.get(s.id) || 0,
+      instagram_connected: !!metaAuth,
+      ig_business_id: metaAuth?.ig_business_id || null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
