@@ -536,6 +536,31 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
     }
 
+    // Guardrail: demote questions that reference the catalog/store as a whole
+    // to "store_question" so we don't blindly answer with a stale product link
+    // inherited from prior conversation context (e.g. an earlier comment-to-DM).
+    // Only fires when the classifier didn't extract a specific product name.
+    if (productSpecificIntents.includes(intent)) {
+      const text = (message.text || "").toLowerCase();
+      const hasProductEntity = !!message.ai_entities?.product_name;
+      const catalogPhrases = [
+        /how\s+many\s+(?:products|items|things|skus)/,
+        /what\s+(?:products|items|things|kinds?\s+of\s+(?:products|items|things)?)\s+(?:do\s+you|are)/,
+        /what\s+(?:do\s+you|kind\s+of\s+(?:stuff|things)\s+do\s+you)\s+(?:sell|carry|offer|stock)/,
+        /(?:do|does)\s+(?:you|your\s+store)\s+(?:sell|carry|offer|stock|have)\s+(?:any|other|more)/,
+        /(?:any|what)\s+other\s+(?:products|items|brands)/,
+        /(?:store|shop|business)\s+(?:hours?|location|address|open)/,
+        /(?:return|refund|shipping|privacy|terms)\s+policy/,
+      ];
+      const looksCatalogLevel = catalogPhrases.some((re) => re.test(text));
+      if (looksCatalogLevel && !hasProductEntity) {
+        logger.debug(
+          `[automation] Demoting "${intent}" → "store_question" (catalog/policy phrasing, no specific product entity): "${message.text}"`
+        );
+        intent = "store_question";
+      }
+    }
+
     // 5. Handle store_question (general store questions) - doesn't need product mapping
     if (intent === "store_question") {
       // Fetch brand voice, cached store context, and ask Shopify's Storefront
