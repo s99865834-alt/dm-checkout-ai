@@ -2012,8 +2012,10 @@ Write the response:`;
       }
     } catch (error) {
       console.error("[automation] Error generating AI response with custom instruction:", error);
-      // Fallback to prepending if AI generation fails
-    message = `${customInstruction}\n\n${message}`;
+      // AI generation failed — fall back to the canned message AS-IS.
+      // We deliberately do NOT prepend the raw `custom_instruction` text,
+      // because that would leak the merchant's style directive
+      // (e.g. "use emojis") into the customer-facing message.
     }
   }
 
