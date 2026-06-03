@@ -793,6 +793,14 @@ export async function getMessages(shopId, options = {}) {
     messageIds = null,
   } = options;
 
+  // Caller passed an explicit (possibly empty) ID list — short-circuit when
+  // it's empty so we don't issue a query that would either filter on a bogus
+  // UUID sentinel ("22P02 invalid input syntax for type uuid") or, worse,
+  // return everything on the shop.
+  if (Array.isArray(messageIds) && messageIds.length === 0) {
+    return [];
+  }
+
   let query = supabase
     .from("messages")
     .select(`
@@ -807,7 +815,7 @@ export async function getMessages(shopId, options = {}) {
     .eq("shop_id", shopId);
 
   if (messageIds) {
-    query = query.in("id", messageIds.length > 0 ? messageIds : ["__none__"]);
+    query = query.in("id", messageIds);
   }
 
   if (channel) {
@@ -862,13 +870,18 @@ export async function getMessages(shopId, options = {}) {
 export async function getMessageCount(shopId, options = {}) {
   const { channel = null, startDate = null, endDate = null, messageIds = null } = options;
 
+  // See getMessages: short-circuit when the caller filter is explicitly empty.
+  if (Array.isArray(messageIds) && messageIds.length === 0) {
+    return 0;
+  }
+
   let query = supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("shop_id", shopId);
 
   if (messageIds) {
-    query = query.in("id", messageIds.length > 0 ? messageIds : ["__none__"]);
+    query = query.in("id", messageIds);
   }
 
   if (channel) {
@@ -1275,7 +1288,14 @@ export async function getAnalytics(shopId, planName, options = {}) {
       .eq("shop_id", shopId);
 
     if (postFilterMessageIds) {
-      messagesQuery = messagesQuery.in("id", postFilterMessageIds.length > 0 ? postFilterMessageIds : ["__none__"]);
+      // Use a valid all-zeros UUID as a never-match sentinel. messages.id is a
+      // UUID column, so the previous "__none__" sentinel raised
+      // "22P02 invalid input syntax for type uuid" whenever the post filter
+      // resolved to zero matching messages.
+      messagesQuery = messagesQuery.in(
+        "id",
+        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
+      );
     }
     if (startDate) {
       messagesQuery = messagesQuery.gte("created_at", startDate);
@@ -1479,7 +1499,12 @@ export async function getProAnalytics(shopId, options = {}) {
       .eq("shop_id", shopId);
 
     if (postFilterMessageIds) {
-      messagesQuery = messagesQuery.in("id", postFilterMessageIds.length > 0 ? postFilterMessageIds : ["__none__"]);
+      // See note above: never-match sentinel must be a valid UUID for
+      // messages.id (UUID column). "__none__" raises 22P02.
+      messagesQuery = messagesQuery.in(
+        "id",
+        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
+      );
     }
     if (startDate) {
       messagesQuery = messagesQuery.gte("created_at", startDate);
