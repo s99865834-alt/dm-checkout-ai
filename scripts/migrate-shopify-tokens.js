@@ -25,7 +25,20 @@
  *   deployed (so subsequent refreshes work too).
  *
  * Usage:
- *   node --env-file=.env scripts/migrate-shopify-tokens.js [--dry-run] [--shop=<myshop.myshopify.com>]
+ *   node --env-file=.env scripts/migrate-shopify-tokens.js --list
+ *     -> Lists candidate sessions without contacting Shopify. Use this to
+ *        preview which rows the migration would target.
+ *
+ *   node --env-file=.env scripts/migrate-shopify-tokens.js [--shop=<myshop.myshopify.com>]
+ *     -> Performs the real exchange. Each successful call permanently
+ *        revokes the corresponding non-expiring token on Shopify's side, so
+ *        DO NOT cancel mid-run; the new tokens are written to the Session
+ *        row only after Shopify confirms the exchange.
+ *
+ * IMPORTANT: there is no `--dry-run` flag. Shopify revokes the legacy
+ * non-expiring token the moment the exchange call succeeds, so any
+ * "preview" that issues the request would burn the token without saving the
+ * new one. Use `--list` to preview, then run the real command.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -33,10 +46,19 @@ import { PrismaClient } from "@prisma/client";
 const TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
 const OFFLINE_TOKEN_TYPE = "urn:shopify:params:oauth:token-type:offline-access-token";
 
-const args = new Set(process.argv.slice(2));
-const DRY_RUN = args.has("--dry-run");
+const argv = process.argv.slice(2);
+const args = new Set(argv);
+const LIST_ONLY = args.has("--list");
+if (args.has("--dry-run")) {
+  console.error(
+    "[migrate-tokens] --dry-run was removed because the Shopify exchange " +
+      "endpoint immediately revokes the legacy token on success. Use " +
+      "`--list` to preview candidate sessions without contacting Shopify.",
+  );
+  process.exit(2);
+}
 const SHOP_FILTER = (() => {
-  const arg = process.argv.slice(2).find((a) => a.startsWith("--shop="));
+  const arg = argv.find((a) => a.startsWith("--shop="));
   return arg ? arg.slice("--shop=".length) : null;
 })();
 
@@ -121,16 +143,6 @@ async function migrateSession(session) {
     const expiresAt = new Date(now + expiresIn * 1000);
     const refreshExpiresAt = new Date(now + refreshExpiresIn * 1000);
 
-    if (DRY_RUN) {
-      result.status = "would-update";
-      result.preview = {
-        newExpires: expiresAt.toISOString(),
-        newRefreshTokenExpires: refreshExpiresAt.toISOString(),
-        newScope: tokenRes.scope,
-      };
-      return result;
-    }
-
     await prisma.session.update({
       where: { id: session.id },
       data: {
@@ -163,7 +175,7 @@ async function main() {
   console.log(
     `[migrate-tokens] Found ${sessions.length} non-expiring offline session(s)` +
       (SHOP_FILTER ? ` for shop=${SHOP_FILTER}` : "") +
-      (DRY_RUN ? " (DRY-RUN: nothing will be written)" : ""),
+      (LIST_ONLY ? " (LIST-ONLY: no Shopify calls, no DB writes)" : ""),
   );
 
   if (sessions.length === 0) {
@@ -171,7 +183,19 @@ async function main() {
     return;
   }
 
-  const summary = { migrated: 0, "would-update": 0, failed: 0 };
+  if (LIST_ONLY) {
+    for (const session of sessions) {
+      console.log(
+        `[migrate-tokens] candidate shop=${session.shop} session=${session.id} scope=${session.scope ?? "(none)"}`,
+      );
+    }
+    console.log(
+      "[migrate-tokens] Re-run without --list to perform the actual exchange.",
+    );
+    return;
+  }
+
+  const summary = { migrated: 0, failed: 0 };
   for (const session of sessions) {
     const r = await migrateSession(session);
     summary[r.status] = (summary[r.status] ?? 0) + 1;
@@ -179,10 +203,6 @@ async function main() {
     if (r.status === "failed") {
       console.error(
         `[migrate-tokens] ✗ shop=${r.shop} session=${r.sessionId}: ${r.error}`,
-      );
-    } else if (r.status === "would-update") {
-      console.log(
-        `[migrate-tokens] (dry-run) would update shop=${r.shop} session=${r.sessionId} → expires=${r.preview.newExpires} refreshExpires=${r.preview.newRefreshTokenExpires}`,
       );
     } else {
       console.log(
@@ -195,7 +215,10 @@ async function main() {
 
   if (summary.failed > 0) {
     console.error(
-      "[migrate-tokens] Some sessions failed. The most common cause is the merchant having uninstalled the app — those tokens are already revoked and can be safely deleted from the Session table.",
+      "[migrate-tokens] Some sessions failed. Common causes: the merchant " +
+        "uninstalled the app (delete those Session rows), or the legacy token " +
+        "was already revoked (the merchant just needs to open the embedded app " +
+        "once and the new auth flow will issue a fresh expiring token).",
     );
     process.exitCode = 1;
   }
