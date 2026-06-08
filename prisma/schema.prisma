@@ -34,4 +34,10 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+  // Required by @shopify/shopify-app-session-storage-prisma >= 9 to support
+  // expiring offline access tokens. Populated when the new
+  // future.expiringOfflineAccessTokens flag is enabled or when the one-time
+  // migration script exchanges legacy non-expiring tokens.
+  refreshToken        String?
+  refreshTokenExpires DateTime?
 }

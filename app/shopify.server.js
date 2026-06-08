@@ -25,9 +25,17 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
-  ...(process.env.SHOP_CUSTOM_DOMAIN
-    ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
-    : {}),
+  // Required for Shopify's offline-access-token deprecation. When this flag
+  // is on the library:
+  //   1. Requests new offline access tokens with expiring=1 (60-min TTL,
+  //      90-day refresh token).
+  //   2. Auto-refreshes the access token via the stored refresh token when
+  //      it's within 5 minutes of expiry.
+  // Public apps must be fully migrated to expiring tokens by Jan 1, 2027.
+  // See: https://shopify.dev/changelog/expiring-offline-access-tokens-required-for-all-public-apps-as-of-january-1-2027
+  future: {
+    expiringOfflineAccessTokens: true,
+  },
   afterAuth: async ({ session }) => {
     // afterAuth fires on every OAuth completion — in the embedded-app
     // token-exchange flow that's essentially every fresh app load, not
