@@ -53,6 +53,59 @@ const JSON_LD = {
     name: "Tennyson Labs",
     url: "https://www.socialrepl.ai",
   },
+  sameAs: [SHOPIFY_APP_STORE_URL],
+};
+
+// Single source of truth for the FAQ section and its FAQPage JSON-LD.
+// Problem-phrased questions first — they match what merchants actually
+// ask search engines and AI assistants.
+const FAQS = [
+  {
+    q: "How do I automatically reply to Instagram DMs on Shopify?",
+    a: "Install SocialReplAI from the Shopify App Store, connect your Instagram Business account, and turn on DM automation. The AI reads each incoming DM, detects what the customer is asking — price, sizing, availability, purchase intent — and replies instantly in your brand voice with a Shopify checkout link when the customer is ready to buy.",
+  },
+  {
+    q: "Can I send checkout links in Instagram DMs?",
+    a: "Yes. SocialReplAI generates a Shopify checkout URL with the right product and variant pre-loaded and includes it in the automated reply, so customers can buy in one tap. Every link is uniquely tracked for attribution.",
+  },
+  {
+    q: "How do I track sales from Instagram comments and DMs?",
+    a: "Every checkout link SocialReplAI sends is uniquely tracked. When a customer buys, the order is attributed back to the originating DM or comment, and the analytics dashboard shows clicks, orders, and revenue split by source.",
+  },
+  {
+    q: "How do I turn Instagram comments into sales?",
+    a: "With comment-to-DM automation: when someone comments on one of your posts, SocialReplAI automatically sends them a private DM with an AI-written message and a checkout link for the product featured in that post — links in public comments aren't clickable, but DM links are.",
+  },
+  {
+    q: "What does SocialRepl.ai actually do?",
+    a: "It connects your Shopify store to Instagram and uses AI to reply to DMs and comments with personalized messages and one-click checkout links. The AI learns your products, pricing, and store policies so replies sound like you.",
+  },
+  {
+    q: "Do I need an Instagram Business account?",
+    a: "Yes. You'll need an Instagram Business or Creator account linked to a Facebook Page to authorize messaging. We walk you through it during onboarding.",
+  },
+  {
+    q: "How does the AI know which product to recommend?",
+    a: "You can map products to specific Instagram posts, and the AI also detects product mentions from the conversation. When intent is clear, it generates a short checkout link for that product.",
+  },
+  {
+    q: "Can I customize the brand voice?",
+    a: "Yes. Pick from preset tones (Casual, Professional, Friendly, etc.) and add custom voice instructions — for example, \"always use emojis\" or \"don't discount.\" The AI sticks to your style.",
+  },
+  {
+    q: "What happens if I hit my message limit?",
+    a: "Automation pauses for the rest of the billing cycle, and you can upgrade anytime from inside the app to keep replying.",
+  },
+];
+
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
 };
 
 export const loader = async ({ request }) => {
@@ -94,6 +147,7 @@ export const meta = () => [
     content:
       "Automate Instagram DM and comment replies with AI-powered checkout links. Built for Shopify.",
   },
+  { tagName: "link", rel: "canonical", href: "https://www.socialrepl.ai/" },
   { property: "og:type", content: "website" },
   { property: "og:url", content: "https://www.socialrepl.ai" },
   { property: "og:image", content: "https://www.socialrepl.ai/landing/hero.png" },
@@ -126,6 +180,10 @@ export default function LandingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
+      />
 
       <header className="srNav">
         <div className="srNavInner">
@@ -137,6 +195,7 @@ export default function LandingPage() {
             <a href="#how-it-works">How it works</a>
             <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
+            <a href="/blog">Blog</a>
           </nav>
           <a
             className="srNavCta"
@@ -424,54 +483,12 @@ export default function LandingPage() {
           <h2>Frequently asked questions</h2>
         </div>
         <div className="srFaqList">
-          <details className="srFaqCard">
-            <summary>What does SocialRepl.ai actually do?</summary>
-            <p>
-              It connects your Shopify store to Instagram and uses AI to reply
-              to DMs and comments with personalized messages and one-click
-              checkout links. The AI learns your products, pricing, and store
-              policies so replies sound like you.
-            </p>
-          </details>
-          <details className="srFaqCard">
-            <summary>Do I need an Instagram Business account?</summary>
-            <p>
-              Yes. You'll need an Instagram Business or Creator account linked
-              to a Facebook Page to authorize messaging. We walk you through it
-              during onboarding.
-            </p>
-          </details>
-          <details className="srFaqCard">
-            <summary>How does the AI know which product to recommend?</summary>
-            <p>
-              You can map products to specific Instagram posts, and the AI also
-              detects product mentions from the conversation. When intent is
-              clear, it generates a short checkout link for that product.
-            </p>
-          </details>
-          <details className="srFaqCard">
-            <summary>How is revenue attributed?</summary>
-            <p>
-              Every checkout link is uniquely tracked. When a customer buys, we
-              attribute the order back to the originating DM or comment so you
-              can see exactly what Instagram is driving.
-            </p>
-          </details>
-          <details className="srFaqCard">
-            <summary>Can I customize the brand voice?</summary>
-            <p>
-              Yes. Pick from preset tones (Casual, Professional, Friendly,
-              etc.) and add custom voice instructions — for example, "always
-              use emojis" or "don't discount." The AI sticks to your style.
-            </p>
-          </details>
-          <details className="srFaqCard">
-            <summary>What happens if I hit my message limit?</summary>
-            <p>
-              Automation pauses for the rest of the billing cycle, and you can
-              upgrade anytime from inside the app to keep replying.
-            </p>
-          </details>
+          {FAQS.map(({ q, a }) => (
+            <details key={q} className="srFaqCard">
+              <summary>{q}</summary>
+              <p>{a}</p>
+            </details>
+          ))}
         </div>
       </section>
 
@@ -500,6 +517,7 @@ export default function LandingPage() {
             <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
+            <a href="/blog">Blog</a>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a

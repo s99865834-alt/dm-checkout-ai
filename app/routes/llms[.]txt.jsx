@@ -1,4 +1,10 @@
+import { BLOG_POSTS, postUrl } from "../lib/blog-posts";
+
 export function loader() {
+  const guideLinks = BLOG_POSTS.map(
+    (post) => `- [${post.title}](${postUrl(post.slug)}): ${post.description}`
+  ).join("\n");
+
   const content = `# SocialRepl.ai
 
 > AI-powered Instagram DM and comment automation for Shopify stores. Turns every Instagram interaction into a sale with personalized replies and one-click checkout links.
@@ -40,6 +46,14 @@ Instagram is one of the highest-intent sales channels for e-commerce, but most s
 ## Links
 
 - Website: https://www.socialrepl.ai
+- Shopify App Store listing: https://apps.shopify.com/socialreplai
+- Blog: https://www.socialrepl.ai/blog
+- Pricing: https://www.socialrepl.ai/#pricing
+- FAQ: https://www.socialrepl.ai/#faq
+
+## Guides
+
+${guideLinks}
 `;
 
   return new Response(content, {
