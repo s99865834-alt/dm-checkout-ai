@@ -1666,3 +1666,170 @@ s-page .srBtnCompact {
   text-align: center;
 }
 
+/* ── Blog index ───────────────────────────────────────────────── */
+.srMarketingLanding .srBlogMain {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+}
+.srMarketingLanding .srBlogIndexHead h1 {
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 10px 0 14px;
+}
+.srMarketingLanding .srBlogIndexHead p {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--sr-ink-muted);
+  margin: 0 0 36px;
+}
+.srMarketingLanding .srBlogList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 20px;
+}
+.srMarketingLanding .srBlogListItem a {
+  display: block;
+  padding: 24px 26px;
+  border: 1px solid var(--sr-line);
+  border-radius: var(--sr-radius-lg);
+  background: #fff;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.srMarketingLanding .srBlogListItem a:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sr-shadow-soft);
+}
+.srMarketingLanding .srBlogListItem h2 {
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.srMarketingLanding .srBlogListItem p {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--sr-ink-muted);
+  margin: 0 0 10px;
+}
+.srMarketingLanding .srBlogListMore {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sr-purple-2);
+}
+
+/* ── Article pages ────────────────────────────────────────────── */
+.srMarketingLanding .srArticleBreadcrumb {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 18px;
+}
+.srMarketingLanding .srArticleBreadcrumb a {
+  color: #6b7280;
+  text-decoration: none;
+}
+.srMarketingLanding .srArticleBreadcrumb a:hover { color: var(--sr-purple-2); }
+.srMarketingLanding .srArticleHeader h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
+}
+.srMarketingLanding .srArticleLede {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--sr-ink-muted);
+  margin: 0 0 10px;
+}
+.srMarketingLanding .srArticleDate {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 8px;
+}
+.srMarketingLanding .srArticleBody {
+  margin-top: 24px;
+}
+.srMarketingLanding .srArticleBody h2 {
+  font-size: 23px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 36px 0 12px;
+}
+.srMarketingLanding .srArticleBody p {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #374151;
+  margin: 0 0 16px;
+}
+.srMarketingLanding .srArticleBody a {
+  color: var(--sr-purple-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.srMarketingLanding .srCompareTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0 8px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.srMarketingLanding .srCompareTable th,
+.srMarketingLanding .srCompareTable td {
+  border: 1px solid var(--sr-line);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.srMarketingLanding .srCompareTable thead th {
+  background: var(--sr-bg-pink-soft);
+  font-weight: 700;
+}
+.srMarketingLanding .srCompareTable td:first-child {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.srMarketingLanding .srTableNote {
+  font-size: 13px;
+  color: #6b7280;
+}
+@media (max-width: 640px) {
+  .srMarketingLanding .srCompareTable { font-size: 13px; }
+  .srMarketingLanding .srCompareTable td:first-child { white-space: normal; }
+}
+.srMarketingLanding .srArticleFaq {
+  margin-top: 44px;
+}
+.srMarketingLanding .srArticleFaq h2 {
+  font-size: 23px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+.srMarketingLanding .srArticleFaq .srFaqCard {
+  margin-bottom: 10px;
+}
+.srMarketingLanding .srArticleCta {
+  margin-top: 44px;
+  padding: 28px 30px;
+  border-radius: var(--sr-radius-lg);
+  background: var(--sr-bg-pink-soft);
+  border: 1px solid var(--sr-line);
+}
+.srMarketingLanding .srArticleCta h2 {
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+.srMarketingLanding .srArticleCta p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--sr-ink-muted);
+  margin: 0 0 18px;
+}
+
