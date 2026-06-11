@@ -45,7 +45,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "10,000 messages/mo · Follow-up messages · Multi-turn conversations · Per-post analytics · Priority support",
+        "30-day free trial · 10,000 messages/mo · Follow-up messages · Multi-turn conversations · Per-post analytics · Priority support",
     },
   ],
   creator: {
@@ -457,6 +457,7 @@ export default function LandingPage() {
               <span className="srPlanAmount">$99</span>
               <span className="srPlanPer">/month</span>
             </div>
+            <div className="srPlanTrial">30-day free trial</div>
             <ul className="srPlanFeatures">
               <li>10,000 messages / month</li>
               <li>Everything in Growth</li>
@@ -471,7 +472,7 @@ export default function LandingPage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Start Pro
+              Start free Pro trial
             </a>
           </div>
         </div>

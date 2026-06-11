@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import { getCurrentSubscription, cancelCurrentSubscription } from "../lib/billing.server";
+import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
@@ -32,7 +32,7 @@ export const loader = async ({ request }) => {
     console.error("[billing] Error fetching subscription:", e.message);
   }
 
-  return { shop, plan, subscription };
+  return { shop, plan, subscription, trialStatus: getTrialStatus(subscription) };
 };
 
 export const action = async ({ request }) => {
@@ -90,7 +90,7 @@ function PlanActionButton({ fetcher, planName, variant, label }) {
 
 export default function BillingSelect() {
   const { shop, plan: currentPlan } = useOutletContext() || useLoaderData();
-  const { subscription } = useLoaderData();
+  const { subscription, trialStatus } = useLoaderData();
   const currentPlanName = currentPlan?.name || "FREE";
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
@@ -144,6 +144,8 @@ export default function BillingSelect() {
       period: "month",
       config: PLANS.PRO,
       description: "Maximum growth & insights",
+      badge: "30-day free trial",
+      trialNote: "First 30 days free — billing starts after your trial",
       features: [
         "10,000 messages/month",
         "Everything in Growth",
@@ -182,6 +184,21 @@ export default function BillingSelect() {
         </s-section>
       )}
 
+      {trialStatus && (
+        <s-section>
+          <s-banner tone={trialStatus.daysLeft <= 3 ? "warning" : "success"}>
+            <s-text variant="strong">
+              Free trial: {trialStatus.daysLeft} {trialStatus.daysLeft === 1 ? "day" : "days"} left
+            </s-text>
+            <s-text>
+              {" "}Your first charge is on{" "}
+              {new Date(trialStatus.trialEndsAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
+              Cancel anytime before then and you won't be billed.
+            </s-text>
+          </s-banner>
+        </s-section>
+      )}
+
       <s-section>
         <div className="srPlanGrid">
           {plans.map((plan) => {
@@ -210,6 +227,10 @@ export default function BillingSelect() {
                       /{plan.period}
                     </s-text>
                   </s-stack>
+
+                  {plan.trialNote && !isCurrent && (
+                    <s-text variant="bodySm" tone="success">{plan.trialNote}</s-text>
+                  )}
 
                   <s-paragraph tone="subdued">{plan.description}</s-paragraph>
 

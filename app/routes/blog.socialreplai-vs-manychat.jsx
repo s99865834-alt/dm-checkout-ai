@@ -20,7 +20,7 @@ const FAQS = [
   },
   {
     q: "Which is cheaper, SocialReplAI or ManyChat?",
-    a: "They price on different axes. SocialReplAI prices by message volume: free for 100 messages/month, $39/month for 500, $99/month for 10,000. ManyChat prices primarily by contact count, starting free and scaling up as your contact list grows. For low volume both are cheap; at scale, compare your expected message volume against your contact growth.",
+    a: "They price on different axes. SocialReplAI prices by message volume: free for 100 messages/month, $39/month for 500, $99/month for 10,000 (the Pro plan includes a 30-day free trial). ManyChat prices primarily by contact count, starting free and scaling up as your contact list grows. For low volume both are cheap; at scale, compare your expected message volume against your contact growth.",
   },
 ];
 
@@ -92,7 +92,7 @@ export default function VsManyChat() {
           </tr>
           <tr>
             <td>Pricing model</td>
-            <td>By message volume: Free (100/mo), $39/mo (500), $99/mo (10,000)</td>
+            <td>By message volume: Free (100/mo), $39/mo (500), $99/mo (10,000, 30-day free trial)</td>
             <td>By contact count: free tier, paid plans scale with contacts</td>
           </tr>
           <tr>
