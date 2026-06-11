@@ -22,6 +22,8 @@ export async function getCurrentSubscription(admin) {
           name
           status
           currentPeriodEnd
+          createdAt
+          trialDays
           test
           lineItems {
             id
@@ -106,6 +108,32 @@ export async function cancelCurrentSubscription(admin) {
   }
 
   return responseJson.data?.appSubscriptionCancel?.appSubscription || null;
+}
+
+/**
+ * Compute free-trial status from a subscription's createdAt + trialDays.
+ * Shopify delays the first charge until the trial ends; during the trial the
+ * subscription is already status ACTIVE, so this is the only way to tell a
+ * trialing merchant from a paying one.
+ *
+ * @param {Object|null} subscription - Result of getCurrentSubscription()
+ * @returns {{daysLeft: number, trialEndsAt: Date}|null} null when not in a trial
+ */
+export function getTrialStatus(subscription) {
+  if (!subscription || subscription.status !== "ACTIVE") return null;
+  const trialDays = Number(subscription.trialDays) || 0;
+  if (trialDays <= 0 || !subscription.createdAt) return null;
+
+  const trialEndsAt = new Date(
+    new Date(subscription.createdAt).getTime() + trialDays * 24 * 60 * 60 * 1000
+  );
+  const msLeft = trialEndsAt.getTime() - Date.now();
+  if (msLeft <= 0) return null;
+
+  return {
+    daysLeft: Math.ceil(msLeft / (24 * 60 * 60 * 1000)),
+    trialEndsAt,
+  };
 }
 
 /**

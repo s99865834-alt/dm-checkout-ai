@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount } from "../lib/db.server";
+import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
 const META_APP_ID = process.env.META_APP_ID;
@@ -75,7 +76,19 @@ export const loader = async ({ request }) => {
     missedComments = await getMissedCommentCount(shop.id);
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments };
+  // Free-trial countdown for the banner. Failure-safe: a billing API hiccup
+  // should never block the dashboard.
+  let trialStatus = null;
+  if (shop?.id && plan?.name !== "FREE") {
+    try {
+      const subscription = await getCurrentSubscription(admin);
+      trialStatus = getTrialStatus(subscription);
+    } catch (err) {
+      console.error("[home] Error fetching trial status:", err.message);
+    }
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus };
 };
 
 export const action = async ({ request }) => {
@@ -267,7 +280,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -444,6 +457,18 @@ export default function Index() {
           <s-text>
             {" "}You have full Pro access until{" "}
             {new Date(shop.beta_trial_expires_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
+          </s-text>
+        </s-banner>
+      )}
+      {trialStatus && (
+        <s-banner tone={trialStatus.daysLeft <= 3 ? "warning" : "success"}>
+          <s-text variant="strong">
+            {plan?.name === "GROWTH" ? "Growth" : "Pro"} free trial: {trialStatus.daysLeft}{" "}
+            {trialStatus.daysLeft === 1 ? "day" : "days"} left
+          </s-text>
+          <s-text>
+            {" "}You have full access — billing starts{" "}
+            {new Date(trialStatus.trialEndsAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
           </s-text>
         </s-banner>
       )}
