@@ -1,4 +1,5 @@
-import { redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
+import { GoogleAnalytics } from "../../components/marketing/GoogleAnalytics";
 
 const SHOPIFY_APP_STORE_URL =
   typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL
@@ -128,7 +129,7 @@ export const loader = async ({ request }) => {
   }
 
   if (host === "www.socialrepl.ai" || host === "socialrepl.ai") {
-    return {};
+    return { gaId: process.env.GA_MEASUREMENT_ID || "G-BDGNW3KHQD" };
   }
 
   return redirect("/app", 302);
@@ -174,8 +175,10 @@ function Logo({ className = "" }) {
 }
 
 export default function LandingPage() {
+  const { gaId } = useLoaderData() || {};
   return (
     <div className="srMarketingLanding">
+      <GoogleAnalytics gaId={gaId} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
