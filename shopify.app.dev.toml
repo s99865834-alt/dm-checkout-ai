@@ -19,10 +19,6 @@ api_version = "2026-01"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-  [[webhooks.subscriptions]]
-  topics = [ "orders/create" ]
-  uri = "/webhooks/shopify/orders"
-
 [access_scopes]
 scopes = "read_products,read_orders,read_legal_policies,read_content"
 
