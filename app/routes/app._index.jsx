@@ -10,6 +10,11 @@ import { PlanGate, usePlanAccess } from "../components/PlanGate";
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
+// Review-prompt pacing. We re-ask only after a cooldown, and never more than
+// a hard cap of times, so a merchant who keeps dismissing isn't pestered.
+const REVIEW_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days between asks
+const REVIEW_MAX_ASKS = 3; // worst case: day 0, ~30, ~60, then stop forever
+
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
 
@@ -342,38 +347,63 @@ export default function Index() {
 
   // Ask for an App Store review once the merchant has a real win (first
   // attributed order or 20+ sent replies). Uses Shopify's native Reviews API,
-  // which enforces its own rate limits, cooldowns, and "already reviewed"
-  // checks — so this is compliant (never incentivized) and won't nag. We also
-  // guard with a per-shop localStorage flag so we don't re-request every load.
-  // Fired from an effect (not a click) per Shopify's guidance; failures are
-  // swallowed so a declined/unavailable prompt never affects the page.
+  // which is compliant (never incentivized) and enforces its own annual limit.
+  // We pace it ourselves with a per-shop localStorage record so we don't ask
+  // on every load: re-ask only after REVIEW_COOLDOWN_MS, never more than
+  // REVIEW_MAX_ASKS times, and stop forever once the merchant has reviewed (or
+  // Shopify reports they already have). Fired from an effect (not a click) per
+  // Shopify's guidance; failures are swallowed so it never affects the page.
   useEffect(() => {
     if (!reviewEligible || !shop?.id) return;
     if (typeof window === "undefined" || typeof window.shopify === "undefined") return;
     if (!window.shopify.reviews?.request) return;
 
     const flagKey = `srai_review_requested_${shop.id}`;
+
+    // Read the pacing record. Tolerates the legacy format (a bare timestamp
+    // string written by the previous version) by treating it as one prior ask.
+    let record = { lastAt: 0, count: 0, done: false };
     try {
-      if (window.localStorage.getItem(flagKey)) return;
+      const raw = window.localStorage.getItem(flagKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "number") {
+          record = { lastAt: parsed, count: 1, done: false };
+        } else if (parsed && typeof parsed === "object") {
+          record = { lastAt: 0, count: 0, done: false, ...parsed };
+        }
+      }
     } catch {
-      // localStorage unavailable (private mode); fall back to Shopify's own
-      // rate limiting and request anyway.
+      // Unparseable/unavailable (e.g. private mode). Proceed with defaults;
+      // Shopify's own annual limit is the backstop.
     }
+
+    if (record.done) return;
+    if (record.count >= REVIEW_MAX_ASKS) return;
+    if (record.lastAt && Date.now() - record.lastAt < REVIEW_COOLDOWN_MS) return;
+
+    const persist = (next) => {
+      try {
+        window.localStorage.setItem(flagKey, JSON.stringify(next));
+      } catch {
+        /* ignore — pacing is best-effort */
+      }
+    };
 
     let cancelled = false;
     const timer = setTimeout(async () => {
       if (cancelled) return;
       try {
-        await window.shopify.reviews.request();
-        // Mark as attempted regardless of outcome — Shopify decides whether the
-        // modal actually showed; we just avoid re-asking from this browser.
-        try {
-          window.localStorage.setItem(flagKey, String(Date.now()));
-        } catch {
-          /* ignore */
-        }
+        const result = await window.shopify.reviews.request();
+        // success === true means the modal was shown; code "already-reviewed"
+        // means they've already left one. Either way, never ask again.
+        const done =
+          result?.success === true || result?.code === "already-reviewed";
+        persist({ lastAt: Date.now(), count: record.count + 1, done });
       } catch {
-        /* ignore — never let a review prompt break the dashboard */
+        // Treat a thrown error as an attempt so we still respect the cooldown
+        // instead of retrying on the next render.
+        persist({ lastAt: Date.now(), count: record.count + 1, done: false });
       }
     }, 2500);
 
