@@ -113,10 +113,18 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const host = url.hostname;
 
-  const shortDomain = (process.env.SHORT_LINK_DOMAIN || "")
+  // The short-link domain (srai.link) exists only to serve /{linkId}
+  // redirects. If anyone lands on its root or any non-link path, bounce them
+  // to the marketing site. The default mirrors buildCheckoutLink's shortener
+  // base so this keeps working even when SHORT_LINK_DOMAIN isn't set in the
+  // server environment (which is what previously dumped srai.link visitors
+  // onto the embedded app's /auth/login install page). Both the www host and
+  // the bare apex are matched.
+  const shortDomain = (process.env.SHORT_LINK_DOMAIN || "https://www.srai.link")
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
-  if (shortDomain && host === shortDomain) {
+  const shortApex = shortDomain.replace(/^www\./, "");
+  if (shortDomain && (host === shortDomain || host === shortApex)) {
     return redirect("https://www.socialrepl.ai", 301);
   }
 
