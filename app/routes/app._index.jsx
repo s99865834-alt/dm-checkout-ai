@@ -3,7 +3,7 @@ import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -88,7 +88,19 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus };
+  // Decide whether this merchant has gotten enough value to be worth a
+  // (Shopify-native, rate-limited) review prompt: first attributed order OR
+  // 20+ replies sent by the app. Both helpers are failure-safe.
+  let reviewEligible = false;
+  if (shop?.id) {
+    const [attributionCount, sentLinkCount] = await Promise.all([
+      getAttributionCount(shop.id),
+      getSentLinkCount(shop.id),
+    ]);
+    reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
+  }
+
+  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus, reviewEligible };
 };
 
 export const action = async ({ request }) => {
@@ -280,7 +292,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus } = loaderData || {};
+  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus, reviewEligible } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -327,6 +339,49 @@ export default function Index() {
     setLocalMappings(productMappings || []);
     if (shopifyProducts?.length) setLocalProducts(shopifyProducts);
   }, [settings, brandVoice, productMappings, shopifyProducts]);
+
+  // Ask for an App Store review once the merchant has a real win (first
+  // attributed order or 20+ sent replies). Uses Shopify's native Reviews API,
+  // which enforces its own rate limits, cooldowns, and "already reviewed"
+  // checks — so this is compliant (never incentivized) and won't nag. We also
+  // guard with a per-shop localStorage flag so we don't re-request every load.
+  // Fired from an effect (not a click) per Shopify's guidance; failures are
+  // swallowed so a declined/unavailable prompt never affects the page.
+  useEffect(() => {
+    if (!reviewEligible || !shop?.id) return;
+    if (typeof window === "undefined" || typeof window.shopify === "undefined") return;
+    if (!window.shopify.reviews?.request) return;
+
+    const flagKey = `srai_review_requested_${shop.id}`;
+    try {
+      if (window.localStorage.getItem(flagKey)) return;
+    } catch {
+      // localStorage unavailable (private mode); fall back to Shopify's own
+      // rate limiting and request anyway.
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        await window.shopify.reviews.request();
+        // Mark as attempted regardless of outcome — Shopify decides whether the
+        // modal actually showed; we just avoid re-asking from this browser.
+        try {
+          window.localStorage.setItem(flagKey, String(Date.now()));
+        } catch {
+          /* ignore */
+        }
+      } catch {
+        /* ignore — never let a review prompt break the dashboard */
+      }
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [reviewEligible, shop?.id]);
 
   // After postFetcher completes: update mappings locally or revalidate for toggle-post
   useEffect(() => {

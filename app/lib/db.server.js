@@ -706,6 +706,48 @@ export async function getAttributionRecords(shopId, filters = {}) {
 }
 
 /**
+ * Lifetime count of attributed orders for a shop (head-only count query).
+ * Used to decide when a merchant has gotten a real "win" worth a review prompt.
+ * Failure-safe: returns 0 on error so a count hiccup never blocks the dashboard.
+ * @param {string} shopId
+ * @returns {Promise<number>}
+ */
+export async function getAttributionCount(shopId) {
+  if (!shopId) return 0;
+  const { count, error } = await supabase
+    .from("attribution")
+    .select("*", { count: "exact", head: true })
+    .eq("shop_id", shopId);
+
+  if (error) {
+    console.error("getAttributionCount error", error);
+    return 0;
+  }
+  return count || 0;
+}
+
+/**
+ * Lifetime count of reply links the app has sent for a shop (head-only count).
+ * Proxy for "messages the app has sent" — every automated reply with a
+ * checkout/PDP link records a links_sent row. Failure-safe (returns 0).
+ * @param {string} shopId
+ * @returns {Promise<number>}
+ */
+export async function getSentLinkCount(shopId) {
+  if (!shopId) return 0;
+  const { count, error } = await supabase
+    .from("links_sent")
+    .select("*", { count: "exact", head: true })
+    .eq("shop_id", shopId);
+
+  if (error) {
+    console.error("getSentLinkCount error", error);
+    return 0;
+  }
+  return count || 0;
+}
+
+/**
  * Get settings for a shop.
  */
 /**
