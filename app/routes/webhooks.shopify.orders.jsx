@@ -25,7 +25,14 @@ function parseAttributionUrl(url) {
   if (!url) return null;
 
   try {
-    const urlObj = new URL(url);
+    // Shopify's order `landing_site` is typically a RELATIVE path
+    // (e.g. "/cart/51139...:1?ref=link_abc123"), while `referring_site` is
+    // usually an absolute URL. `new URL(relativePath)` throws "Invalid URL"
+    // without a base, which previously made this function return null for
+    // every landing_site and silently skip attribution. Supplying a base
+    // resolves relative paths and is ignored for absolute URLs — we only
+    // read query params, so the placeholder host is irrelevant.
+    const urlObj = new URL(url, "https://shopify-attribution.local");
     const params = urlObj.searchParams;
 
     // Extract link_id from ref parameter (format: ref=link_{link_id})
