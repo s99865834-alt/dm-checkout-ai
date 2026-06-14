@@ -47,6 +47,95 @@ async function loadShopSession(shopDomain) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Store total revenue (year-to-date)
+// ---------------------------------------------------------------------------
+// Sums a merchant's total Shopify sales for the current calendar year using
+// their offline Admin session. Uses the orders connection (read_orders) since
+// the app doesn't hold read_reports/ShopifyQL scope. Results are cached
+// in-process for an hour so the admin dashboard doesn't re-paginate Shopify on
+// every load. Best-effort: returns null on any failure so a single bad token
+// never breaks the dashboard.
+
+const _revenueYtdCache = new Map(); // shopDomain -> { value, at }
+const REVENUE_YTD_TTL_MS = 60 * 60 * 1000; // 1 hour
+// 20 pages * 250 orders = 5,000-order ceiling per store per load. Beyond that
+// the figure is reported as a lower bound (capped) to keep page loads bounded.
+const REVENUE_YTD_MAX_PAGES = 20;
+
+async function _fetchStoreTotalRevenueYTD(shopDomain) {
+  const session = await loadShopSession(shopDomain);
+  if (!session?.accessToken) {
+    logger.debug(`[shopify-data] revenue YTD: no session for ${shopDomain}`);
+    return null;
+  }
+
+  const api = getShopifyApi();
+  const client = new api.clients.Graphql({ session });
+  const yearStart = `${new Date().getUTCFullYear()}-01-01`;
+  const query = `
+    query StoreRevenueYTD($cursor: String) {
+      orders(first: 250, after: $cursor, query: "created_at:>=${yearStart}") {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          currentTotalPriceSet { shopMoney { amount currencyCode } }
+        }
+      }
+    }
+  `;
+
+  let cursor = null;
+  let total = 0;
+  let currencyCode = null;
+  let pages = 0;
+
+  while (pages < REVENUE_YTD_MAX_PAGES) {
+    const response = await client.request(query, { variables: { cursor } });
+    const conn = response?.data?.orders;
+    for (const order of conn?.nodes || []) {
+      const money = order?.currentTotalPriceSet?.shopMoney;
+      if (money?.amount) total += parseFloat(money.amount) || 0;
+      if (!currencyCode && money?.currencyCode) currencyCode = money.currencyCode;
+    }
+    pages += 1;
+    if (conn?.pageInfo?.hasNextPage) {
+      cursor = conn.pageInfo.endCursor;
+      // Ease Shopify's cost-based GraphQL throttle between pages.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } else {
+      return { amount: total, currencyCode, capped: false };
+    }
+  }
+
+  return { amount: total, currencyCode, capped: true };
+}
+
+/**
+ * Total Shopify sales for a store, year-to-date. Cached in-process for 1 hour.
+ * @param {string} shopDomain
+ * @returns {Promise<{amount:number, currencyCode:string|null, capped:boolean}|null>}
+ */
+export async function getStoreTotalRevenueYTD(shopDomain) {
+  if (!shopDomain) return null;
+
+  const cached = _revenueYtdCache.get(shopDomain);
+  if (cached && Date.now() - cached.at < REVENUE_YTD_TTL_MS) {
+    return cached.value;
+  }
+
+  try {
+    const value = await _fetchStoreTotalRevenueYTD(shopDomain);
+    if (value) _revenueYtdCache.set(shopDomain, { value, at: Date.now() });
+    return value;
+  } catch (error) {
+    console.error(
+      `[shopify-data] revenue YTD failed for ${shopDomain}:`,
+      error?.message || error,
+    );
+    return null;
+  }
+}
+
 /** Strip HTML tags and collapse whitespace for plain-text AI context. Keeps payload minimal. */
 function stripHtml(html) {
   if (!html || typeof html !== "string") return "";
