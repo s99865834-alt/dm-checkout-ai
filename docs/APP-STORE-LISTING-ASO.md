@@ -13,9 +13,11 @@ Use this copy and checklist when submitting or updating the SocialRepl.ai listin
 
 **Subtitle (if supported):** One line with keywords for search and ad relevance.
 
-- **Suggested:** `Transform Instagram DMs and comments into sales with AI checkout links`
+- **Suggested:** `Turn Instagram DMs & comments into Shopify orders — with revenue proof`
 
 **Keywords to naturally include in title/subtitle:** Instagram DM, Instagram checkout, DM to sale, Instagram automation, Instagram to Shopify.
+
+> **Positioning note (use everywhere):** Lead with the one thing competitors structurally can't say — *"The Shopify-native AI that turns Instagram conversations into Shopify orders, and shows you the revenue it drove."* The four supporting pillars: (1) it already speaks your catalog, (2) closed-loop revenue attribution, (3) no flows to build, (4) focused purely on selling. Per Shopify App Store policy, do **not** name or disparage competitors (ManyChat, etc.) in the listing copy — make the case positively with phrases like "unlike generic chat-marketing tools." Competitor comparisons belong on our own site/blog (e.g. the SocialRepl.ai vs ManyChat post), not the listing.
 
 ---
 
@@ -25,14 +27,15 @@ Use for the main visible description; lead with the outcome, then features.
 
 **Lead (first 1–2 sentences):**
 
-> Transform Instagram DMs and comments into sales. SocialRepl.ai sends AI-powered automated replies with one-click checkout links so you never miss a DM sale.
+> Turn Instagram DMs and comments into Shopify orders — and see the revenue each one drove. Built natively on Shopify, SocialRepl.ai already knows your catalog, replies with one-click checkout links, and attributes every sale. No flows to build.
 
 **Bullets (outcome-focused):**
 
-- Connect your Instagram Business account and map products to posts
-- AI replies to DMs and comments with personalized checkout links
-- Track clicks and revenue from Instagram in one dashboard
-- Free tier: automated messages each month with DM automation—no credit card required (see pricing for limits)
+- Shopify-native: the AI answers from your live catalog, pricing, and policies — nothing to teach it
+- Closed-loop attribution: see exactly how much Shopify revenue your Instagram conversations drove
+- AI replies to DMs and comments with one-click checkout links — no flow builder to set up
+- Comment-to-DM: turn public comments into private DMs with the right product link
+- Free tier with DM automation each month — no credit card required (see pricing for limits)
 
 ### 2.1 Free trials (currently disabled)
 
@@ -69,7 +72,9 @@ Expand with tier comparison and keywords. Avoid keyword stuffing; use terms natu
 
 ---
 
-Transform Instagram DMs and comments into sales with AI-powered automated responses and checkout links.
+Turn Instagram DMs and comments into Shopify orders — and see the revenue each conversation drove.
+
+SocialRepl.ai is a Shopify-native AI sales agent. Unlike generic chat-marketing tools you have to teach about your store and program with a visual flow builder, SocialRepl.ai already understands your commerce. It reads each incoming DM or comment, answers in your brand voice using your live catalog, drops in a one-click checkout link, and attributes the resulting order back to the conversation that started it. Set up in minutes — there are no flows to build.
 
 **How it works**
 
@@ -81,29 +86,32 @@ Transform Instagram DMs and comments into sales with AI-powered automated respon
 **Features by plan**
 
 **Free**
-- 25 automated messages per month
-- DM automation with checkout links
+- 100 automated messages per month
+- DM automation with AI and checkout links
 - Basic analytics (messages sent, CTR, top trigger phrases)
-- Order attribution tracking
+- No credit card required
 
-**Growth ($29/mo)**
+**Growth ($39/mo)**
 - 500 automated messages per month
 - Comment-to-DM automation
-- Multi-turn conversation support
-- Brand voice customization (Friendly, Expert, Casual)
+- Brand voice customization (Casual, Professional, Friendly, and custom)
+- Order attribution + full analytics
 
 **Pro ($99/mo)**
-- 50,000 automated messages per month
-- Follow-up automation (abandoned checkout recovery)
-- All Growth features included
+- 10,000 automated messages per month
+- Everything in Growth, plus follow-up messages
+- Multi-turn conversations and per-post analytics
 - Priority support
 
-**Why SocialRepl.ai**
+> Keep these numbers in sync with the live pricing in `app/routes/_index/route.jsx` (JSON-LD + pricing cards). For trial wording, see §2.1.
 
-- Built for Shopify: connects natively with your store and products.
-- Respects Instagram’s 24-hour messaging window and Meta’s policies.
-- AI matches intent to the right product and uses your brand voice.
-- No coding required: connect, map, and go.
+**Why SocialRepl.ai (vs. generic chat-marketing tools)**
+
+- **It already speaks your catalog.** As a Shopify-native app, the AI answers from your real products, pricing, variants, and policies, and generates live checkout links — no flows to configure, and it stays current as your catalog changes. Generalist tools make you build all of this.
+- **Proof, not just engagement.** Every link is tracked to the order, so you can see "$X in Shopify orders came from Instagram this month." We're built around attributed revenue, not leads, clicks, or broadcasts.
+- **No flows to build.** The AI handles multi-turn questions you never scripted. Set up in minutes, not days — there's no keyword decision-tree to design and maintain.
+- **Focused on closing the sale.** One job, done well: turning Instagram product interest into Shopify checkout. No bloated UI for channels and campaigns you'll never use.
+- Built for Shopify, respects Instagram's 24-hour messaging window and Meta's policies, and requires no coding — connect, map, and go.
 
 ---
 
@@ -136,9 +144,9 @@ Create 5–8 screenshots that tell the story in this order. Add short captions o
 
 ## 6. Pricing clarity (in listing and screenshots)
 
-- **Free tier:** Prominent—“Start free: 25 automated messages per month.”
-- **Growth:** $29/month — 500 messages, comment-to-DM, multi-turn conversations, brand voice.
-- **Pro:** $99/month — 50,000 messages, follow-up automation, all Growth features, priority support.
+- **Free tier:** Prominent—“Start free: 100 automated messages per month, no credit card.”
+- **Growth:** $39/month — 500 messages, comment-to-DM, brand voice, order attribution + full analytics.
+- **Pro:** $99/month — 10,000 messages, follow-up messages, multi-turn conversations, per-post analytics, priority support.
 
 Ensure the pricing section in the App Store and any in-app billing screens clearly differentiate what each tier includes so merchants know before installing.
 

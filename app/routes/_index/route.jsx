@@ -14,13 +14,13 @@ const JSON_LD = {
   operatingSystem: "Web",
   url: "https://www.socialrepl.ai",
   description:
-    "SocialRepl.ai connects your Shopify store to Instagram so customer conversations become sales. AI replies to DMs and comments with personalized messages and one-click checkout links.",
+    "SocialRepl.ai is the Shopify-native AI that turns Instagram DMs and comments into Shopify orders — and shows you the revenue it drove. Unlike generic chat-marketing tools, it knows your live catalog, sends one-click checkout links, and attributes every order back to the conversation that started it. No flow builder to set up.",
   featureList: [
+    "Shopify-native AI that knows your live catalog, pricing, and policies",
+    "Closed-loop order attribution — see the revenue each Instagram conversation drove",
     "AI-powered Instagram DM automation with one-click checkout links",
     "Automatically reply to post comments with private DMs and product links",
-    "AI brand voice that knows your products, policies, and FAQs",
-    "Order attribution — track which Instagram conversations drive sales",
-    "Multi-turn AI conversations that guide customers to checkout",
+    "No flow builder — AI handles questions you never scripted, multi-turn to checkout",
   ],
   offers: [
     {
@@ -80,6 +80,10 @@ const FAQS = [
   {
     q: "What does SocialRepl.ai actually do?",
     a: "It connects your Shopify store to Instagram and uses AI to reply to DMs and comments with personalized messages and one-click checkout links. The AI learns your products, pricing, and store policies so replies sound like you.",
+  },
+  {
+    q: "How is SocialRepl.ai different from ManyChat?",
+    a: "SocialRepl.ai is a Shopify-native AI sales agent; ManyChat is a horizontal chat-marketing platform you configure with a visual flow builder. Because we're built on Shopify, the AI already knows your live catalog, pricing, and policies, generates one-click checkout links, and attributes every order back to the DM or comment that drove it — with no flows to build. ManyChat is the stronger choice if you need multi-channel broadcasts and campaign flows across WhatsApp, SMS, and email. Many stores run both: ManyChat for outbound campaigns, SocialRepl.ai as the always-on agent that turns inbound Instagram conversations into Shopify orders.",
   },
   {
     q: "Do I need an Instagram Business account?",
@@ -144,17 +148,17 @@ export const loader = async ({ request }) => {
 };
 
 export const meta = () => [
-  { title: "SocialRepl.ai — Turn Instagram DMs & comments into Shopify sales" },
+  { title: "SocialRepl.ai — Turn Instagram DMs & comments into Shopify orders, with proof" },
   {
     name: "description",
     content:
-      "AI replies to your Instagram DMs and comments with one-click Shopify checkout links — so you sell more while you sleep. Built for Shopify merchants.",
+      "The Shopify-native AI that turns Instagram DMs and comments into Shopify orders — and shows you the revenue it drove. It already knows your catalog, sends one-click checkout links, and attributes every sale. No flow builder, unlike ManyChat.",
   },
-  { property: "og:title", content: "SocialRepl.ai — Instagram automation for Shopify" },
+  { property: "og:title", content: "SocialRepl.ai — Instagram → Shopify orders, with proof" },
   {
     property: "og:description",
     content:
-      "Automate Instagram DM and comment replies with AI-powered checkout links. Built for Shopify.",
+      "Shopify-native AI that turns Instagram conversations into orders and proves the revenue. Knows your catalog, sends checkout links, attributes every sale — no flows to build.",
   },
   { tagName: "link", rel: "canonical", href: "https://www.socialrepl.ai/" },
   { property: "og:type", content: "website" },
@@ -203,6 +207,7 @@ export default function LandingPage() {
           </a>
           <nav className="srNavLinks" aria-label="Primary">
             <a href="#features">Features</a>
+            <a href="#why">Why us</a>
             <a href="#how-it-works">How it works</a>
             <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
@@ -223,16 +228,17 @@ export default function LandingPage() {
         <div className="srHeroBg" aria-hidden="true" />
         <div className="srHeroInner">
           <div className="srHeroCopy">
-            <span className="srEyebrow">Built for Shopify · Works with Instagram</span>
+            <span className="srEyebrow">The Shopify-native Instagram sales agent</span>
             <h1>
-              Transform Instagram DMs &amp; comments{" "}
-              <span className="srHeroHighlight">into sales.</span>
+              Turn Instagram DMs &amp; comments{" "}
+              <span className="srHeroHighlight">into Shopify orders.</span>
             </h1>
             <p className="srHeroLede">
-              SocialRepl.ai connects your Shopify store to Instagram so customer
-              conversations become orders. When someone DMs or comments about a
-              product, the app replies instantly with a personalized AI message
-              and a direct checkout link.
+              SocialRepl.ai is the only AI that turns your Instagram
+              conversations into Shopify orders — and shows you the revenue it
+              drove. It already knows your catalog, replies in your brand voice
+              with one-click checkout links, and attributes every sale back to
+              the DM or comment that started it. No flows to build.
             </p>
             <div className="srHeroActions">
               <a
@@ -376,6 +382,102 @@ export default function LandingPage() {
             />
           </div>
         </div>
+      </section>
+
+      <section id="why" className="srWhy">
+        <div className="srSectionHead">
+          <span className="srEyebrow">Why SocialRepl.ai</span>
+          <h2>Built to sell on Shopify — not a chat tool with a Shopify add-on.</h2>
+          <p className="srSectionSub">
+            General chat-marketing platforms like ManyChat are powerful, but
+            they&apos;re horizontal tools you have to teach about your store.
+            SocialRepl.ai is a Shopify app first, so it understands your
+            commerce out of the box and is built around one job: turning
+            conversations into attributed revenue.
+          </p>
+        </div>
+
+        <div className="srWhyGrid">
+          <div className="srWhyCard">
+            <h3>It already speaks your catalog</h3>
+            <p>
+              Because it&apos;s native to Shopify, the AI answers from your real
+              products, pricing, variants, and policies — and generates live
+              checkout links. Generalist tools make you build that. We just
+              know it, and it stays current when your catalog changes.
+            </p>
+          </div>
+          <div className="srWhyCard">
+            <h3>Proof, not just engagement</h3>
+            <p>
+              Every link is tracked through to the order, so you can see
+              &ldquo;$X in Shopify orders came from Instagram this month.&rdquo;
+              Other tools optimize for leads, clicks, and broadcasts.
+              SocialRepl.ai is built around attributed dollars.
+            </p>
+          </div>
+          <div className="srWhyCard">
+            <h3>No flows to build</h3>
+            <p>
+              There&apos;s no keyword-trigger decision tree to design and
+              maintain. The AI reads each message, understands intent, and
+              replies — multi-turn — even to questions you never scripted. Set
+              up in minutes, not days.
+            </p>
+          </div>
+          <div className="srWhyCard">
+            <h3>Focused on closing the sale</h3>
+            <p>
+              We do one thing: turn product interest into checkout. No bloated
+              UI for giveaways, lead funnels, and channels you&apos;ll never
+              use — just the fastest path from an Instagram DM to a Shopify
+              order.
+            </p>
+          </div>
+        </div>
+
+        <table className="srCompareTable srWhyTable">
+          <thead>
+            <tr>
+              <th scope="col">&nbsp;</th>
+              <th scope="col">SocialRepl.ai</th>
+              <th scope="col">ManyChat &amp; general chat tools</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Shopify relationship</td>
+              <td>Native Shopify app — reads your live catalog</td>
+              <td>Horizontal platform with a Shopify integration</td>
+            </tr>
+            <tr>
+              <td>Setup</td>
+              <td>Connect, set tone, go — minutes</td>
+              <td>Design and test conversation flows — hours to days</td>
+            </tr>
+            <tr>
+              <td>Revenue attribution</td>
+              <td>Built in — orders tied to each DM/comment</td>
+              <td>Built for leads, clicks, and broadcasts</td>
+            </tr>
+            <tr>
+              <td>Checkout links</td>
+              <td>AI links with product + variant pre-loaded, tracked</td>
+              <td>Add links inside flows you build</td>
+            </tr>
+            <tr>
+              <td>Focus</td>
+              <td>Turning Instagram conversations into Shopify orders</td>
+              <td>Broad marketing automation across many channels</td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="srWhyNote">
+          Need multi-channel broadcasts and campaign flows across WhatsApp,
+          SMS, and email? ManyChat is the better fit — and some stores run both.
+          See the full, honest breakdown in{" "}
+          <a href="/blog/socialreplai-vs-manychat">SocialRepl.ai vs ManyChat</a>.
+        </p>
       </section>
 
       <section id="how-it-works" className="srHowItWorks">
