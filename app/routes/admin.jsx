@@ -9,6 +9,7 @@ import {
 } from "../lib/admin-auth.server";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
 import { getInstagramAccountInfo } from "../lib/meta.server";
+import { getStoreTotalRevenueYTD } from "../lib/shopify-data.server";
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -54,9 +55,31 @@ export const loader = async ({ request }) => {
       return { ...s, instagram_username: info?.username || null };
     });
 
+    // Total Shopify sales YTD per store (live Admin API, cached 1h, best-effort).
+    // Each lookup is capped by a timeout so one slow/large store can't hang the
+    // whole dashboard; failures fall back to null and render as "—".
+    const revLookups = await Promise.allSettled(
+      storesWithIg.map((s) =>
+        Promise.race([
+          getStoreTotalRevenueYTD(s.shopify_domain),
+          new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
+        ])
+      )
+    );
+    const storesWithRevenue = storesWithIg.map((s, i) => {
+      const result = revLookups[i];
+      const rev = result.status === "fulfilled" ? result.value : null;
+      return {
+        ...s,
+        total_revenue_ytd: rev ? rev.amount : null,
+        total_revenue_currency: rev ? rev.currencyCode : null,
+        total_revenue_capped: rev ? rev.capped : false,
+      };
+    });
+
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
-    return { authenticated: true, stores: storesWithIg, queueOverview, queueItems, queueFilters: { shopId, status } };
+    return { authenticated: true, stores: storesWithRevenue, queueOverview, queueItems, queueFilters: { shopId, status } };
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
     return { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) };
@@ -121,6 +144,19 @@ function formatTenure(createdAt) {
 function formatRevenue(value) {
   if (value == null || value === 0) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+// Total store sales YTD. Unlike attributed revenue, 0 is a real value (store
+// made no sales this year) and is shown as such; null means we couldn't read
+// it (no/expired token) and renders as "—". A trailing "+" marks a capped
+// lower bound for very high-volume stores.
+function formatStoreRevenue(value, currencyCode, capped) {
+  if (value == null) return "—";
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currencyCode || "USD",
+  }).format(value);
+  return capped ? `${formatted}+` : formatted;
 }
 
 export default function Admin() {
@@ -194,6 +230,7 @@ export default function Admin() {
               <th style={styles.th}>Tenure</th>
               <th style={styles.th}>Messages sent</th>
               <th style={styles.th}>Revenue attribution</th>
+              <th style={styles.th}>Store revenue (YTD)</th>
             </tr>
           </thead>
           <tbody>
@@ -216,11 +253,14 @@ export default function Admin() {
                   <td style={styles.td}>{formatTenure(row.created_at)}</td>
                   <td style={styles.td}>{row.messages_sent.toLocaleString()}</td>
                   <td style={styles.td}>{formatRevenue(row.revenue)}</td>
+                  <td style={styles.td}>
+                    {formatStoreRevenue(row.total_revenue_ytd, row.total_revenue_currency, row.total_revenue_capped)}
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} style={styles.tdEmpty}>
+                <td colSpan={6} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
               </tr>
