@@ -20,6 +20,7 @@ const JSON_LD = {
     "Closed-loop order attribution — see the revenue each Instagram conversation drove",
     "AI-powered Instagram DM automation with one-click checkout links",
     "Automatically reply to post comments with private DMs and product links",
+    "Multi-language replies — auto-match each customer's language or force a specific one",
     "No flow builder — AI handles questions you never scripted, multi-turn to checkout",
   ],
   offers: [
@@ -37,7 +38,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "500 messages/mo · DMs + Comment-to-DM · Brand voice customization · Order attribution + full analytics",
+        "500 messages/mo · DMs + Comment-to-DM · Brand voice customization · Multi-language replies · Order attribution + full analytics",
     },
     {
       "@type": "Offer",
@@ -96,6 +97,10 @@ const FAQS = [
   {
     q: "Can I customize the brand voice?",
     a: "Yes. Pick from preset tones (Casual, Professional, Friendly, etc.) and add custom voice instructions — for example, \"always use emojis\" or \"don't discount.\" The AI sticks to your style.",
+  },
+  {
+    q: "Does SocialReplAI reply in other languages?",
+    a: "Yes. On Growth and Pro, you can set a reply language. Leave it on Auto and the AI answers each customer in the same language they messaged in, or force a specific language (such as Brazilian Portuguese, Spanish, or French) so every reply goes out in that language regardless of the customer's input.",
   },
   {
     q: "What happens if I hit my message limit?",
@@ -343,6 +348,7 @@ export default function LandingPage() {
             <ul className="srFeatureList">
               <li>Multi-turn conversations that handle follow-up questions.</li>
               <li>Knows your products, pricing, and store policies.</li>
+              <li>Replies in your customer&apos;s language — auto-detected or set to a language you choose.</li>
               <li>Comment-to-DM flow keeps the conversation private.</li>
             </ul>
           </div>
@@ -551,6 +557,7 @@ export default function LandingPage() {
               <li>500 messages / month</li>
               <li>DMs + Comment-to-DM</li>
               <li>Brand voice customization</li>
+              <li>Multi-language replies</li>
               <li>Store question answering</li>
               <li>Order attribution + full analytics</li>
             </ul>
