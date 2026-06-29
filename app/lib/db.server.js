@@ -1236,6 +1236,7 @@ export async function updateBrandVoice(shopId, brandVoice) {
     channel: "both", // Use 'both' so it applies to all channels
     tone: brandVoice.tone || "friendly",
     custom_instruction: brandVoice.custom_instruction || null,
+    reply_language: brandVoice.reply_language || "auto",
   };
 
   let result;

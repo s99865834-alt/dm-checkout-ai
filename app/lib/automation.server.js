@@ -1580,6 +1580,35 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 }
 
 /**
+ * Reply-language support. `brand_voice.reply_language` is either "auto" (mirror the
+ * customer's language — the default) or a locale code that forces all replies into
+ * that language regardless of what the customer wrote.
+ */
+const REPLY_LANGUAGE_NAMES = {
+  en: "English",
+  "pt-BR": "Brazilian Portuguese",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  it: "Italian",
+  nl: "Dutch",
+};
+
+/** Whether a reply-language setting forces a specific (non-auto) language. */
+function isForcedReplyLanguage(brandVoice) {
+  const lang = brandVoice?.reply_language;
+  return Boolean(lang && lang !== "auto" && REPLY_LANGUAGE_NAMES[lang]);
+}
+
+/** Build the language directive injected into every reply prompt. */
+function buildLanguageInstruction(brandVoice) {
+  if (isForcedReplyLanguage(brandVoice)) {
+    return `LANGUAGE (highest priority): Write your ENTIRE reply in ${REPLY_LANGUAGE_NAMES[brandVoice.reply_language]}, regardless of the language the customer used.`;
+  }
+  return "LANGUAGE (highest priority): Write your ENTIRE reply in the same language the customer used in their message. Mirror their language exactly.";
+}
+
+/**
  * Generate a clarifying question asking which product the customer is referring to
  * Used for Direct DMs with product-specific intents when no product context is available (PRO tier only)
  * @param {Object} brandVoice - Brand voice configuration
@@ -1607,6 +1636,7 @@ Customer intent: ${intentContext}
 ${channelContext?.originChannel ? `Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM" : "Direct DM"}` : ""}
 
 Requirements:
+- ${buildLanguageInstruction(brandVoice)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 - Acknowledge their message briefly
@@ -1672,6 +1702,7 @@ Available sizes: ${sizesText}
 Customer's original message: "${originalMessage || ""}"
 
 Requirements:
+- ${buildLanguageInstruction(brandVoice)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. Match this style precisely.` : `- Style: Use ${tone} tone`}
 - Thank them for their interest briefly
 - Ask what size they'd like
@@ -1818,7 +1849,10 @@ export async function generateReplyMessage(brandVoice, productName = null, check
   // Also use AI generation if user has brand voice configured (Growth/Pro) to ensure tone is properly applied
   // For Growth/Pro users, even without custom instruction, we want to use AI to properly apply the tone
   const hasBrandVoiceConfig = brandVoice && (customInstruction || (tone && tone !== "friendly"));
-  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext) {
+  // When a specific reply language is forced, we must run AI generation so the
+  // language directive applies — the canned tone templates are English-only.
+  const forceLanguage = isForcedReplyLanguage(brandVoice);
+  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext || forceLanguage) {
     try {
       if (openai) {
         // Build one store context for store_question so the AI can answer any question from context
@@ -1938,6 +1972,7 @@ ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) 
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
 Requirements:
+- ${buildLanguageInstruction(brandVoice)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 ${intent === "purchase" ? `- CRITICAL: Read the original message carefully. If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it"), direct them to checkout. If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!"), acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing.` : ""}

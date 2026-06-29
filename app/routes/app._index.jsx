@@ -134,6 +134,7 @@ export const action = async ({ request }) => {
       const followupEnabled = formData.get("followup_enabled") === "true";
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
+      const brandVoiceReplyLang = formData.get("brand_voice_reply_language") || "auto";
       try {
         const currentSettings = await getSettings(shop.id);
         await Promise.all([
@@ -146,6 +147,7 @@ export const action = async ({ request }) => {
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
             custom_instruction: brandVoiceCustom?.trim() || null,
+            reply_language: brandVoiceReplyLang || "auto",
           }),
         ]);
         return { success: true, message: "Settings updated successfully" };
@@ -319,6 +321,7 @@ export default function Index() {
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? true);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
+  const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
 
   // Instagram feed local state
   const [selectedMedia, setSelectedMedia] = useState(null);
@@ -340,6 +343,7 @@ export default function Index() {
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
       setBrandVoiceCustom(brandVoice.custom_instruction || "");
+      setBrandVoiceReplyLang(brandVoice.reply_language || "auto");
     }
     setLocalMappings(productMappings || []);
     if (shopifyProducts?.length) setLocalProducts(shopifyProducts);
@@ -734,6 +738,7 @@ export default function Index() {
           <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
           <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
           <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
+          <input type="hidden" name="brand_voice_reply_language" value={brandVoiceReplyLang || "auto"} />
 
           <div className="srAutoTwoCol">
             {/* Left: toggles */}
@@ -811,7 +816,7 @@ export default function Index() {
                       </select>
                     </div>
                   </div>
-                  <div className="srToggleRow srToggleRowLast">
+                  <div className="srToggleRow">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">Custom Voice</span>
                       <span className="srCardDesc">Optional override for reply style</span>
@@ -822,6 +827,30 @@ export default function Index() {
                         placeholder="e.g. Always be enthusiastic and use emojis"
                         className="srInput srInputRow"
                       />
+                    </div>
+                  </div>
+                  <div className="srToggleRow srToggleRowLast">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Reply language</span>
+                      <span className="srCardDesc">
+                        {brandVoiceReplyLang === "auto"
+                          ? "Auto: each reply is written in the same language the customer messaged in."
+                          : "Replies are always written in the selected language, no matter what language the customer uses."}
+                      </span>
+                      <select
+                        value={brandVoiceReplyLang}
+                        onChange={(e) => setBrandVoiceReplyLang(e.target.value)}
+                        className="srSelect srInputRow"
+                      >
+                        <option value="auto">Auto (match customer&apos;s language)</option>
+                        <option value="en">English</option>
+                        <option value="pt-BR">Portuguese (Brazil)</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                        <option value="nl">Dutch</option>
+                      </select>
                     </div>
                   </div>
                 </div>

@@ -1,7 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "e8f65f3073d5d5a24b4654be248a0b56"
-name = "dm-checkout-ai"
+name = "SocialRepl.ai"
+handle = "socialreplai"
 application_url = "https://dm-checkout-ai-production.up.railway.app"
 embedded = true
 
