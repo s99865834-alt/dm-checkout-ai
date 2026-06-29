@@ -1852,7 +1852,13 @@ export async function generateReplyMessage(brandVoice, productName = null, check
   // When a specific reply language is forced, we must run AI generation so the
   // language directive applies — the canned tone templates are English-only.
   const forceLanguage = isForcedReplyLanguage(brandVoice);
-  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext || forceLanguage) {
+  // Auto language mirroring (the default) also needs AI generation, otherwise a
+  // non-English customer would hit the English-only canned templates below. Auto
+  // is the default for every plan, so in practice replies are AI-generated; the
+  // templates remain only as an error / no-API-key fallback.
+  const replyLanguage = brandVoice?.reply_language || "auto";
+  const needsAiForLanguage = replyLanguage === "auto" || forceLanguage;
+  if (intent === "product_question" || intent === "store_question" || customInstruction || hasBrandVoiceConfig || channelContext || forceLanguage || needsAiForLanguage) {
     try {
       if (openai) {
         // Build one store context for store_question so the AI can answer any question from context
