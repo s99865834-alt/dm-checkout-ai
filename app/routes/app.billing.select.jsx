@@ -134,6 +134,7 @@ export default function BillingSelect() {
         "500 messages/month",
         "DMs + Comment-to-DM",
         "Brand voice customization",
+        "Multi-language replies",
         "Store question answering",
         "Order attribution + full analytics",
       ],
@@ -340,6 +341,12 @@ export default function BillingSelect() {
               </tr>
               <tr>
                 <td><span className="srTextStrong">Brand Voice</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Multi-language Replies</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
