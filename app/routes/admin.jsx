@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Form, useLoaderData, useActionData } from "react-router";
 import {
   getAdminSession,
@@ -9,7 +10,7 @@ import {
 } from "../lib/admin-auth.server";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
 import { getInstagramAccountInfo } from "../lib/meta.server";
-import { getStoreTotalRevenueYTD } from "../lib/shopify-data.server";
+import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -77,9 +78,32 @@ export const loader = async ({ request }) => {
       };
     });
 
+    // Live Shopify Managed Pricing trial status per store. Best-effort and
+    // timeout-capped like the revenue lookup so one slow/bad token can't hang
+    // the dashboard. Merged with the legacy beta trial (from the DB) below.
+    const trialLookups = await Promise.allSettled(
+      storesWithRevenue.map((s) =>
+        Promise.race([
+          getStoreManagedTrial(s.shopify_domain),
+          new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+        ])
+      )
+    );
+    const storesFinal = storesWithRevenue.map((s, i) => {
+      const result = trialLookups[i];
+      const managedTrial = result.status === "fulfilled" ? result.value : null;
+      // Prefer the live Managed Pricing trial; fall back to a legacy beta trial.
+      const trial = managedTrial
+        ? { ...managedTrial, source: "managed" }
+        : s.beta_trial
+          ? { daysLeft: s.beta_trial.daysLeft, trialEndsAt: s.beta_trial.expiresAt, source: "beta" }
+          : null;
+      return { ...s, trial };
+    });
+
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
-    return { authenticated: true, stores: storesWithRevenue, queueOverview, queueItems, queueFilters: { shopId, status } };
+    return { authenticated: true, stores: storesFinal, queueOverview, queueItems, queueFilters: { shopId, status } };
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
     return { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) };
@@ -146,6 +170,52 @@ function formatRevenue(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+// Display label for a shop's plan enum (FREE / GROWTH / PRO).
+function formatPlan(plan) {
+  const p = (plan || "FREE").toUpperCase();
+  if (p === "PRO") return "Pro";
+  if (p === "GROWTH") return "Growth";
+  return "Free";
+}
+
+// Color-code the plan badge by tier so paying stores stand out at a glance.
+function planBadgeStyle(plan) {
+  const p = (plan || "FREE").toUpperCase();
+  const palette =
+    p === "PRO"
+      ? { bg: "#4c1d95", fg: "#ede9fe" }
+      : p === "GROWTH"
+        ? { bg: "#065f46", fg: "#d1fae5" }
+        : { bg: "#334155", fg: "#cbd5e1" };
+  return {
+    display: "inline-block",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.5rem",
+    borderRadius: "999px",
+    backgroundColor: palette.bg,
+    color: palette.fg,
+  };
+}
+
+// Clickable column header for the stores table. Clicking toggles the sort
+// direction; a second click on a new column starts it descending.
+function SortHeader({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey;
+  const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
+  return (
+    <th
+      style={{ ...styles.th, cursor: "pointer", userSelect: "none" }}
+      onClick={() => onSort(sortKey)}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      title={`Sort by ${label}`}
+    >
+      {label}
+      <span style={styles.sortArrow}>{arrow}</span>
+    </th>
+  );
+}
+
 // Total store sales YTD. Unlike attributed revenue, 0 is a real value (store
 // made no sales this year) and is shown as such; null means we couldn't read
 // it (no/expired token) and renders as "—". A trailing "+" marks a capped
@@ -162,6 +232,54 @@ function formatStoreRevenue(value, currencyCode, capped) {
 export default function Admin() {
   const { authenticated, stores, queueOverview, queueItems, queueFilters, error: loaderError } = useLoaderData() ?? {};
   const actionData = useActionData();
+
+  const [sort, setSort] = useState({ key: null, dir: "desc" });
+  const toggleSort = (key) =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "desc" }
+    );
+
+  const sortedStores = useMemo(() => {
+    if (!stores || !sort.key) return stores;
+    const getVal = (row) => {
+      switch (sort.key) {
+        case "tenure":
+          // Tenure = time since install. Sort by that duration; missing
+          // created_at has no known tenure and always sinks to the bottom.
+          return row.created_at ? Date.now() - new Date(row.created_at).getTime() : null;
+        case "messages":
+          return row.messages_sent ?? 0;
+        case "revenue":
+          return row.revenue ?? 0;
+        case "storeRevenue":
+          // null = couldn't read the figure (no/expired token); sink to bottom.
+          return row.total_revenue_ytd;
+        default:
+          return null;
+      }
+    };
+    return [...stores].sort((a, b) => {
+      const av = getVal(a);
+      const bv = getVal(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return sort.dir === "asc" ? av - bv : bv - av;
+    });
+  }, [stores, sort]);
+
+  const planCounts = useMemo(() => {
+    const counts = { FREE: 0, GROWTH: 0, PRO: 0, trialing: 0 };
+    (stores || []).forEach((s) => {
+      const p = (s.plan || "FREE").toUpperCase();
+      if (counts[p] === undefined) counts[p] = 0;
+      counts[p] += 1;
+      if (s.trial) counts.trialing += 1;
+    });
+    return counts;
+  }, [stores]);
 
   if (!authenticated) {
     return (
@@ -221,25 +339,56 @@ export default function Admin() {
         <p style={styles.error}>Error loading data: {loaderError}</p>
       )}
 
+      {stores && stores.length > 0 && (
+        <div style={styles.storeSummary}>
+          <span style={styles.summaryPill}>{stores.length} stores</span>
+          <span style={styles.summaryPill}>{planCounts.FREE} Free</span>
+          <span style={styles.summaryPill}>{planCounts.GROWTH} Growth</span>
+          <span style={styles.summaryPill}>{planCounts.PRO} Pro</span>
+          {planCounts.trialing > 0 && (
+            <span style={{ ...styles.summaryPill, ...styles.summaryPillTrial }}>
+              {planCounts.trialing} on trial
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={styles.tableWrap}>
         <table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Store</th>
+              <th style={styles.th}>Plan</th>
               <th style={styles.th}>Instagram</th>
-              <th style={styles.th}>Tenure</th>
-              <th style={styles.th}>Messages sent</th>
-              <th style={styles.th}>Revenue attribution</th>
-              <th style={styles.th}>Store revenue (YTD)</th>
+              <SortHeader label="Tenure" sortKey="tenure" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Messages sent" sortKey="messages" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Revenue attribution" sortKey="revenue" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Store revenue (YTD)" sortKey="storeRevenue" sort={sort} onSort={toggleSort} />
             </tr>
           </thead>
           <tbody>
-            {stores && stores.length > 0 ? (
-              stores.map((row) => (
+            {sortedStores && sortedStores.length > 0 ? (
+              sortedStores.map((row) => (
                 <tr key={row.shop_id}>
                   <td style={styles.td}>
                     <span style={styles.domain}>{row.shopify_domain}</span>
                     {!row.active && <span style={styles.badge}>inactive</span>}
+                  </td>
+                  <td style={styles.td}>
+                    <span style={planBadgeStyle(row.plan)}>{formatPlan(row.plan)}</span>
+                    {row.trial && (
+                      <span
+                        style={styles.trialBadge}
+                        title={
+                          (row.trial.source === "beta" ? "Beta trial (PRO)" : "Shopify free trial") +
+                          (row.trial.trialEndsAt
+                            ? ` · ends ${new Date(row.trial.trialEndsAt).toLocaleDateString()}`
+                            : "")
+                        }
+                      >
+                        Trial · {row.trial.daysLeft}d
+                      </span>
+                    )}
                   </td>
                   <td style={styles.td}>
                     {row.instagram_username ? (
@@ -260,7 +409,7 @@ export default function Admin() {
               ))
             ) : (
               <tr>
-                <td colSpan={6} style={styles.tdEmpty}>
+                <td colSpan={7} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
               </tr>
@@ -542,6 +691,30 @@ const styles = {
     color: "#94a3b8",
     borderBottom: "1px solid #334155",
   },
+  sortArrow: {
+    color: "#e2e8f0",
+    fontSize: "0.7rem",
+  },
+  storeSummary: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+    marginBottom: "1rem",
+  },
+  summaryPill: {
+    fontSize: "0.8rem",
+    fontWeight: 600,
+    padding: "0.25rem 0.6rem",
+    borderRadius: "999px",
+    backgroundColor: "#1e293b",
+    color: "#cbd5e1",
+    border: "1px solid #334155",
+  },
+  summaryPillTrial: {
+    backgroundColor: "#78350f",
+    color: "#fde68a",
+    borderColor: "#92400e",
+  },
   td: {
     padding: "0.75rem 1rem",
     borderBottom: "1px solid #334155",
@@ -577,5 +750,15 @@ const styles = {
     backgroundColor: "#334155",
     borderRadius: "4px",
     color: "#94a3b8",
+  },
+  trialBadge: {
+    marginLeft: "0.5rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#78350f",
+    borderRadius: "4px",
+    color: "#fde68a",
+    whiteSpace: "nowrap",
   },
 };

@@ -1764,12 +1764,13 @@ export async function getProAnalytics(shopId, options = {}) {
 
 /**
  * Get all stores with aggregates for admin dashboard.
- * Returns: [{ shop_id, shopify_domain, created_at, active, messages_sent, revenue }]
+ * Returns: [{ shop_id, shopify_domain, created_at, active, plan, beta_trial,
+ *   messages_sent, revenue, instagram_connected, ig_business_id }]
  */
 export async function getAdminDashboardStores() {
   const { data: shops, error: shopsError } = await supabase
     .from("shops")
-    .select("id, shopify_domain, active, created_at")
+    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at")
     .order("id", { ascending: true });
 
   if (shopsError) {
@@ -1777,7 +1778,7 @@ export async function getAdminDashboardStores() {
     if (shopsError.code === "42703" || shopsError.message?.includes("created_at")) {
       const { data: shopsFallback, error: fallbackError } = await supabase
         .from("shops")
-        .select("id, shopify_domain, active")
+        .select("id, shopify_domain, active, plan, beta_trial_expires_at")
         .order("id", { ascending: true });
       if (fallbackError) {
         console.error("getAdminDashboardStores shops error", fallbackError);
@@ -1914,11 +1915,26 @@ async function buildAdminStoresResult(shops) {
 
   return shops.map((s) => {
     const metaAuth = metaAuthByShop.get(s.id) || null;
+    // Legacy manually-granted PRO trial (beta_trial_expires_at). Compute
+    // days remaining here so the admin table can flag it without any live call.
+    let betaTrial = null;
+    if (s.beta_trial_expires_at) {
+      const expires = new Date(s.beta_trial_expires_at);
+      const msLeft = expires.getTime() - Date.now();
+      if (msLeft > 0) {
+        betaTrial = {
+          daysLeft: Math.ceil(msLeft / (24 * 60 * 60 * 1000)),
+          expiresAt: s.beta_trial_expires_at,
+        };
+      }
+    }
     return {
       shop_id: s.id,
       shopify_domain: s.shopify_domain,
       created_at: s.created_at,
       active: s.active,
+      plan: s.plan || "FREE",
+      beta_trial: betaTrial,
       messages_sent: messagesByShop.get(s.id) || 0,
       revenue: revenueByShop.get(s.id) || 0,
       instagram_connected: !!metaAuth,
