@@ -136,6 +136,86 @@ export async function getStoreTotalRevenueYTD(shopDomain) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Managed Pricing free-trial status (live)
+// ---------------------------------------------------------------------------
+// Under Shopify Managed Pricing a trialing subscription is already ACTIVE, so
+// the only way to tell a trialing merchant from a paying one is createdAt +
+// trialDays on the active subscription. We read it live from the merchant's
+// offline Admin session, cached in-process for an hour and best-effort so a
+// single bad/expired token never breaks the admin dashboard.
+
+const _trialCache = new Map(); // shopDomain -> { value, at }
+const TRIAL_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function _fetchStoreManagedTrial(shopDomain) {
+  const session = await loadShopSession(shopDomain);
+  if (!session?.accessToken) return null;
+
+  const api = getShopifyApi();
+  const client = new api.clients.Graphql({ session });
+  const query = `
+    query AdminActiveSubscription {
+      currentAppInstallation {
+        activeSubscriptions {
+          name
+          status
+          createdAt
+          trialDays
+        }
+      }
+    }
+  `;
+
+  const response = await client.request(query);
+  const subscriptions =
+    response?.data?.currentAppInstallation?.activeSubscriptions || [];
+  const sub = subscriptions.find((s) => s.status === "ACTIVE") || null;
+  if (!sub) return null;
+
+  const trialDays = Number(sub.trialDays) || 0;
+  if (trialDays <= 0 || !sub.createdAt) return null;
+
+  const trialEndsAt = new Date(
+    new Date(sub.createdAt).getTime() + trialDays * 24 * 60 * 60 * 1000,
+  );
+  const msLeft = trialEndsAt.getTime() - Date.now();
+  if (msLeft <= 0) return null;
+
+  return {
+    daysLeft: Math.ceil(msLeft / (24 * 60 * 60 * 1000)),
+    trialEndsAt: trialEndsAt.toISOString(),
+  };
+}
+
+/**
+ * Live Shopify Managed Pricing trial status for a store. Cached 1 hour.
+ * Returns { daysLeft, trialEndsAt } while the merchant is in a paid-plan trial,
+ * or null when there's no trial (or the lookup fails).
+ * @param {string} shopDomain
+ * @returns {Promise<{daysLeft:number, trialEndsAt:string}|null>}
+ */
+export async function getStoreManagedTrial(shopDomain) {
+  if (!shopDomain) return null;
+
+  const cached = _trialCache.get(shopDomain);
+  if (cached && Date.now() - cached.at < TRIAL_TTL_MS) {
+    return cached.value;
+  }
+
+  try {
+    const value = await _fetchStoreManagedTrial(shopDomain);
+    _trialCache.set(shopDomain, { value, at: Date.now() });
+    return value;
+  } catch (error) {
+    console.error(
+      `[shopify-data] managed trial lookup failed for ${shopDomain}:`,
+      error?.message || error,
+    );
+    return null;
+  }
+}
+
 /** Strip HTML tags and collapse whitespace for plain-text AI context. Keeps payload minimal. */
 function stripHtml(html) {
   if (!html || typeof html !== "string") return "";
