@@ -561,12 +561,11 @@ export const action = async ({ request }) => {
                   continue;
                 }
                 
-                // Check if post filtering is enabled and if this post is in the allowed list
-                if (settings?.enabled_post_ids && Array.isArray(settings.enabled_post_ids) && settings.enabled_post_ids.length > 0) {
-                  if (!parsed.mediaId || !settings.enabled_post_ids.includes(parsed.mediaId)) {
-                    logger.debug(`[webhook] Comment on media ${parsed.mediaId} not in enabled_post_ids list, skipping`);
-                    continue;
-                  }
+                // Per-post deny-list: skip only posts the merchant explicitly
+                // disabled. Everything else (including new posts) is automated.
+                if (Array.isArray(settings?.disabled_post_ids) && settings.disabled_post_ids.includes(parsed.mediaId)) {
+                  logger.debug(`[webhook] Comment on media ${parsed.mediaId} is in disabled_post_ids, skipping`);
+                  continue;
                 }
                 
                 try {
