@@ -1142,34 +1142,57 @@ export default function Index() {
                               ) : (
                                 <>
                                   <input
+                                    id={`product-${media.id}`}
                                     type="text"
                                     value={productSearch}
                                     onChange={(e) => setProductSearch(e.target.value)}
                                     placeholder="Search your products by name…"
                                     className="srInput"
+                                    autoComplete="off"
                                   />
-                                  {searchPending && (
-                                    <span className="srGridTextSubdued">Searching…</span>
-                                  )}
-                                  {!searchPending && pickerResults !== null && pickerResults.length === 0 && (
-                                    <span className="srGridTextSubdued">
-                                      No products match &ldquo;{productSearch.trim()}&rdquo;.
-                                    </span>
-                                  )}
-                                  <select
-                                    id={`product-${media.id}`}
-                                    value={selectedProduct}
-                                    onChange={(e) => { setSelectedProduct(e.target.value); setSelectedVariant(""); }}
-                                    className="srSelect"
-                                  >
-                                    <option value="">-- Select Product --</option>
-                                    {selectedProductData && !pickerProducts.some((p) => p.id === selectedProduct) && (
-                                      <option value={selectedProductData.id}>{selectedProductData.title}</option>
+                                  {/* Live results list: always visible, updates as the merchant types. */}
+                                  <div className="srProductList" role="listbox" aria-label="Products">
+                                    {searchPending && (
+                                      <div className="srProductListMsg">Searching…</div>
                                     )}
-                                    {pickerProducts.map((p) => (
-                                      <option key={p.id} value={p.id}>{p.title}</option>
-                                    ))}
-                                  </select>
+                                    {!searchPending && pickerResults !== null && pickerResults.length === 0 && (
+                                      <div className="srProductListMsg">
+                                        No products match &ldquo;{productSearch.trim()}&rdquo;.
+                                      </div>
+                                    )}
+                                    {/* Keep the current selection visible even if it's not in the latest results. */}
+                                    {selectedProductData && !pickerProducts.some((p) => p.id === selectedProduct) && (
+                                      <button
+                                        type="button"
+                                        className="srProductListItem srProductListItemActive"
+                                        onClick={() => { setSelectedProduct(""); setSelectedVariant(""); }}
+                                        role="option"
+                                        aria-selected="true"
+                                      >
+                                        <span className="srProductListTitle">{selectedProductData.title}</span>
+                                        <span className="srProductListCheck">✓</span>
+                                      </button>
+                                    )}
+                                    {pickerProducts.map((p) => {
+                                      const isActive = selectedProduct === p.id;
+                                      return (
+                                        <button
+                                          key={p.id}
+                                          type="button"
+                                          className={`srProductListItem ${isActive ? "srProductListItemActive" : ""}`}
+                                          onClick={() => {
+                                            setSelectedProduct(isActive ? "" : p.id);
+                                            setSelectedVariant("");
+                                          }}
+                                          role="option"
+                                          aria-selected={isActive}
+                                        >
+                                          <span className="srProductListTitle">{p.title}</span>
+                                          {isActive && <span className="srProductListCheck">✓</span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
 
                                   {selectedProduct && selectedProductVariants.length > 1 && (
                                     <>
