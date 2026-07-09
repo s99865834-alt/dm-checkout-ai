@@ -590,6 +590,65 @@ s-page s-box.srCardCompact {
 }
 
 /* ── Post Picker Strip (analytics filter by post) ─────────────── */
+/* Live product search results inside the post→product mapping picker */
+.srProductList {
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #e1e3e5;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.srProductListItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--sr-font-body);
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.srProductListItem:last-child {
+  border-bottom: none;
+}
+
+.srProductListItem:hover {
+  background: #f6f6f7;
+}
+
+.srProductListItemActive,
+.srProductListItemActive:hover {
+  background: #f0fdf4;
+}
+
+.srProductListTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srProductListCheck {
+  color: #008060;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.srProductListMsg {
+  padding: 10px;
+  color: #6d7175;
+  font-size: var(--sr-font-body);
+}
+
 .srPostPickerStrip {
   display: flex;
   gap: 10px;
