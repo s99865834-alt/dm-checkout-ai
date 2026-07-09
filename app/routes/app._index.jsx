@@ -36,7 +36,7 @@ export const loader = async ({ request }) => {
                 id
                 title
                 handle
-                variants(first: 10) {
+                variants(first: 100) {
                   nodes {
                     id
                     title
@@ -290,7 +290,7 @@ export const action = async ({ request }) => {
                 id
                 title
                 handle
-                variants(first: 10) {
+                variants(first: 100) {
                   nodes {
                     id
                     title

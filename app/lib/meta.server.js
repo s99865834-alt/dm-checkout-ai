@@ -1010,6 +1010,33 @@ export async function deleteMetaAuth(shopId) {
  * @param {Object} options - Options (limit, after cursor, etc.)
  * @returns {Promise<Object>} - Media data with pagination
  */
+/**
+ * Fetch specific Instagram media objects by ID (e.g. every post that has a
+ * product mapping), regardless of how deep they sit in the account's history.
+ * Posts that were deleted on Instagram (or otherwise fail) are silently
+ * omitted from the result.
+ *
+ * @param {string} shopId - Shop UUID
+ * @param {string[]} mediaIds - Instagram media IDs
+ * @returns {Promise<Array>} - Media objects, newest first
+ */
+export async function getInstagramMediaByIds(shopId, mediaIds) {
+  const ids = [...new Set((mediaIds || []).filter(Boolean))];
+  if (ids.length === 0) return [];
+
+  const params = {
+    fields: "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count",
+  };
+  const results = await Promise.allSettled(
+    ids.map((id) => metaGraphAPIWithRefresh(shopId, `/${id}`, "page", { params })),
+  );
+
+  return results
+    .filter((r) => r.status === "fulfilled" && r.value?.id)
+    .map((r) => r.value)
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+}
+
 export async function getInstagramMedia(igBusinessId, shopId, options = {}) {
   try {
     const auth = await getMetaAuthWithRefresh(shopId);
