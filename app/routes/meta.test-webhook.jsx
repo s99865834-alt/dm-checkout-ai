@@ -169,9 +169,8 @@ export const action = async ({ request }) => {
                   };
                 } else if (
                   mediaId &&
-                  Array.isArray(settings?.enabled_post_ids) &&
-                  settings.enabled_post_ids.length > 0 &&
-                  !settings.enabled_post_ids.includes(mediaId)
+                  Array.isArray(settings?.disabled_post_ids) &&
+                  settings.disabled_post_ids.includes(mediaId)
                 ) {
                   aiPreview = {
                     intent: "none",
@@ -179,7 +178,7 @@ export const action = async ({ request }) => {
                     sentiment: "neutral",
                     responseText: null,
                     wouldSend: false,
-                    reason: `Post filtering enabled — media ID ${mediaId} is not enabled`,
+                    reason: `Automation is disabled for media ID ${mediaId}`,
                     testType: "comment",
                     mediaId: mediaId || null,
                     automation: {

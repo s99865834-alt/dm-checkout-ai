@@ -768,7 +768,7 @@ export async function getSettings(shopId) {
         dm_automation_enabled: true,
         comment_automation_enabled: true,
         followup_enabled: true,
-        enabled_post_ids: null,
+        disabled_post_ids: [],
       };
     }
     console.error("getSettings error", error);
@@ -779,6 +779,7 @@ export async function getSettings(shopId) {
   data.dm_automation_enabled = data.dm_automation_enabled ?? true;
   data.comment_automation_enabled = data.comment_automation_enabled ?? true;
   data.followup_enabled = data.followup_enabled ?? true;
+  data.disabled_post_ids = Array.isArray(data.disabled_post_ids) ? data.disabled_post_ids : [];
 
   return data;
 }
@@ -803,7 +804,9 @@ export async function updateSettings(shopId, settings) {
         dm_automation_enabled: settings.dm_automation_enabled ?? true,
         comment_automation_enabled: settings.comment_automation_enabled ?? true,
         followup_enabled: settings.followup_enabled ?? true,
-        enabled_post_ids: settings.enabled_post_ids || null,
+        // Deny-list: posts in this array have automation off; everything
+        // else (including posts published later) is on by default.
+        disabled_post_ids: Array.isArray(settings.disabled_post_ids) ? settings.disabled_post_ids : [],
       },
       {
         onConflict: "shop_id",

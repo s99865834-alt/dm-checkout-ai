@@ -142,7 +142,7 @@ export const action = async ({ request }) => {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
-            enabled_post_ids: currentSettings?.enabled_post_ids ?? null,
+            disabled_post_ids: currentSettings?.disabled_post_ids ?? [],
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -165,25 +165,21 @@ export const action = async ({ request }) => {
       if (!postId) return { error: "Missing post ID" };
       try {
         const currentSettings = await getSettings(shop.id);
-        const current = currentSettings?.enabled_post_ids || [];
-        let newIds;
-        if (togglePost === "enable") {
-          newIds = current.includes(postId) ? current : [...current, postId];
-        } else {
-          if (current.length === 0) {
-            const allMediaIds = JSON.parse(formData.get("allMediaIds") || "[]");
-            newIds = allMediaIds.filter((id) => id !== postId);
-          } else {
-            newIds = current.filter((id) => id !== postId);
-          }
-        }
+        // Deny-list: disabling a post adds it, enabling removes it. Posts not
+        // in the list (including ones published later) are always automated.
+        const current = Array.isArray(currentSettings?.disabled_post_ids)
+          ? currentSettings.disabled_post_ids
+          : [];
+        const newIds = togglePost === "enable"
+          ? current.filter((id) => id !== postId)
+          : current.includes(postId) ? current : [...current, postId];
         await updateSettings(shop.id, {
           dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
           comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
           followup_enabled: currentSettings?.followup_enabled ?? true,
-          enabled_post_ids: newIds,
+          disabled_post_ids: newIds,
         });
-        return { success: true, actionType: "toggle-post-automation", newEnabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
+        return { success: true, actionType: "toggle-post-automation", newDisabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
         return { error: err.message || "Failed to toggle post automation" };
@@ -563,8 +559,8 @@ export default function Index() {
     } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
       setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
       revalidator.revalidate();
-    } else if (actionType === "toggle-post-automation" && postFetcher.data.newEnabledIds) {
-      setLocalEnabledPostIds(postFetcher.data.newEnabledIds);
+    } else if (actionType === "toggle-post-automation" && postFetcher.data.newDisabledIds) {
+      setLocalDisabledPostIds(postFetcher.data.newDisabledIds);
     }
   }, [postFetcher.state, postFetcher.data, revalidator]);
 
@@ -590,13 +586,13 @@ export default function Index() {
     return n(storedId) === n(shopifyProductId);
   };
   const mappingsMap = new Map((localMappings || []).map((m) => [m.ig_media_id, m]));
-  const [localEnabledPostIds, setLocalEnabledPostIds] = useState(settings?.enabled_post_ids || []);
+  const [localDisabledPostIds, setLocalDisabledPostIds] = useState(settings?.disabled_post_ids || []);
 
   useEffect(() => {
-    setLocalEnabledPostIds(settings?.enabled_post_ids || []);
-  }, [settings?.enabled_post_ids]);
+    setLocalDisabledPostIds(settings?.disabled_post_ids || []);
+  }, [settings?.disabled_post_ids]);
 
-  const isPostEnabled = (postId) => localEnabledPostIds.length === 0 || localEnabledPostIds.includes(postId);
+  const isPostEnabled = (postId) => !localDisabledPostIds.includes(postId);
 
   const handleTogglePost = (postId, currentlyEnabled) => {
     const fd = new FormData();
@@ -604,15 +600,10 @@ export default function Index() {
     fd.append("postId", postId);
     fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
 
-    if (currentlyEnabled && localEnabledPostIds.length === 0 && localMedia.length > 0) {
-      const allIds = localMedia.map((m) => m.id);
-      fd.append("allMediaIds", JSON.stringify(allIds));
-      setLocalEnabledPostIds(allIds.filter((id) => id !== postId));
-    } else if (currentlyEnabled) {
-      setLocalEnabledPostIds((prev) => prev.filter((id) => id !== postId));
-    } else {
-      setLocalEnabledPostIds((prev) => [...prev, postId]);
-    }
+    // Optimistic update; the action response re-syncs the authoritative list.
+    setLocalDisabledPostIds((prev) =>
+      currentlyEnabled ? [...prev, postId] : prev.filter((id) => id !== postId),
+    );
 
     postFetcher.submit(fd, { method: "post" });
   };
