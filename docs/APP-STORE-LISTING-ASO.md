@@ -4,6 +4,136 @@ Use this copy and checklist when submitting or updating the SocialRepl.ai listin
 
 ---
 
+## 0. PASTE-READY listing fields: current → new (Jul 2026)
+
+Field-by-field mapping so you can match the exact text in the Partner Dashboard
+(**Apps → SocialReplAI → Distribution → Manage listing**) to its replacement.
+"Currently live" text was pulled from apps.shopify.com/socialreplai on Jul 7, 2026.
+
+Character limits verified against Shopify's current submission form: introduction 100,
+details 500, features 80 each (form allows 5), subtitle ~62. Counts shown per field.
+Compliance notes baked in: no competitor names, no stats/data claims, no
+"the first/best/only" phrasing (App Store requirement 4.3), pricing only in the
+pricing section.
+
+### App name — NO CHANGE
+
+Keep `SocialReplAI`.
+
+### App card subtitle
+
+**Currently live:**
+
+> AI Instagram replies with checkout links for your store
+
+**Replace with** (57 chars):
+
+> Turn Instagram DMs & comments into orders with AI replies
+
+### App introduction (the bold headline at the top of the listing)
+
+**Currently live:**
+
+> Automate Instagram DM and comment replies with AI-powered checkout links. Sell more while you sleep.
+
+**Replace with** (98 chars):
+
+> AI answers your Instagram DMs and comments with checkout links, turning conversations into orders.
+
+### App details (the paragraph under the introduction)
+
+**Currently live:**
+
+> SocialRepl.ai connects your Shopify store to Instagram so customer conversations become sales. When someone DMs you about a product or comments on a post, the app replies instantly with a personalized AI message and a direct checkout link. The AI learns your products, pricing, and store policies to answer questions accurately in your brand's voice. It handles follow-up questions, identifies which product a customer is asking about, and tracks which conversations lead to orders.
+
+**Replace with** (487 chars):
+
+> Shoppers who DM you about a product are ready to buy — if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs and comments in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build — connect your account, set your tone, and go.
+
+### Feature list (5 bullets — replace all 5)
+
+**Currently live:**
+
+1. AI-Powered Instagram DM Automation with One-Click Checkout Links
+2. Automatically Reply to Post Comments with Private DMs and Product Links
+3. AI Brand Voice That Knows Your Products, Policies, and FAQs
+4. Order Attribution — Track Which Instagram Conversations Drive Sales
+5. Multi-Turn AI Conversations That Guide Customers to Checkout
+
+**Replace with** (80-char max each; ordered by differentiation):
+
+1. `AI replies to DMs and comments in your brand voice — no flows to build` (72)
+2. `Checkout links with the right product and variant pre-loaded in every reply` (75)
+3. `Order attribution shows the revenue each DM or comment drove` (60)
+4. `Answers product questions from your live catalog, pricing, and policies` (71)
+5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
+
+Cut for space (work these into screenshots/captions or the details paragraph if
+room ever allows): follow-up messages for unfinished checkouts, multi-language
+replies, and the analytics dashboard (bullet 3 already carries the revenue story).
+
+### Pricing, languages — NO CHANGE
+
+Pricing (Free / $39 Growth / $99 Pro + 30-day trial) already matches the live app.
+
+### Categories — CHANGE via appeal (currently "Marketing – Other")
+
+Per Shopify's taxonomy (shopify.dev/docs/apps/launch/app-store-review/app-listing-categories),
+there is no social-media tag under Marketing; the accurate tags are:
+
+- **Primary: Chat** (Store management → Support → Chat) — tag definition
+  "apps that allow customers to connect with merchants via chat" matches the
+  app's main function (AI answering customer DMs/comments). Closest comparable
+  app (Dondy, WhatsApp commerce automation) is categorized Chat + Abandoned cart.
+- **Secondary: Abandoned cart** (Marketing → Abandoned cart) — justified by
+  Pro follow-up messages that re-engage shoppers who didn't finish checkout.
+- Category changes post-launch require an appeal via the link in the app
+  submission form. Appeal text:
+
+  > **Requested change:** Primary tag from "Marketing – Other" to "Chat"
+  > (Store management → Support), with "Abandoned cart" as secondary.
+  >
+  > **Reason:** SocialReplAI's main function is conversational: it connects a
+  > merchant's Instagram Business account to their Shopify store, and AI
+  > replies to customer DMs and comments in real time — answering product,
+  > pricing, and policy questions and including checkout links. This matches
+  > the Chat tag definition ("apps that allow customers to connect with
+  > merchants via chat") more accurately than Marketing – Other. Comparable
+  > apps in this space (e.g., WhatsApp commerce-chat automation apps) are
+  > categorized under Chat.
+  >
+  > The secondary Abandoned cart tag reflects the app's follow-up messaging
+  > feature, which re-engages customers who received a checkout link but
+  > didn't complete their purchase.
+
+- **Structured features:** check every applicable feature (up to 25 per
+  category) — powers merchant comparison filters; editable anytime without appeal.
+
+### Search terms (hidden field, 5 max, 20 chars each — one idea per term)
+
+Replaced Jul 7, 2026 (previous: instagram / sell on instagram / instagram dm /
+instagram comments / instagram marketing — mostly redundant with name/subtitle,
+and "instagram marketing" pulled wrong-intent searchers):
+
+1. `instagram automation` (20 — "automation" appears nowhere in name/subtitle)
+2. `instagram auto reply` (20 — problem phrasing merchants type)
+3. `ai chatbot` (10 — high-volume head term; aligns with Chat category appeal)
+4. `comment to dm` (13 — named behavior, low competition; alt: `comment automation`)
+5. `sell on instagram` (17 — commerce intent, kept from previous set)
+
+Rationale: title/subtitle already rank for "Instagram / DMs / comments / AI
+replies / orders" (name + subtitle are weighted heaviest), so search terms cover
+adjacent phrasings instead of repeating them. Revisit after 2–4 weeks of GA4
+listing data (Traffic acquisition filtered to hostname apps.shopify.com).
+
+### Tracking information (same listing form) — verify, likely empty
+
+Not visible from the public listing — check the field while you're in the editor.
+If empty, add GA4 measurement ID `G-BDGNW3KHQD` plus a Measurement Protocol API
+secret (see §9 below for both parts).
+
+---
+
 ## 1. Title & subtitle
 
 **App name (title):** Keep short; include one high-intent keyword.
@@ -165,7 +295,7 @@ Ensure the pricing section in the App Store and any in-app billing screens clear
 - [ ] Title and subtitle include at least one high-intent keyword (e.g. Instagram DM, Instagram checkout).
 - [ ] Short description leads with outcome and mentions free tier.
 - [ ] Full description includes all three tiers and main features.
-- [ ] **Trial:** Trials are currently disabled. Listing text must NOT promise a free trial. (When enabled later, listing text must match Partner Dashboard trial settings — duration, what's included, post-trial price, cancel path.)
+- [ ] **Trial:** The Pro plan's 30-day free trial is live (Partner Dashboard → Managed Pricing). Listing text must match the trial settings exactly — duration, what's included, post-trial price, cancel path. Do not mention trials on plans that don't have one configured.
 - [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test). The FREE plan is the entry point; no trial redemption flow.
 - [ ] 5–8 screenshots in order: connect → map → automation → reply with link → analytics (and optional attribution/brand voice).
 - [ ] Captions on every screenshot.
@@ -176,3 +306,34 @@ Ensure the pricing section in the App Store and any in-app billing screens clear
 ### 8.1 Screenshot & video production (manual)
 
 Screenshots and the demo recording are **not generated in-repo**: capture them from a **clean dev or staging store** with realistic data. Use the table in **§4 Screenshot captions** as a shot list; export at the resolution Shopify requires. For the video, follow the **Recording checklist** in [CONTENT-SEO-PLAN.md](CONTENT-SEO-PLAN.md), then upload to the listing and (optionally) YouTube and embed on your marketing site.
+
+---
+
+## 9. Google Analytics on the App Store listing
+
+The marketing site already runs GA4 property `G-BDGNW3KHQD`
+(`app/routes/_index/route.jsx`). Reusing the same property for the listing keeps
+site + listing traffic in one place. Two parts:
+
+**Part A — measurement ID (listing page-view tracking):**
+
+1. Partner Dashboard → **Apps** → SocialReplAI → **Distribution** → **Manage listing** → open the listing.
+2. In **Tracking information** → *Google analytics code*, enter `G-BDGNW3KHQD`.
+3. Save.
+
+Optional but cleaner: in GA Admin → Data Streams, add a separate web stream for
+`https://apps.shopify.com/socialreplai` and use that stream's `G-…` ID instead,
+so listing traffic is separable from site traffic.
+
+**Part B — Measurement Protocol API secret (server-side install events):**
+
+Without this, you see listing page views but not install events tied to source.
+
+1. GA → **Admin** → **Data Streams** → select the stream matching the measurement ID used in Part A.
+2. **Measurement Protocol API secrets** → **Create** → copy the secret.
+3. Back in the Partner Dashboard listing's **Tracking information**, paste the secret into the API secret field.
+4. Save. Shopify then sends the app-install event server-side; verify in GA Realtime by watching for the "Add app button" / install event after a test visit.
+
+**What to watch weekly (GA + Partner Dashboard):** listing page views → installs
+(conversion rate), and which referral sources/keywords drive installs. Log them in
+[METRICS-TRACKING.md](METRICS-TRACKING.md)'s weekly template.
