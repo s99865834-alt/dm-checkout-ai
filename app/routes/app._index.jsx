@@ -264,6 +264,61 @@ export const action = async ({ request }) => {
       }
     }
 
+    // ── Load more Instagram posts (cursor pagination) ──────────────────────
+    if (actionType === "load-more-media") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const after = formData.get("after");
+      if (!after) return { error: "Missing pagination cursor" };
+      try {
+        const metaAuthRow = await getMetaAuthWithRefresh(shop.id);
+        if (!metaAuthRow) return { error: "Instagram is not connected" };
+        const media = await getInstagramMedia(metaAuthRow.ig_business_id || "", shop.id, { limit: 25, after });
+        return { success: true, actionType: "load-more-media", media: media.data || [], paging: media.paging || {} };
+      } catch (err) {
+        console.error("[home] Error loading more Instagram posts:", err);
+        return { error: "Failed to load more posts. Please try again." };
+      }
+    }
+
+    // ── Search products (mapping picker) ───────────────────────────────────
+    if (actionType === "search-products") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const term = String(formData.get("search") || "").trim();
+      try {
+        // Strip Shopify search-syntax characters so user input can't break the query.
+        const sanitized = term.replace(/["*\\():]/g, "");
+        const response = await admin.graphql(`
+          query searchProducts($first: Int!, $query: String) {
+            products(first: $first, query: $query) {
+              nodes {
+                id
+                title
+                handle
+                variants(first: 10) {
+                  nodes {
+                    id
+                    title
+                    price
+                    selectedOptions { name value }
+                  }
+                }
+              }
+            }
+          }
+        `, { variables: { first: 50, query: sanitized ? `title:*${sanitized}*` : null } });
+        const json = await response.json();
+        return {
+          success: true,
+          actionType: "search-products",
+          products: json.data?.products?.nodes || [],
+          search: term,
+        };
+      } catch (err) {
+        console.error("[home] Error searching products:", err);
+        return { error: "Failed to search products. Please try again." };
+      }
+    }
+
     // ── Instagram OAuth connect ────────────────────────────────────────────
     const shopDomain = session.shop;
     const connectType = formData.get("connectType") || "instagram-login";
@@ -328,6 +383,19 @@ export default function Index() {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVariant, setSelectedVariant] = useState("");
 
+  // Instagram media pagination: accumulated pages + cursor for the next one.
+  const mediaFetcher = useFetcher();
+  const [localMedia, setLocalMedia] = useState(mediaData?.data || []);
+  const [mediaAfterCursor, setMediaAfterCursor] = useState(
+    mediaData?.paging?.next ? mediaData?.paging?.cursors?.after || null : null,
+  );
+
+  // Product search in the mapping picker. pickerResults === null means no
+  // active search (show the initially loaded products).
+  const searchFetcher = useFetcher();
+  const [productSearch, setProductSearch] = useState("");
+  const [pickerResults, setPickerResults] = useState(null);
+
   // Local mappings state: updated from actions so we never need to revalidate for mapping ops.
   // This preserves shopifyProducts from the initial load (revalidation can lose them).
   const [localMappings, setLocalMappings] = useState(productMappings || []);
@@ -346,8 +414,68 @@ export default function Index() {
       setBrandVoiceReplyLang(brandVoice.reply_language || "auto");
     }
     setLocalMappings(productMappings || []);
-    if (shopifyProducts?.length) setLocalProducts(shopifyProducts);
+    if (shopifyProducts?.length) {
+      setLocalProducts((prev) => {
+        const seen = new Set(shopifyProducts.map((p) => p.id));
+        // Keep any products discovered via search that aren't in the first page.
+        return [...shopifyProducts, ...prev.filter((p) => !seen.has(p.id))];
+      });
+    }
   }, [settings, brandVoice, productMappings, shopifyProducts]);
+
+  // Sync media from the loader, but never shrink the list: revalidation (after
+  // save/delete mapping) re-fetches only the first page, and we don't want a
+  // merchant who paginated deep into their posts to lose their place.
+  useEffect(() => {
+    const firstPage = mediaData?.data || [];
+    setLocalMedia((prev) => {
+      if (prev.length > firstPage.length) return prev;
+      return firstPage;
+    });
+    setMediaAfterCursor((prev) =>
+      prev ?? (mediaData?.paging?.next ? mediaData?.paging?.cursors?.after || null : null),
+    );
+  }, [mediaData]);
+
+  // Append newly loaded Instagram pages and advance the cursor.
+  useEffect(() => {
+    if (mediaFetcher.state !== "idle" || !mediaFetcher.data?.success) return;
+    if (mediaFetcher.data.actionType !== "load-more-media") return;
+    const newItems = mediaFetcher.data.media || [];
+    setLocalMedia((prev) => {
+      const seen = new Set(prev.map((m) => m.id));
+      return [...prev, ...newItems.filter((m) => !seen.has(m.id))];
+    });
+    const paging = mediaFetcher.data.paging || {};
+    setMediaAfterCursor(paging.next ? paging.cursors?.after || null : null);
+  }, [mediaFetcher.state, mediaFetcher.data]);
+
+  // Product search results: show them in the picker and merge into the local
+  // product cache so mapped-product lookups keep working after save.
+  useEffect(() => {
+    if (searchFetcher.state !== "idle" || !searchFetcher.data?.success) return;
+    if (searchFetcher.data.actionType !== "search-products") return;
+    const results = searchFetcher.data.products || [];
+    setPickerResults(results);
+    setLocalProducts((prev) => {
+      const seen = new Set(prev.map((p) => p.id));
+      return [...prev, ...results.filter((p) => !seen.has(p.id))];
+    });
+  }, [searchFetcher.state, searchFetcher.data]);
+
+  // Debounced product search.
+  useEffect(() => {
+    const term = productSearch.trim();
+    if (!term) {
+      setPickerResults(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchFetcher.submit({ action: "search-products", search: term }, { method: "post" });
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSearch]);
 
   // Ask for an App Store review once the merchant has a real win (first
   // attributed order or 20+ sent replies). Uses Shopify's native Reviews API,
@@ -476,8 +604,8 @@ export default function Index() {
     fd.append("postId", postId);
     fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
 
-    if (currentlyEnabled && localEnabledPostIds.length === 0 && mediaData?.data) {
-      const allIds = mediaData.data.map((m) => m.id);
+    if (currentlyEnabled && localEnabledPostIds.length === 0 && localMedia.length > 0) {
+      const allIds = localMedia.map((m) => m.id);
       fd.append("allMediaIds", JSON.stringify(allIds));
       setLocalEnabledPostIds(allIds.filter((id) => id !== postId));
     } else if (currentlyEnabled) {
@@ -489,6 +617,22 @@ export default function Index() {
     postFetcher.submit(fd, { method: "post" });
   };
 
+  const handleLoadMoreMedia = () => {
+    if (!mediaAfterCursor) return;
+    mediaFetcher.submit(
+      { action: "load-more-media", after: mediaAfterCursor },
+      { method: "post" },
+    );
+  };
+
+  const closeProductPicker = () => {
+    setSelectedMedia(null);
+    setSelectedProduct("");
+    setSelectedVariant("");
+    setProductSearch("");
+    setPickerResults(null);
+  };
+
   const handleSaveMapping = (mediaId) => {
     if (!selectedProduct) return;
     const fd = new FormData();
@@ -497,9 +641,7 @@ export default function Index() {
     fd.append("productId", selectedProduct);
     if (selectedVariant) fd.append("variantId", selectedVariant);
     postFetcher.submit(fd, { method: "post" });
-    setSelectedMedia(null);
-    setSelectedProduct("");
-    setSelectedVariant("");
+    closeProductPicker();
   };
 
   const handleDeleteMapping = (mediaId) => {
@@ -511,6 +653,8 @@ export default function Index() {
 
   const selectedProductData = (localProducts || []).find((p) => p.id === selectedProduct);
   const selectedProductVariants = selectedProductData?.variants?.nodes || [];
+  const pickerProducts = pickerResults ?? (localProducts || []);
+  const searchPending = searchFetcher.state !== "idle";
 
   return (
     <s-page heading="SocialRepl.ai">
@@ -887,9 +1031,9 @@ export default function Index() {
 
             {!mediaData ? (
               <span className="srCardDesc">Fetching your Instagram posts…</span>
-            ) : mediaData.data?.length > 0 ? (
+            ) : localMedia.length > 0 ? (
               <div className="srMediaGrid">
-                {mediaData.data.map((media) => {
+                {localMedia.map((media) => {
                   const mapping = mappingsMap.get(media.id);
                   const mappedProduct = mapping
                     ? (localProducts || []).find((p) => productIdMatch(mapping.product_id, p.id))
@@ -968,7 +1112,13 @@ export default function Index() {
                               <span className="srGridTextSubdued">Not mapped</span>
                               <s-button
                                 variant="primary" size="small"
-                                onClick={() => setSelectedMedia(media.id)}
+                                onClick={() => {
+                                  setSelectedMedia(media.id);
+                                  setSelectedProduct("");
+                                  setSelectedVariant("");
+                                  setProductSearch("");
+                                  setPickerResults(null);
+                                }}
                                 disabled={postFetcher.state !== "idle"}
                               >
                                 Map to Product
@@ -984,7 +1134,7 @@ export default function Index() {
                               <label htmlFor={`product-${media.id}`}>
                                 <span className="srGridTextStrong">Select Product:</span>
                               </label>
-                              {(localProducts || []).length === 0 ? (
+                              {(localProducts || []).length === 0 && pickerResults === null && !productSearch ? (
                                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                   <span className="srGridTextSubdued">
                                     No products to show. Your store may have no products, or the list could not be loaded.
@@ -1000,6 +1150,21 @@ export default function Index() {
                                 </div>
                               ) : (
                                 <>
+                                  <input
+                                    type="text"
+                                    value={productSearch}
+                                    onChange={(e) => setProductSearch(e.target.value)}
+                                    placeholder="Search your products by name…"
+                                    className="srInput"
+                                  />
+                                  {searchPending && (
+                                    <span className="srGridTextSubdued">Searching…</span>
+                                  )}
+                                  {!searchPending && pickerResults !== null && pickerResults.length === 0 && (
+                                    <span className="srGridTextSubdued">
+                                      No products match &ldquo;{productSearch.trim()}&rdquo;.
+                                    </span>
+                                  )}
                                   <select
                                     id={`product-${media.id}`}
                                     value={selectedProduct}
@@ -1007,7 +1172,10 @@ export default function Index() {
                                     className="srSelect"
                                   >
                                     <option value="">-- Select Product --</option>
-                                    {(localProducts || []).map((p) => (
+                                    {selectedProductData && !pickerProducts.some((p) => p.id === selectedProduct) && (
+                                      <option value={selectedProductData.id}>{selectedProductData.title}</option>
+                                    )}
+                                    {pickerProducts.map((p) => (
                                       <option key={p.id} value={p.id}>{p.title}</option>
                                     ))}
                                   </select>
@@ -1041,7 +1209,7 @@ export default function Index() {
                                     </s-button>
                                     <s-button
                                       variant="secondary" size="small"
-                                      onClick={() => { setSelectedMedia(null); setSelectedProduct(""); setSelectedVariant(""); }}
+                                      onClick={closeProductPicker}
                                     >
                                       Cancel
                                     </s-button>
@@ -1058,6 +1226,21 @@ export default function Index() {
               </div>
             ) : (
               <span className="srGridTextSubdued">No Instagram posts found.</span>
+            )}
+
+            {mediaFetcher.data?.error && (
+              <span className="srGridTextSubdued">{mediaFetcher.data.error}</span>
+            )}
+            {mediaAfterCursor && (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <s-button
+                  variant="secondary"
+                  onClick={handleLoadMoreMedia}
+                  disabled={mediaFetcher.state !== "idle"}
+                >
+                  {mediaFetcher.state !== "idle" ? "Loading more posts…" : "Load more posts"}
+                </s-button>
+              </div>
             )}
           </div>
         </s-section>
