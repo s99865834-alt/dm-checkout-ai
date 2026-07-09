@@ -4,7 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings } from "../lib/db.server";
-import { getMetaAuthWithRefresh, getInstagramMedia } from "../lib/meta.server";
+import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
 import supabase from "../lib/supabase.server";
 
 export const loader = async ({ request }) => {
@@ -32,19 +32,21 @@ export const loader = async ({ request }) => {
   // Pro-only: post filter
   const postFilterId = url.searchParams.get("post_id") || null;
 
-  // For Pro users, load Instagram media + product mappings for the post filter
+  // For Pro users, load product mappings + the mapped posts' media for the
+  // post filter. Mappings are the source of truth: fetching each mapped post
+  // by ID means the filter works no matter how old the post is, instead of
+  // only covering the account's most recent page of media.
   let mediaPosts = [];
   let productMappings = [];
   if (plan?.name === "PRO") {
     const metaAuth = await getMetaAuthWithRefresh(shop.id).catch(() => null);
-    const [mediaResult, mappingsResult] = await Promise.all([
-      metaAuth?.ig_business_id || metaAuth?.auth_type === "instagram"
-        ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
-        : Promise.resolve(null),
-      getProductMappings(shop.id),
-    ]);
-    mediaPosts = mediaResult?.data || [];
-    productMappings = mappingsResult || [];
+    productMappings = (await getProductMappings(shop.id).catch(() => [])) || [];
+    if (metaAuth && productMappings.length > 0) {
+      mediaPosts = await getInstagramMediaByIds(
+        shop.id,
+        productMappings.map((m) => m.ig_media_id),
+      ).catch(() => []);
+    }
   }
 
   // Resolve post_id → product_id for query filtering, and pre-fetch scoped IDs
