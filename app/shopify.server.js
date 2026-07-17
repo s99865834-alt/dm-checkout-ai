@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 import { createOrUpdateShop, getShopByDomain } from "./lib/db.server";
+import { sendInstallAlert } from "./lib/install-alert.server";
 import logger from "./lib/logger.server";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
@@ -56,6 +57,10 @@ const shopify = shopifyApp({
           active: true,
         });
         logger.debug(`[afterAuth] Created new shop ${session.shop}: active=${result.active}, usage_count=${result.usage_count}`);
+        // Fire-and-forget so a mail hiccup can't slow down or break OAuth.
+        sendInstallAlert(session.shop, "install").catch((e) =>
+          console.error(`[afterAuth] Install alert failed for ${session.shop}:`, e?.message || e),
+        );
       } else if (!existing.active) {
         // Reinstall path. App Store requires paid plans be re-approved
         // after an uninstall, so reset plan/usage here too.
@@ -66,6 +71,9 @@ const shopify = shopifyApp({
           usage_count: 0,
         });
         logger.debug(`[afterAuth] Reactivated shop ${session.shop} on FREE: active=${result.active}, usage_count=${result.usage_count}`);
+        sendInstallAlert(session.shop, "reinstall").catch((e) =>
+          console.error(`[afterAuth] Reinstall alert failed for ${session.shop}:`, e?.message || e),
+        );
       } else {
         logger.debug(`[afterAuth] Shop ${session.shop} already active; leaving plan/usage untouched`);
       }

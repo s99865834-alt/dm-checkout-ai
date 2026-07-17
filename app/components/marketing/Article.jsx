@@ -1,5 +1,5 @@
 import { SITE_URL, postUrl } from "../../lib/blog-posts";
-import { SHOPIFY_APP_STORE_URL } from "./MarketingChrome";
+import { appStoreUrl } from "./MarketingChrome";
 
 /** Build meta tags for an article route from its post metadata. */
 export function articleMeta(post) {
@@ -125,7 +125,7 @@ export function Article({ post, faqs, children }) {
         </p>
         <a
           className="srBtnPrimary"
-          href={SHOPIFY_APP_STORE_URL}
+          href={appStoreUrl("blog_article_cta")}
           target="_blank"
           rel="noopener noreferrer"
         >

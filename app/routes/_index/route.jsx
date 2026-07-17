@@ -1,5 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import { GoogleAnalytics } from "../../components/marketing/GoogleAnalytics";
+import { appStoreUrl } from "../../components/marketing/MarketingChrome";
 
 const SHOPIFY_APP_STORE_URL =
   typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL
@@ -220,7 +221,7 @@ export default function LandingPage() {
           </nav>
           <a
             className="srNavCta"
-            href={SHOPIFY_APP_STORE_URL}
+            href={appStoreUrl("landing_nav")}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -248,7 +249,7 @@ export default function LandingPage() {
             <div className="srHeroActions">
               <a
                 className="srBtnPrimary"
-                href={SHOPIFY_APP_STORE_URL}
+                href={appStoreUrl("landing_hero")}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -538,7 +539,7 @@ export default function LandingPage() {
             </ul>
             <a
               className="srBtnSecondary"
-              href={SHOPIFY_APP_STORE_URL}
+              href={appStoreUrl("landing_pricing_free")}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -563,7 +564,7 @@ export default function LandingPage() {
             </ul>
             <a
               className="srBtnPrimary"
-              href={SHOPIFY_APP_STORE_URL}
+              href={appStoreUrl("landing_pricing_growth")}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -588,7 +589,7 @@ export default function LandingPage() {
             </ul>
             <a
               className="srBtnSecondary"
-              href={SHOPIFY_APP_STORE_URL}
+              href={appStoreUrl("landing_pricing_pro")}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -619,7 +620,7 @@ export default function LandingPage() {
           <p>Install free, connect Instagram, and start replying to DMs and comments today.</p>
           <a
             className="srBtnPrimary srBtnLarge"
-            href={SHOPIFY_APP_STORE_URL}
+            href={appStoreUrl("landing_bottom_cta")}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -642,7 +643,7 @@ export default function LandingPage() {
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a
-              href={SHOPIFY_APP_STORE_URL}
+              href={appStoreUrl("landing_footer")}
               target="_blank"
               rel="noopener noreferrer"
             >
