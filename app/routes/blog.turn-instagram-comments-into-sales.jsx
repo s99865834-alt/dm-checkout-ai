@@ -1,5 +1,6 @@
 import { getPost } from "../lib/blog-posts";
 import { Article, articleMeta } from "../components/marketing/Article";
+import { appStoreUrl } from "../components/marketing/MarketingChrome";
 
 const post = getPost("turn-instagram-comments-into-sales");
 
@@ -67,7 +68,7 @@ export default function CommentsIntoSales() {
       <p>
         Install{" "}
         <a
-          href="https://apps.shopify.com/socialreplai"
+          href={appStoreUrl("blog_comments_to_sales_guide")}
           target="_blank"
           rel="noopener noreferrer"
         >

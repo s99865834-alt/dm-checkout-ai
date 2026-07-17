@@ -7,6 +7,18 @@ export const SHOPIFY_APP_STORE_URL =
     ? process.env.SHOPIFY_APP_STORE_URL
     : "https://apps.shopify.com/socialreplai";
 
+/**
+ * App Store URL tagged with UTM parameters so the Shopify Partner
+ * Dashboard can attribute listing visits (and installs) to the site
+ * and to the specific placement that was clicked.
+ *
+ * @param {string} placement - e.g. "nav_install", "landing_hero"
+ */
+export function appStoreUrl(placement) {
+  const sep = SHOPIFY_APP_STORE_URL.includes("?") ? "&" : "?";
+  return `${SHOPIFY_APP_STORE_URL}${sep}utm_source=socialrepl.ai&utm_medium=website&utm_campaign=${placement}`;
+}
+
 export function Logo({ className = "" }) {
   return (
     <span className={`srLogo ${className}`}>
@@ -40,7 +52,7 @@ export function MarketingNav() {
         </nav>
         <a
           className="srNavCta"
-          href={SHOPIFY_APP_STORE_URL}
+          href={appStoreUrl("nav_install")}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -65,7 +77,7 @@ export function MarketingFooter() {
           <a href="/blog">Blog</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
-          <a href={SHOPIFY_APP_STORE_URL} target="_blank" rel="noopener noreferrer">
+          <a href={appStoreUrl("footer")} target="_blank" rel="noopener noreferrer">
             Shopify App Store
           </a>
         </div>

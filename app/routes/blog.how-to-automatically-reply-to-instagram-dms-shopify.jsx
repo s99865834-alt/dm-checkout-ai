@@ -1,5 +1,6 @@
 import { getPost } from "../lib/blog-posts";
 import { Article, articleMeta } from "../components/marketing/Article";
+import { appStoreUrl } from "../components/marketing/MarketingChrome";
 
 const post = getPost("how-to-automatically-reply-to-instagram-dms-shopify");
 
@@ -57,7 +58,7 @@ export default function HowToAutoReplyDMs() {
       <p>
         Install{" "}
         <a
-          href="https://apps.shopify.com/socialreplai"
+          href={appStoreUrl("blog_dm_automation_guide")}
           target="_blank"
           rel="noopener noreferrer"
         >
