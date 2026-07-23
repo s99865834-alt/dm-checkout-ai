@@ -3,48 +3,69 @@
  * Fetches store information, policies, products, etc. for AI responses
  */
 
-import { shopifyApi, ApiVersion } from "@shopify/shopify-api";
-import { sessionStorage } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
+import { markShopUninstalled } from "./db.server";
 import logger from "./logger.server";
 
-// Lazy-initialized Admin API instance (same config as app, used when we have a session but no request)
-let _shopifyApiInstance = null;
-function getShopifyApi() {
-  if (!_shopifyApiInstance) {
-    const appUrl = (process.env.SHOPIFY_APP_URL || "https://example.com").trim();
-    const hostName = new URL(appUrl).host;
-    _shopifyApiInstance = shopifyApi({
-      apiKey: process.env.SHOPIFY_API_KEY || "",
-      apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-      hostName,
-      apiVersion: ApiVersion.October25,
-      isEmbeddedApp: true,
-    });
-  }
-  return _shopifyApiInstance;
+// ---------------------------------------------------------------------------
+// Background Admin API access
+// ---------------------------------------------------------------------------
+// All lookups here run outside an embedded request (webhooks, automation, the
+// internal admin dashboard), so they authenticate with the shop's stored
+// offline session via unauthenticated.admin(). Going through the app library
+// (instead of a raw @shopify/shopify-api client) matters because the app uses
+// expiring offline access tokens (60-min TTL): the library transparently
+// refreshes the access token with the stored refresh token when it's near
+// expiry. A raw client would start returning 401s an hour after the merchant
+// last opened the app.
+
+/** True when Shopify definitively rejected the refresh token — this only
+ * happens after the merchant uninstalls the app (Shopify revokes the token). */
+function isTokenRevokedError(error) {
+  return (
+    error?.response?.code === 400 &&
+    error?.response?.body?.error === "invalid_subject_token"
+  );
 }
 
-async function loadShopSession(shopDomain) {
+/**
+ * Admin GraphQL client for a shop's stored offline session, or null when the
+ * shop has no usable session. When Shopify reports the token as revoked
+ * (uninstall that our app/uninstalled webhook missed), the shop is marked
+ * inactive so it drops off the admin dashboard and stops being retried.
+ */
+async function getAdminClient(shopDomain) {
   if (!shopDomain) return null;
-
-  // Preferred: app-session format used by this codebase
-  const sessionId = `${shopDomain}_${process.env.SHOPIFY_API_KEY}`;
-  let session = await sessionStorage.loadSession(sessionId);
-  if (session?.accessToken) return session;
-
-  // Fallback: offline session if available
-  const offlineId = `offline_${shopDomain}`;
-  session = await sessionStorage.loadSession(offlineId);
-  if (session?.accessToken) return session;
-
-  // Fallback: any session for shop
-  if (typeof sessionStorage.findSessionsByShop === "function") {
-    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
-    const candidate = sessions?.find((s) => s?.accessToken) || sessions?.[0];
-    if (candidate?.accessToken) return candidate;
+  try {
+    const { admin } = await unauthenticated.admin(shopDomain);
+    return admin;
+  } catch (error) {
+    if (error?.constructor?.name === "SessionNotFoundError") {
+      logger.debug(`[shopify-data] no offline session for ${shopDomain}`);
+      return null;
+    }
+    if (isTokenRevokedError(error)) {
+      console.warn(
+        `[shopify-data] token revoked for ${shopDomain} (app uninstalled); marking shop inactive`,
+      );
+      await markShopUninstalled(shopDomain).catch((e) =>
+        console.error(`[shopify-data] failed to mark ${shopDomain} inactive:`, e?.message || e),
+      );
+      return null;
+    }
+    const detail =
+      error instanceof Response
+        ? `HTTP ${error.status}`
+        : error?.message || String(error);
+    console.error(`[shopify-data] admin client unavailable for ${shopDomain}: ${detail}`);
+    return null;
   }
+}
 
-  return null;
+/** Run a GraphQL query on the shop's offline session and return the parsed body. */
+async function shopGraphql(admin, query, variables = undefined) {
+  const response = await admin.graphql(query, variables ? { variables } : undefined);
+  return response.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -64,14 +85,12 @@ const REVENUE_YTD_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REVENUE_YTD_MAX_PAGES = 20;
 
 async function _fetchStoreTotalRevenueYTD(shopDomain) {
-  const session = await loadShopSession(shopDomain);
-  if (!session?.accessToken) {
+  const admin = await getAdminClient(shopDomain);
+  if (!admin) {
     logger.debug(`[shopify-data] revenue YTD: no session for ${shopDomain}`);
     return null;
   }
 
-  const api = getShopifyApi();
-  const client = new api.clients.Graphql({ session });
   const yearStart = `${new Date().getUTCFullYear()}-01-01`;
   const query = `
     query StoreRevenueYTD($cursor: String) {
@@ -90,7 +109,7 @@ async function _fetchStoreTotalRevenueYTD(shopDomain) {
   let pages = 0;
 
   while (pages < REVENUE_YTD_MAX_PAGES) {
-    const response = await client.request(query, { variables: { cursor } });
+    const response = await shopGraphql(admin, query, { cursor });
     const conn = response?.data?.orders;
     for (const order of conn?.nodes || []) {
       const money = order?.currentTotalPriceSet?.shopMoney;
@@ -149,11 +168,9 @@ const _trialCache = new Map(); // shopDomain -> { value, at }
 const TRIAL_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 async function _fetchStoreManagedTrial(shopDomain) {
-  const session = await loadShopSession(shopDomain);
-  if (!session?.accessToken) return null;
+  const admin = await getAdminClient(shopDomain);
+  if (!admin) return null;
 
-  const api = getShopifyApi();
-  const client = new api.clients.Graphql({ session });
   const query = `
     query AdminActiveSubscription {
       currentAppInstallation {
@@ -167,7 +184,7 @@ async function _fetchStoreManagedTrial(shopDomain) {
     }
   `;
 
-  const response = await client.request(query);
+  const response = await shopGraphql(admin, query);
   const subscriptions =
     response?.data?.currentAppInstallation?.activeSubscriptions || [];
   const sub = subscriptions.find((s) => s.status === "ACTIVE") || null;
@@ -239,15 +256,12 @@ export async function getShopifyStoreInfo(shopDomain) {
       return null;
     }
     
-    const session = await loadShopSession(shopDomain);
-
-    if (!session || !session.accessToken) {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return null;
     }
 
-    const api = getShopifyApi();
-    const client = new api.clients.Graphql({ session });
     const query = `
       query getShopInfo {
         shop {
@@ -284,7 +298,7 @@ export async function getShopifyStoreInfo(shopDomain) {
         }
       }
     `;
-    const response = await client.request(query);
+    const response = await shopGraphql(admin, query);
 
     const shopData = response?.data?.shop;
     const productsCount = response?.data?.productsCount?.count ?? null;
@@ -464,14 +478,12 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
   try {
     if (!shopDomain || !productId) return null;
 
-    const session = await loadShopSession(shopDomain);
-    if (!session || !session.accessToken) {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return null;
     }
 
-    const api = getShopifyApi();
-    const client = new api.clients.Graphql({ session });
     const query = `
       query getProductContext($productId: ID!) {
         product(id: $productId) {
@@ -506,7 +518,7 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
         }
       }
     `;
-    const response = await client.request(query, { variables: { productId } });
+    const response = await shopGraphql(admin, query, { productId });
 
     const data = response?.data;
     const product = data?.product || null;
@@ -720,14 +732,12 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
       return { productName: null, productPrice: null };
     }
 
-    const session = await loadShopSession(shopDomain);
-    if (!session || !session.accessToken) {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) {
       console.error("[shopify-data] No valid session found for shop:", shopDomain);
       return { productName: null, productPrice: null };
     }
 
-    const api = getShopifyApi();
-    const client = new api.clients.Graphql({ session });
     const query = variantId
       ? `
       query getProductInfo($productId: ID!, $variantId: ID!) {
@@ -759,7 +769,7 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
       }
     `;
     const variables = variantId ? { productId, variantId } : { productId };
-    const response = await client.request(query, { variables });
+    const response = await shopGraphql(admin, query, variables);
 
     const product = response?.data?.product || null;
     const variant = response?.data?.productVariant || null;
@@ -848,15 +858,14 @@ export async function searchProductsByDomain(shopDomain, searchTerm, limit = 5) 
   try {
     if (!shopDomain || !searchTerm) return [];
 
-    const session = await loadShopSession(shopDomain);
-    if (!session?.accessToken) {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) {
       logger.debug("[shopify-data] No session for product search:", shopDomain);
       return [];
     }
 
-    const api = getShopifyApi();
-    const client = new api.clients.Graphql({ session });
-    const response = await client.request(
+    const response = await shopGraphql(
+      admin,
       `query searchProducts($query: String!, $first: Int!) {
         products(first: $first, query: $query) {
           nodes {
@@ -874,10 +883,8 @@ export async function searchProductsByDomain(shopDomain, searchTerm, limit = 5) 
         }
       }`,
       {
-        variables: {
-          query: `title:*${searchTerm}*`,
-          first: limit,
-        },
+        query: `title:*${searchTerm}*`,
+        first: limit,
       }
     );
 

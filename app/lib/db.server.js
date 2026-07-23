@@ -147,6 +147,31 @@ export async function updateShopPlan(shopId, plan) {
 }
 
 /**
+ * Mark a shop as uninstalled: active = false and plan back to FREE, mirroring
+ * the app/uninstalled webhook. Used as a self-heal when Shopify reports a
+ * shop's token as revoked (i.e. the app was uninstalled but the webhook was
+ * missed), so stale stores drop off the admin dashboard and stop being
+ * retried. Reinstalling flips active back to true via afterAuth.
+ */
+export async function markShopUninstalled(shopifyDomain) {
+  const config = getPlanConfig("FREE");
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      active: false,
+      plan: "FREE",
+      monthly_cap: config.cap,
+      priority_support: config.prioritySupport,
+    })
+    .eq("shopify_domain", shopifyDomain);
+
+  if (error) {
+    console.error("markShopUninstalled error", error);
+    throw error;
+  }
+}
+
+/**
  * Increment usage, resetting month if needed.
  */
 export async function incrementUsage(shopId, delta) {
@@ -1766,7 +1791,11 @@ export async function getProAnalytics(shopId, options = {}) {
 }
 
 /**
- * Get all stores with aggregates for admin dashboard.
+ * Get all currently-installed stores with aggregates for admin dashboard.
+ * Only shops with active = true are returned: the app/uninstalled webhook sets
+ * active = false, so uninstalled stores drop off the admin automatically (and
+ * their revoked tokens no longer trigger 401 lookups). Reinstalls set
+ * active = true again via afterAuth, which brings the store back.
  * Returns: [{ shop_id, shopify_domain, created_at, active, plan, beta_trial,
  *   messages_sent, revenue, instagram_connected, ig_business_id }]
  */
@@ -1774,6 +1803,7 @@ export async function getAdminDashboardStores() {
   const { data: shops, error: shopsError } = await supabase
     .from("shops")
     .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at")
+    .eq("active", true)
     .order("id", { ascending: true });
 
   if (shopsError) {
@@ -1782,6 +1812,7 @@ export async function getAdminDashboardStores() {
       const { data: shopsFallback, error: fallbackError } = await supabase
         .from("shops")
         .select("id, shopify_domain, active, plan, beta_trial_expires_at")
+        .eq("active", true)
         .order("id", { ascending: true });
       if (fallbackError) {
         console.error("getAdminDashboardStores shops error", fallbackError);
