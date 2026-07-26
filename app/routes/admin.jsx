@@ -246,6 +246,75 @@ function ReviewPromptCell({ reviewPrompt }) {
   );
 }
 
+// Automation health for a store, designed to answer one question at a glance:
+// "is this store actually able to send messages?" Classified worst-first:
+//   1. Instagram not linked          → setup never finished
+//   2. Meta token expired            → looks connected but every reply fails
+//   3. DM + comment automation off   → merchant turned the app off
+//   4. Partially off                 → one channel disabled
+//   5. On                            → fully armed; shows posts-off/mapped detail
+// If a store is fully on but has sent 0 messages, that's the discrepancy worth
+// investigating, so it gets an explicit "0 sent" warning tag.
+function AutomationCell({ row }) {
+  const s = row.setup;
+  if (!s) return <span style={{ color: "#8a8a8a" }}>—</span>;
+
+  const tag = (text, color, title) => (
+    <span title={title || ""} style={{ color, fontWeight: 600, fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
+      {text}
+    </span>
+  );
+
+  if (!row.instagram_connected) {
+    return tag("IG not linked", "#64748b");
+  }
+  if (s.tokenExpired) {
+    return tag(
+      "Token expired",
+      "#f87171",
+      `Meta token expired ${s.tokenExpiresAt ? new Date(s.tokenExpiresAt).toLocaleDateString() : ""} — replies will fail until the merchant reconnects Instagram`,
+    );
+  }
+
+  const bothOff = !s.dmEnabled && !s.commentEnabled;
+  const partial = !bothOff && (!s.dmEnabled || !s.commentEnabled);
+
+  // detail: which channels, posts disabled, posts mapped
+  const detail = [
+    `DM ${s.dmEnabled ? "on" : "off"}`,
+    `Comments ${s.commentEnabled ? "on" : "off"}`,
+    s.disabledPostCount > 0 ? `${s.disabledPostCount} post${s.disabledPostCount === 1 ? "" : "s"} off` : "all posts on",
+    `${s.mappedPostCount} mapped`,
+  ].join(" · ");
+
+  const zeroSent = !bothOff && (row.messages_sent ?? 0) === 0;
+
+  return (
+    <span title={detail} style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", whiteSpace: "nowrap" }}>
+      {bothOff
+        ? tag("Off", "#fb923c", detail)
+        : partial
+          ? tag(s.dmEnabled ? "DM only" : "Comments only", "#facc15", detail)
+          : tag("On", "#4ade80", detail)}
+      {zeroSent && (
+        <span
+          title="Automation is on and Instagram is linked, but this store has never sent a message — check webhooks/logs for this shop"
+          style={{
+            fontSize: "0.7rem",
+            fontWeight: 600,
+            padding: "0.1rem 0.4rem",
+            borderRadius: "4px",
+            backgroundColor: "#7c2d12",
+            color: "#fdba74",
+          }}
+        >
+          ⚠ 0 sent
+        </span>
+      )}
+    </span>
+  );
+}
+
 // made no sales this year) and is shown as such; null means we couldn't read
 // it (no/expired token) and renders as "—". A trailing "+" marks a capped
 // lower bound for very high-volume stores.
@@ -389,6 +458,7 @@ export default function Admin() {
               <th style={styles.th}>Store</th>
               <th style={styles.th}>Plan</th>
               <th style={styles.th}>Instagram</th>
+              <th style={styles.th}>Automation</th>
               <SortHeader label="Tenure" sortKey="tenure" sort={sort} onSort={toggleSort} />
               <SortHeader label="Messages sent" sortKey="messages" sort={sort} onSort={toggleSort} />
               <SortHeader label="Revenue attribution" sortKey="revenue" sort={sort} onSort={toggleSort} />
@@ -429,6 +499,9 @@ export default function Admin() {
                       <span style={styles.igMuted}>Not connected</span>
                     )}
                   </td>
+                  <td style={styles.td}>
+                    <AutomationCell row={row} />
+                  </td>
                   <td style={styles.td}>{formatTenure(row.created_at)}</td>
                   <td style={styles.td}>{row.messages_sent.toLocaleString()}</td>
                   <td style={styles.td}>{formatRevenue(row.revenue)}</td>
@@ -442,7 +515,7 @@ export default function Admin() {
               ))
             ) : (
               <tr>
-                <td colSpan={8} style={styles.tdEmpty}>
+                <td colSpan={9} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
               </tr>
