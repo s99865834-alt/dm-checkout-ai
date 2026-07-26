@@ -55,7 +55,7 @@ export default function SupportPage() {
                   <li>Open the <strong>Instagram app</strong> and go to your profile.</li>
                   <li>Tap the menu (☰) and open <strong>Settings and activity</strong>.</li>
                   <li>Tap <strong>Messages and story replies</strong>.</li>
-                  <li>Tap <strong>Message controls</strong>.</li>
+                  <li>Tap <strong>Message request</strong>.</li>
                   <li>Under <strong>Connected tools</strong>, turn on <strong>&ldquo;Allow access to messages&rdquo;</strong>.</li>
                 </ol>
                 <p>
