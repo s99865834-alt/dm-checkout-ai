@@ -764,7 +764,7 @@ export default function Index() {
                           </span>
                           <div>
                             <s-button href="/app/support" variant="secondary" size="slim" className="srBtnCompact">
-                              Need help? Contact support
+                              Step-by-step fix & FAQs
                             </s-button>
                           </div>
                         </div>

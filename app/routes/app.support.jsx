@@ -35,6 +35,50 @@ export default function SupportPage() {
               <p className="srFaqAnswer">Go to the Home page and click "Connect Instagram" in the Plan & Instagram section. You'll be guided through the Meta authorization process.</p>
             </details>
             <details className="srFaqItem">
+              <summary className="srFaqSummary">What does the orange "No Instagram messages received yet" warning mean?</summary>
+              <p className="srFaqAnswer">
+                It means your Instagram account is connected, but no customer message or comment has reached SocialRepl.ai yet.
+                That's normal right after you install — it simply hasn't had anything to reply to.
+                But if the warning stays for a while even though customers are messaging you, the most common cause is Instagram's
+                "Allow access to messages" setting being turned off (see the next question).
+                The warning turns green automatically the moment your first customer DM or comment comes through.
+              </p>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">How do I turn on &ldquo;Allow access to messages&rdquo; in Instagram?</summary>
+              <div className="srFaqAnswer">
+                <p>
+                  Instagram has a privacy setting that controls whether connected apps like SocialRepl.ai can see and reply to your DMs.
+                  It must be turned on for automation to work, and only you can change it — from the Instagram app on your phone:
+                </p>
+                <ol>
+                  <li>Open the <strong>Instagram app</strong> and go to your profile.</li>
+                  <li>Tap the menu (☰) and open <strong>Settings and activity</strong>.</li>
+                  <li>Tap <strong>Messages and story replies</strong>.</li>
+                  <li>Tap <strong>Message controls</strong>.</li>
+                  <li>Under <strong>Connected tools</strong>, turn on <strong>&ldquo;Allow access to messages&rdquo;</strong>.</li>
+                </ol>
+                <p>
+                  No need to reconnect or restart anything afterwards — the change takes effect right away,
+                  and the warning on your Home page turns green after the next customer message arrives.
+                </p>
+              </div>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">Instagram is connected but the app isn&apos;t replying — what should I check?</summary>
+              <div className="srFaqAnswer">
+                <p>Work through these in order:</p>
+                <ol>
+                  <li><strong>Message access:</strong> confirm &ldquo;Allow access to messages&rdquo; is on in Instagram (see above). This is the most common cause.</li>
+                  <li><strong>Automation toggles:</strong> on the Home page, check that DM automation (and comment automation on paid plans) is switched on and you clicked &ldquo;Save settings.&rdquo;</li>
+                  <li><strong>Monthly limit:</strong> check the usage bar in Plan &amp; Instagram — once you hit your plan&apos;s message cap, replies pause until next month.</li>
+                  <li><strong>Per-post toggles:</strong> if only certain posts get no replies, check that automation is enabled on those posts in &ldquo;Your Instagram Posts.&rdquo;</li>
+                  <li><strong>Account type:</strong> your Instagram must be a professional account (Business or Creator) — personal accounts don&apos;t support message automation.</li>
+                </ol>
+                <p>Still stuck? Email us and we&apos;ll investigate your account directly.</p>
+              </div>
+            </details>
+            <details className="srFaqItem">
               <summary className="srFaqSummary">How do I map products to posts?</summary>
               <p className="srFaqAnswer">On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</p>
             </details>
