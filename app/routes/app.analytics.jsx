@@ -5,7 +5,13 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings } from "../lib/db.server";
 import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
+import { cached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
+
+// Mapped-post media for the PRO post filter changes rarely; cache it so the
+// analytics page doesn't hit the Instagram API (one call per mapped post) on
+// every load/filter change.
+const IG_MEDIA_TTL_MS = 5 * 60 * 1000;
 
 export const loader = async ({ request }) => {
   const { shop, plan } = await getShopWithPlan(request);
@@ -42,9 +48,11 @@ export const loader = async ({ request }) => {
     const metaAuth = await getMetaAuthWithRefresh(shop.id).catch(() => null);
     productMappings = (await getProductMappings(shop.id).catch(() => [])) || [];
     if (metaAuth && productMappings.length > 0) {
-      mediaPosts = await getInstagramMediaByIds(
-        shop.id,
-        productMappings.map((m) => m.ig_media_id),
+      const mediaIds = [...new Set(productMappings.map((m) => m.ig_media_id).filter(Boolean))].sort();
+      mediaPosts = await cached(
+        `igmediaids:${shop.id}:${mediaIds.join(",")}`,
+        IG_MEDIA_TTL_MS,
+        () => getInstagramMediaByIds(shop.id, mediaIds),
       ).catch(() => []);
     }
   }

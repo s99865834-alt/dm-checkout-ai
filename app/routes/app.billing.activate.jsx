@@ -2,6 +2,7 @@ import { redirect, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { updateShopPlan } from "../lib/db.server";
+import { invalidateCached } from "../lib/loader-cache.server";
 import { getCurrentSubscription, planFromSubscription } from "../lib/billing.server";
 
 const VALID_PLANS = new Set(["FREE", "GROWTH", "PRO"]);
@@ -72,6 +73,9 @@ export const loader = async ({ request }) => {
 
     if (planToSet) {
       await updateShopPlan(shop.id, planToSet);
+      // Trial status is cached for the home-page banner; the plan just
+      // changed, so recompute it on the next load.
+      invalidateCached(`trial:${shop.id}`);
     } else {
       console.warn(
         `[billing] Could not resolve plan for charge_id=${chargeId} subscription="${subscription?.name}"; leaving shop.plan untouched`

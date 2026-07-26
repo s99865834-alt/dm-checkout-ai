@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useRouteError, useNavigate } from "react-router";
+import { Outlet, useLoaderData, useRouteError, useNavigate, useNavigation } from "react-router";
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -31,7 +31,15 @@ export const shouldRevalidate = ({ currentUrl, nextUrl }) => {
 export default function App() {
   const { apiKey, shop, plan } = useLoaderData();
   const navigate = useNavigate();
+  const navigation = useNavigation();
   const navRef = useRef(null);
+
+  // Show Shopify admin's native loading bar while a client-side navigation's
+  // loader is running, so tab switches never look like a frozen page.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.shopify?.loading !== "function") return;
+    window.shopify.loading(navigation.state !== "idle");
+  }, [navigation.state]);
 
   // Intercept s-link clicks for client-side navigation
   useEffect(() => {

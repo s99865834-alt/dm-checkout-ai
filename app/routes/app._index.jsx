@@ -1,11 +1,13 @@
-import { useEffect, useState, useRef } from "react";
-import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator } from "react-router";
+import { Suspense, useEffect, useState, useRef } from "react";
+import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
+import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
+import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
@@ -15,97 +17,114 @@ const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 const REVIEW_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days between asks
 const REVIEW_MAX_ASKS = 3; // worst case: day 0, ~30, ~60, then stop forever
 
+// Server-side cache TTLs for slow, slow-changing loader data. Product catalog
+// and Instagram media tolerate a few minutes of staleness; trial status only
+// changes on plan events (which invalidate it explicitly in the billing routes).
+const PRODUCTS_TTL_MS = 5 * 60 * 1000;
+const IG_TTL_MS = 5 * 60 * 1000;
+const TRIAL_TTL_MS = 15 * 60 * 1000;
+
+// The loader is split for Core Web Vitals (LCP < 2.5s):
+//   - Awaited: everything the shell + banners need — cheap DB reads plus the
+//     (cached) trial status. Banners MUST come from awaited data so they're in
+//     the first paint and never pop in later (CLS).
+//   - Streamed (`deferred`): the slow external calls — Shopify product catalog
+//     and Instagram account/media. The page renders immediately with a
+//     skeleton grid and these stream in when ready.
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
 
   let metaAuth = null;
-  let instagramInfo = null;
   let settings = null;
   let brandVoice = null;
-  let mediaData = null;
   let productMappings = [];
-  let shopifyProducts = [];
+  let missedComments = 0;
+  let trialStatus = null;
+  let reviewEligible = false;
 
   if (shop?.id) {
-    const productsPromise = (async () => {
-      try {
-        const response = await admin.graphql(`
-          query getProducts($first: Int!) {
-            products(first: $first) {
-              nodes {
-                id
-                title
-                handle
-                variants(first: 100) {
-                  nodes {
-                    id
-                    title
-                    price
-                    selectedOptions { name value }
+    let attributionCount = 0;
+    let sentLinkCount = 0;
+    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount] =
+      await Promise.all([
+        getMetaAuthWithRefresh(shop.id),
+        getSettings(shop.id),
+        getBrandVoice(shop.id),
+        getProductMappings(shop.id).catch(() => []),
+        plan?.name === "FREE" ? getMissedCommentCount(shop.id) : Promise.resolve(0),
+        // Free-trial countdown for the banner. Failure-safe and cached: a
+        // billing API hiccup should never block the dashboard, and the Shopify
+        // call only runs once per TTL instead of on every page load.
+        plan?.name !== "FREE"
+          ? cached(`trial:${shop.id}`, TRIAL_TTL_MS, async () => {
+              try {
+                const subscription = await getCurrentSubscription(admin);
+                return getTrialStatus(subscription);
+              } catch (err) {
+                console.error("[home] Error fetching trial status:", err.message);
+                return null;
+              }
+            })
+          : Promise.resolve(null),
+        // Review-prompt eligibility: first attributed order OR 20+ sent replies.
+        getAttributionCount(shop.id),
+        getSentLinkCount(shop.id),
+      ]);
+    reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
+  }
+
+  // Slow externals, streamed to the client as one promise (not awaited here).
+  // Each leg is failure-safe and cached so repeat loads inside the TTL are
+  // instant. Bundled into a single promise so the posts section renders once.
+  const shopId = shop?.id;
+  const igBusinessId = metaAuth?.ig_business_id || null;
+  const hasIg = !!metaAuth && (!!igBusinessId || metaAuth.auth_type === "instagram");
+  const deferred = (async () => {
+    if (!shopId) return { shopifyProducts: [], instagramInfo: null, mediaData: null };
+    const [shopifyProducts, instagramInfo, mediaData] = await Promise.all([
+      cached(`products:${shopId}`, PRODUCTS_TTL_MS, async () => {
+        try {
+          const response = await admin.graphql(`
+            query getProducts($first: Int!) {
+              products(first: $first) {
+                nodes {
+                  id
+                  title
+                  handle
+                  variants(first: 100) {
+                    nodes {
+                      id
+                      title
+                      price
+                      selectedOptions { name value }
+                    }
                   }
                 }
               }
             }
-          }
-        `, { variables: { first: 50 } });
-        const json = await response.json();
-        return json.data?.products?.nodes || [];
-      } catch (err) {
-        console.error("[home] Error fetching Shopify products:", err.message);
-        return [];
-      }
-    })();
-
-    [metaAuth, settings, brandVoice, shopifyProducts] = await Promise.all([
-      getMetaAuthWithRefresh(shop.id),
-      getSettings(shop.id),
-      getBrandVoice(shop.id),
-      productsPromise,
+          `, { variables: { first: 50 } });
+          const json = await response.json();
+          return json.data?.products?.nodes || [];
+        } catch (err) {
+          console.error("[home] Error fetching Shopify products:", err.message);
+          return [];
+        }
+      }),
+      igBusinessId
+        ? cached(`iginfo:${shopId}`, IG_TTL_MS, () =>
+            getInstagramAccountInfo(igBusinessId, shopId),
+          ).catch(() => null)
+        : Promise.resolve(null),
+      hasIg
+        ? cached(`igmedia:${shopId}`, IG_TTL_MS, () =>
+            getInstagramMedia(igBusinessId || "", shopId, { limit: 25 }),
+          ).catch(() => null)
+        : Promise.resolve(null),
     ]);
+    return { shopifyProducts, instagramInfo, mediaData };
+  })();
 
-    if (metaAuth) {
-      [instagramInfo, mediaData, productMappings] = await Promise.all([
-        metaAuth.ig_business_id
-          ? getInstagramAccountInfo(metaAuth.ig_business_id, shop.id)
-          : Promise.resolve(null),
-        (metaAuth.ig_business_id || metaAuth.auth_type === "instagram")
-          ? getInstagramMedia(metaAuth.ig_business_id || "", shop.id, { limit: 25 }).catch(() => null)
-          : Promise.resolve(null),
-        getProductMappings(shop.id),
-      ]);
-    }
-  }
-
-  let missedComments = 0;
-  if (shop?.id && plan?.name === "FREE") {
-    missedComments = await getMissedCommentCount(shop.id);
-  }
-
-  // Free-trial countdown for the banner. Failure-safe: a billing API hiccup
-  // should never block the dashboard.
-  let trialStatus = null;
-  if (shop?.id && plan?.name !== "FREE") {
-    try {
-      const subscription = await getCurrentSubscription(admin);
-      trialStatus = getTrialStatus(subscription);
-    } catch (err) {
-      console.error("[home] Error fetching trial status:", err.message);
-    }
-  }
-
-  // Decide whether this merchant has gotten enough value to be worth a
-  // (Shopify-native, rate-limited) review prompt: first attributed order OR
-  // 20+ replies sent by the app. Both helpers are failure-safe.
-  let reviewEligible = false;
-  if (shop?.id) {
-    const [attributionCount, sentLinkCount] = await Promise.all([
-      getAttributionCount(shop.id),
-      getSentLinkCount(shop.id),
-    ]);
-    reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
-  }
-
-  return { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus, reviewEligible };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -130,6 +149,10 @@ export const action = async ({ request }) => {
     if (actionType === "disconnect") {
       if (!shop?.id) return { error: "Shop not found" };
       await deleteMetaAuth(shop.id);
+      // Cached IG data belongs to the disconnected account; drop it so a
+      // reconnect doesn't briefly show the old account's posts.
+      invalidateCached(`iginfo:${shop.id}`);
+      invalidateCached(`igmedia:${shop.id}`);
       return { success: true, message: "Instagram account disconnected successfully" };
     }
 
@@ -357,11 +380,10 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, instagramInfo, settings, brandVoice, mediaData, productMappings, shopifyProducts, missedComments, trialStatus, reviewEligible } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const revalidator = useRevalidator();
 
   const isConnected = !!metaAuth;
   const disconnected = searchParams.get("disconnected") === "true";
@@ -386,30 +408,9 @@ export default function Index() {
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
   const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
 
-  // Instagram feed local state
-  const [selectedMedia, setSelectedMedia] = useState(null);
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [selectedVariant, setSelectedVariant] = useState("");
-
-  // Instagram media pagination: accumulated pages + cursor for the next one.
-  const mediaFetcher = useFetcher();
-  const [localMedia, setLocalMedia] = useState(mediaData?.data || []);
-  const [mediaAfterCursor, setMediaAfterCursor] = useState(
-    mediaData?.paging?.next ? mediaData?.paging?.cursors?.after || null : null,
-  );
-
-  // Product search in the mapping picker. pickerResults === null means no
-  // active search (show the initially loaded products).
-  const searchFetcher = useFetcher();
-  const [productSearch, setProductSearch] = useState("");
-  const [pickerResults, setPickerResults] = useState(null);
-
-  // Local mappings state: updated from actions so we never need to revalidate for mapping ops.
-  // This preserves shopifyProducts from the initial load (revalidation can lose them).
-  const [localMappings, setLocalMappings] = useState(productMappings || []);
-  const [localProducts, setLocalProducts] = useState(shopifyProducts || []);
-
-  // Sync from loader data when it changes (initial load or full revalidation)
+  // Sync automation/brand-voice form state from loader data when it changes
+  // (initial load or full revalidation). All feed/mapping/picker state lives
+  // in <PostsSection> now.
   useEffect(() => {
     if (settings) {
       setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
@@ -421,69 +422,7 @@ export default function Index() {
       setBrandVoiceCustom(brandVoice.custom_instruction || "");
       setBrandVoiceReplyLang(brandVoice.reply_language || "auto");
     }
-    setLocalMappings(productMappings || []);
-    if (shopifyProducts?.length) {
-      setLocalProducts((prev) => {
-        const seen = new Set(shopifyProducts.map((p) => p.id));
-        // Keep any products discovered via search that aren't in the first page.
-        return [...shopifyProducts, ...prev.filter((p) => !seen.has(p.id))];
-      });
-    }
-  }, [settings, brandVoice, productMappings, shopifyProducts]);
-
-  // Sync media from the loader, but never shrink the list: revalidation (after
-  // save/delete mapping) re-fetches only the first page, and we don't want a
-  // merchant who paginated deep into their posts to lose their place.
-  useEffect(() => {
-    const firstPage = mediaData?.data || [];
-    setLocalMedia((prev) => {
-      if (prev.length > firstPage.length) return prev;
-      return firstPage;
-    });
-    setMediaAfterCursor((prev) =>
-      prev ?? (mediaData?.paging?.next ? mediaData?.paging?.cursors?.after || null : null),
-    );
-  }, [mediaData]);
-
-  // Append newly loaded Instagram pages and advance the cursor.
-  useEffect(() => {
-    if (mediaFetcher.state !== "idle" || !mediaFetcher.data?.success) return;
-    if (mediaFetcher.data.actionType !== "load-more-media") return;
-    const newItems = mediaFetcher.data.media || [];
-    setLocalMedia((prev) => {
-      const seen = new Set(prev.map((m) => m.id));
-      return [...prev, ...newItems.filter((m) => !seen.has(m.id))];
-    });
-    const paging = mediaFetcher.data.paging || {};
-    setMediaAfterCursor(paging.next ? paging.cursors?.after || null : null);
-  }, [mediaFetcher.state, mediaFetcher.data]);
-
-  // Product search results: show them in the picker and merge into the local
-  // product cache so mapped-product lookups keep working after save.
-  useEffect(() => {
-    if (searchFetcher.state !== "idle" || !searchFetcher.data?.success) return;
-    if (searchFetcher.data.actionType !== "search-products") return;
-    const results = searchFetcher.data.products || [];
-    setPickerResults(results);
-    setLocalProducts((prev) => {
-      const seen = new Set(prev.map((p) => p.id));
-      return [...prev, ...results.filter((p) => !seen.has(p.id))];
-    });
-  }, [searchFetcher.state, searchFetcher.data]);
-
-  // Debounced product search.
-  useEffect(() => {
-    const term = productSearch.trim();
-    if (!term) {
-      setPickerResults(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      searchFetcher.submit({ action: "search-products", search: term }, { method: "post" });
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productSearch]);
+  }, [settings, brandVoice]);
 
   // Ask for an App Store review once the merchant has a real win (first
   // attributed order or 20+ sent replies). Uses Shopify's native Reviews API,
@@ -568,29 +507,6 @@ export default function Index() {
     };
   }, [reviewEligible, shop?.id]);
 
-  // After postFetcher completes: update mappings locally or revalidate for toggle-post
-  useEffect(() => {
-    if (postFetcher.state !== "idle" || !postFetcher.data?.success) return;
-    const { actionType } = postFetcher.data;
-
-    if (actionType === "save-mapping" && postFetcher.data.mapping) {
-      setLocalMappings((prev) => {
-        const filtered = prev.filter((m) => m.ig_media_id !== postFetcher.data.mapping.ig_media_id);
-        return [...filtered, postFetcher.data.mapping];
-      });
-      // Re-read from DB so the grid always reflects persisted state,
-      // not just optimistic client state. If the row somehow never landed
-      // in post_product_map, the optimistic mapping will disappear on
-      // revalidate rather than hiding the bug.
-      revalidator.revalidate();
-    } else if (actionType === "delete-mapping" && postFetcher.data.igMediaId) {
-      setLocalMappings((prev) => prev.filter((m) => m.ig_media_id !== postFetcher.data.igMediaId));
-      revalidator.revalidate();
-    } else if (actionType === "toggle-post-automation" && postFetcher.data.newDisabledIds) {
-      setLocalDisabledPostIds(postFetcher.data.newDisabledIds);
-    }
-  }, [postFetcher.state, postFetcher.data, revalidator]);
-
   // OAuth redirect — must break out of Shopify iframe
   useEffect(() => {
     if (connectFetcher.data?.oauthUrl) {
@@ -600,79 +516,6 @@ export default function Index() {
       navigate("/app?disconnected=true");
     }
   }, [connectFetcher.data, navigate]);
-
-  // Feed helpers — normalize product ID for lookup (DB may store/return GID or numeric)
-  const productIdMatch = (storedId, shopifyProductId) => {
-    if (!storedId || !shopifyProductId) return false;
-    const n = (id) => {
-      if (id == null) return "";
-      const s = String(id);
-      const suffix = s.match(/\/(\d+)$/);
-      return suffix ? suffix[1] : s;
-    };
-    return n(storedId) === n(shopifyProductId);
-  };
-  const mappingsMap = new Map((localMappings || []).map((m) => [m.ig_media_id, m]));
-  const [localDisabledPostIds, setLocalDisabledPostIds] = useState(settings?.disabled_post_ids || []);
-
-  useEffect(() => {
-    setLocalDisabledPostIds(settings?.disabled_post_ids || []);
-  }, [settings?.disabled_post_ids]);
-
-  const isPostEnabled = (postId) => !localDisabledPostIds.includes(postId);
-
-  const handleTogglePost = (postId, currentlyEnabled) => {
-    const fd = new FormData();
-    fd.append("action", "toggle-post-automation");
-    fd.append("postId", postId);
-    fd.append("togglePost", currentlyEnabled ? "disable" : "enable");
-
-    // Optimistic update; the action response re-syncs the authoritative list.
-    setLocalDisabledPostIds((prev) =>
-      currentlyEnabled ? [...prev, postId] : prev.filter((id) => id !== postId),
-    );
-
-    postFetcher.submit(fd, { method: "post" });
-  };
-
-  const handleLoadMoreMedia = () => {
-    if (!mediaAfterCursor) return;
-    mediaFetcher.submit(
-      { action: "load-more-media", after: mediaAfterCursor },
-      { method: "post" },
-    );
-  };
-
-  const closeProductPicker = () => {
-    setSelectedMedia(null);
-    setSelectedProduct("");
-    setSelectedVariant("");
-    setProductSearch("");
-    setPickerResults(null);
-  };
-
-  const handleSaveMapping = (mediaId) => {
-    if (!selectedProduct) return;
-    const fd = new FormData();
-    fd.append("action", "save-mapping");
-    fd.append("igMediaId", mediaId);
-    fd.append("productId", selectedProduct);
-    if (selectedVariant) fd.append("variantId", selectedVariant);
-    postFetcher.submit(fd, { method: "post" });
-    closeProductPicker();
-  };
-
-  const handleDeleteMapping = (mediaId) => {
-    const fd = new FormData();
-    fd.append("action", "delete-mapping");
-    fd.append("igMediaId", mediaId);
-    postFetcher.submit(fd, { method: "post" });
-  };
-
-  const selectedProductData = (localProducts || []).find((p) => p.id === selectedProduct);
-  const selectedProductVariants = selectedProductData?.variants?.nodes || [];
-  const pickerProducts = pickerResults ?? (localProducts || []);
-  const searchPending = searchFetcher.state !== "idle";
 
   return (
     <s-page heading="SocialRepl.ai">
@@ -858,7 +701,14 @@ export default function Index() {
                 <div className="srIGConnectedRow">
                   <div className="srIGConnectedInfo">
                     <span className="srCardTitle">
-                      Connected{instagramInfo?.username ? ` · @${instagramInfo.username}` : ""}
+                      Connected
+                      {/* Username streams in with the deferred data; the row
+                          height is fixed so it appends without layout shift. */}
+                      <Suspense fallback={null}>
+                        <Await resolve={deferred} errorElement={null}>
+                          {(d) => (d?.instagramInfo?.username ? ` · @${d.instagramInfo.username}` : "")}
+                        </Await>
+                      </Suspense>
                     </span>
                   </div>
                   <s-button
@@ -1039,251 +889,32 @@ export default function Index() {
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
       {/* Hidden on FREE: post-by-post mapping and per-post automation toggles
           are part of the paid DM/comment automation experience. FREE merchants
-          see the upgrade banners above instead. */}
+          see the upgrade banners above instead.
+          Media + products stream in via the deferred loader promise; the
+          fixed-size skeleton keeps first paint fast (LCP) with no layout
+          shift when the real grid arrives (CLS). */}
       {isConnected && !isFree && (
         <s-section heading="Your Instagram Posts">
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <span className="srCardDesc">
-              Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the toggles to enable or disable automation per post.
-            </span>
-
-            {!mediaData ? (
-              <span className="srCardDesc">Fetching your Instagram posts…</span>
-            ) : localMedia.length > 0 ? (
-              <div className="srMediaGrid">
-                {localMedia.map((media) => {
-                  const mapping = mappingsMap.get(media.id);
-                  const mappedProduct = mapping
-                    ? (localProducts || []).find((p) => productIdMatch(mapping.product_id, p.id))
-                    : null;
-                  const variantIdMatch = (stored, nodes) => {
-                    if (!stored || !nodes?.length) return null;
-                    const n = (id) => (id == null ? "" : (String(id).match(/\/(\d+)$/)?.[1] ?? String(id)));
-                    return nodes.find((v) => n(v.id) === n(stored)) ?? null;
-                  };
-                  const mappedVariant = mapping && mappedProduct && mapping.variant_id
-                    ? variantIdMatch(mapping.variant_id, mappedProduct.variants?.nodes)
-                    : null;
-                  const automationEnabled = isPostEnabled(media.id);
-
-                  return (
-                    <s-box key={media.id} padding="base" borderWidth="base" borderRadius="base">
-                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                        {media.media_url && (
-                          <img src={media.media_url} alt={media.caption || "Instagram post"} className="srMediaImage" />
-                        )}
-                        {media.caption && (
-                          <span className="srGridTextSubdued srClamp2">{media.caption}</span>
-                        )}
-                        <div className="srGridMeta">
-                          {media.like_count !== undefined && <span>❤️ {media.like_count}</span>}
-                          {media.comments_count !== undefined && <span>💬 {media.comments_count}</span>}
-                        </div>
-
-                        {/* Per-post automation toggle */}
-                        <s-box padding="tight" borderWidth="base" borderRadius="base"
-                          background={automationEnabled ? "success-subdued" : "subdued"}>
-                          <div className="srGridToggleRow srGridStatusBox">
-                            <div className="srGridToggleInfo">
-                              <span className="srGridTextStrong">
-                                {automationEnabled ? "Automation Enabled" : "Automation Disabled"}
-                              </span>
-                              <span className="srGridTextSubdued">
-                                {automationEnabled
-                                  ? "AI will respond to comments/DMs on this post"
-                                  : "AI will NOT respond to comments/DMs on this post"}
-                              </span>
-                            </div>
-                            <label className="srToggle">
-                              <input
-                                type="checkbox"
-                                checked={automationEnabled}
-                                onChange={() => handleTogglePost(media.id, automationEnabled)}
-                                disabled={postFetcher.state !== "idle"}
-                              />
-                              <span className="srToggleTrack"><span className="srToggleThumb" /></span>
-                            </label>
-                          </div>
-                        </s-box>
-
-                        {/* Product mapping */}
-                        {mapping ? (
-                          <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
-                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                              <span className="srGridTextSuccess">Mapped to Product</span>
-                              <span className="srGridTextSubdued">
-                                {mappedProduct?.title || (mapping.product_handle ? `Product: ${mapping.product_handle}` : "Product")}
-                                {mappedVariant && ` (${mappedVariant.title})`}
-                              </span>
-                              <s-button
-                                variant="secondary" size="small"
-                                onClick={() => handleDeleteMapping(media.id)}
-                                disabled={postFetcher.state !== "idle"}
-                              >
-                                Remove Mapping
-                              </s-button>
-                            </div>
-                          </s-box>
-                        ) : (
-                          <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
-                            <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                              <span className="srGridTextSubdued">Not mapped</span>
-                              <s-button
-                                variant="primary" size="small"
-                                onClick={() => {
-                                  setSelectedMedia(media.id);
-                                  setSelectedProduct("");
-                                  setSelectedVariant("");
-                                  setProductSearch("");
-                                  setPickerResults(null);
-                                }}
-                                disabled={postFetcher.state !== "idle"}
-                              >
-                                Map to Product
-                              </s-button>
-                            </div>
-                          </s-box>
-                        )}
-
-                        {/* Product picker */}
-                        {selectedMedia === media.id && (
-                          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                              <label htmlFor={`product-${media.id}`}>
-                                <span className="srGridTextStrong">Select Product:</span>
-                              </label>
-                              {(localProducts || []).length === 0 && pickerResults === null && !productSearch ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                  <span className="srGridTextSubdued">
-                                    No products to show. Your store may have no products, or the list could not be loaded.
-                                  </span>
-                                  <s-button
-                                    variant="secondary"
-                                    size="small"
-                                    onClick={() => revalidator.revalidate()}
-                                    disabled={revalidator.state === "loading"}
-                                  >
-                                    {revalidator.state === "loading" ? "Loading…" : "Retry"}
-                                  </s-button>
-                                </div>
-                              ) : (
-                                <>
-                                  <input
-                                    id={`product-${media.id}`}
-                                    type="text"
-                                    value={productSearch}
-                                    onChange={(e) => setProductSearch(e.target.value)}
-                                    placeholder="Search your products by name…"
-                                    className="srInput"
-                                    autoComplete="off"
-                                  />
-                                  {/* Live results list: always visible, updates as the merchant types. */}
-                                  <div className="srProductList" role="listbox" aria-label="Products">
-                                    {searchPending && (
-                                      <div className="srProductListMsg">Searching…</div>
-                                    )}
-                                    {!searchPending && pickerResults !== null && pickerResults.length === 0 && (
-                                      <div className="srProductListMsg">
-                                        No products match &ldquo;{productSearch.trim()}&rdquo;.
-                                      </div>
-                                    )}
-                                    {/* Keep the current selection visible even if it's not in the latest results. */}
-                                    {selectedProductData && !pickerProducts.some((p) => p.id === selectedProduct) && (
-                                      <button
-                                        type="button"
-                                        className="srProductListItem srProductListItemActive"
-                                        onClick={() => { setSelectedProduct(""); setSelectedVariant(""); }}
-                                        role="option"
-                                        aria-selected="true"
-                                      >
-                                        <span className="srProductListTitle">{selectedProductData.title}</span>
-                                        <span className="srProductListCheck">✓</span>
-                                      </button>
-                                    )}
-                                    {pickerProducts.map((p) => {
-                                      const isActive = selectedProduct === p.id;
-                                      return (
-                                        <button
-                                          key={p.id}
-                                          type="button"
-                                          className={`srProductListItem ${isActive ? "srProductListItemActive" : ""}`}
-                                          onClick={() => {
-                                            setSelectedProduct(isActive ? "" : p.id);
-                                            setSelectedVariant("");
-                                          }}
-                                          role="option"
-                                          aria-selected={isActive}
-                                        >
-                                          <span className="srProductListTitle">{p.title}</span>
-                                          {isActive && <span className="srProductListCheck">✓</span>}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-
-                                  {selectedProduct && selectedProductVariants.length > 1 && (
-                                    <>
-                                      <label htmlFor={`variant-${media.id}`}>
-                                        <span className="srGridTextStrong">Select Variant (Optional):</span>
-                                      </label>
-                                      <select
-                                        id={`variant-${media.id}`}
-                                        value={selectedVariant}
-                                        onChange={(e) => setSelectedVariant(e.target.value)}
-                                        className="srSelect"
-                                      >
-                                        <option value="">-- Default Variant --</option>
-                                        {selectedProductVariants.map((v) => (
-                                          <option key={v.id} value={v.id}>{v.title} - ${v.price}</option>
-                                        ))}
-                                      </select>
-                                    </>
-                                  )}
-
-                                  <div style={{ display: "flex", gap: "8px" }}>
-                                    <s-button
-                                      variant="primary" size="small"
-                                      onClick={() => handleSaveMapping(media.id)}
-                                      disabled={!selectedProduct || postFetcher.state !== "idle"}
-                                    >
-                                      Save Mapping
-                                    </s-button>
-                                    <s-button
-                                      variant="secondary" size="small"
-                                      onClick={closeProductPicker}
-                                    >
-                                      Cancel
-                                    </s-button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </s-box>
-                        )}
-                      </div>
-                    </s-box>
-                  );
-                })}
-              </div>
-            ) : (
-              <span className="srGridTextSubdued">No Instagram posts found.</span>
-            )}
-
-            {mediaFetcher.data?.error && (
-              <span className="srGridTextSubdued">{mediaFetcher.data.error}</span>
-            )}
-            {mediaAfterCursor && (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <s-button
-                  variant="secondary"
-                  onClick={handleLoadMoreMedia}
-                  disabled={mediaFetcher.state !== "idle"}
-                >
-                  {mediaFetcher.state !== "idle" ? "Loading more posts…" : "Load more posts"}
-                </s-button>
-              </div>
-            )}
-          </div>
+          <Suspense fallback={<PostsSectionSkeleton />}>
+            <Await
+              resolve={deferred}
+              errorElement={
+                <span className="srCardDesc">
+                  Couldn&apos;t load your Instagram posts. Reload the page to try again.
+                </span>
+              }
+            >
+              {(resolved) => (
+                <PostsSection
+                  mediaData={resolved?.mediaData}
+                  shopifyProducts={resolved?.shopifyProducts || []}
+                  productMappings={productMappings}
+                  disabledPostIds={settings?.disabled_post_ids || []}
+                  postFetcher={postFetcher}
+                />
+              )}
+            </Await>
+          </Suspense>
         </s-section>
       )}
 
