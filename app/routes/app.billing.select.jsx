@@ -5,6 +5,7 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
 import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
+import { invalidateCached } from "../lib/loader-cache.server";
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
 // on Shopify's hosted pricing page; the merchant approves there and Shopify
@@ -55,6 +56,9 @@ export const action = async ({ request }) => {
     try {
       await cancelCurrentSubscription(admin);
       await updateShopPlan(shop.id, "FREE");
+      // Trial status is cached for the home-page banner; the subscription
+      // was just cancelled, so recompute it on the next load.
+      invalidateCached(`trial:${shop.id}`);
       return { downgraded: true, planName: "FREE" };
     } catch (error) {
       console.error("Error cancelling subscription:", error);

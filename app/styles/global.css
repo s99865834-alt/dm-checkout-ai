@@ -288,6 +288,36 @@ s-page s-box.srCardCompact {
   width: 100%;
   border-radius: 8px;
   display: block;
+  /* Fixed square ratio (matching Instagram's grid) so cards don't reflow as
+     images load — required to keep Cumulative Layout Shift under 0.1. */
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+/* Skeleton placeholders shown while streamed loader data arrives. Sized to
+   match the real content so the swap causes no layout shift. */
+.srSkeleton {
+  background: linear-gradient(90deg, #ececec 25%, #f5f5f5 37%, #ececec 63%);
+  background-size: 400% 100%;
+  animation: srShimmer 1.4s ease infinite;
+  border-radius: 8px;
+}
+.srSkeletonImage {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+.srSkeletonLine {
+  height: 12px;
+}
+.srSkeletonBox {
+  height: 58px;
+}
+@keyframes srShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srSkeleton { animation: none; }
 }
 
 .srClamp2 {

@@ -6,7 +6,10 @@ import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { startScheduler } from "./lib/scheduler.server";
 
-export const streamTimeout = 5000;
+// How long deferred loader data may keep streaming after the shell is sent.
+// The home page streams Instagram media + the product catalog; give slow
+// Instagram API responses headroom before the stream is aborted.
+export const streamTimeout = 10000;
 
 // Start the in-process scheduler exactly once when the server module loads.
 // Production-only by default to avoid noisy ticks during local dev / HMR.
