@@ -1934,7 +1934,7 @@ async function buildAdminStoresResult(shops) {
   const { data: metaAuthRows, error: metaAuthError } = shopIds.length
     ? await supabase
         .from("meta_auth")
-        .select("shop_id, ig_business_id")
+        .select("shop_id, ig_business_id, token_expires_at")
         .in("shop_id", shopIds)
     : { data: [], error: null };
 
@@ -1945,6 +1945,41 @@ async function buildAdminStoresResult(shops) {
   const metaAuthByShop = new Map();
   (metaAuthRows || []).forEach((row) => {
     metaAuthByShop.set(row.shop_id, row);
+  });
+
+  // Automation setup per shop: toggles + disabled posts (settings) and mapped
+  // posts (post_product_map). Both best-effort — a failure here should degrade
+  // the new column, not break the whole dashboard.
+  const { data: settingsRows, error: settingsError } = shopIds.length
+    ? await supabase
+        .from("settings")
+        .select("shop_id, dm_automation_enabled, comment_automation_enabled, disabled_post_ids")
+        .in("shop_id", shopIds)
+    : { data: [], error: null };
+
+  if (settingsError) {
+    console.error("getAdminDashboardStores settings error", settingsError);
+  }
+
+  const settingsByShop = new Map();
+  (settingsRows || []).forEach((row) => {
+    settingsByShop.set(row.shop_id, row);
+  });
+
+  const { data: mappingRows, error: mappingError } = shopIds.length
+    ? await supabase
+        .from("post_product_map")
+        .select("shop_id")
+        .in("shop_id", shopIds)
+    : { data: [], error: null };
+
+  if (mappingError) {
+    console.error("getAdminDashboardStores post_product_map error", mappingError);
+  }
+
+  const mappedPostsByShop = new Map();
+  (mappingRows || []).forEach((row) => {
+    mappedPostsByShop.set(row.shop_id, (mappedPostsByShop.get(row.shop_id) || 0) + 1);
   });
 
   const { data: linksRows, error: linksError } = await supabase
@@ -1978,6 +2013,18 @@ async function buildAdminStoresResult(shops) {
 
   return shops.map((s) => {
     const metaAuth = metaAuthByShop.get(s.id) || null;
+    const settings = settingsByShop.get(s.id) || null;
+    // No settings row means the merchant never changed anything: everything
+    // defaults to on (mirrors getSettings' defaults).
+    const disabledPostIds = Array.isArray(settings?.disabled_post_ids)
+      ? settings.disabled_post_ids
+      : [];
+    // An expired Meta token is the silent killer: Instagram shows "connected"
+    // but every webhook-triggered reply fails. Surface it explicitly.
+    const tokenExpired = !!(
+      metaAuth?.token_expires_at &&
+      new Date(metaAuth.token_expires_at).getTime() < Date.now()
+    );
     // Legacy manually-granted PRO trial (beta_trial_expires_at). Compute
     // days remaining here so the admin table can flag it without any live call.
     let betaTrial = null;
@@ -2002,6 +2049,14 @@ async function buildAdminStoresResult(shops) {
       revenue: revenueByShop.get(s.id) || 0,
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
+      setup: {
+        dmEnabled: settings?.dm_automation_enabled ?? true,
+        commentEnabled: settings?.comment_automation_enabled ?? true,
+        disabledPostCount: disabledPostIds.length,
+        mappedPostCount: mappedPostsByShop.get(s.id) || 0,
+        tokenExpired,
+        tokenExpiresAt: metaAuth?.token_expires_at || null,
+      },
       review_prompt: s.review_prompt_count
         ? {
             count: s.review_prompt_count,
