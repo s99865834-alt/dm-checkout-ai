@@ -343,6 +343,49 @@ export async function getInstagramUserIdFromToken(accessToken) {
 }
 
 /**
+ * Ensure the app is subscribed to webhook events for an Instagram-Login account.
+ *
+ * With the Instagram API with Instagram Login, webhook delivery is PER
+ * ACCOUNT: Meta only sends message/comment events for a professional account
+ * after the app calls POST /me/subscribed_apps with that account's token.
+ * Without this call the account looks connected (tokens work, media loads)
+ * but no webhooks ever arrive — DM automation is silently dead.
+ *
+ * Idempotent and safe to repeat; failures are logged and swallowed so this
+ * can be called opportunistically from loaders.
+ *
+ * @param {string} shopId
+ * @returns {Promise<Object|null>} - Graph API response, or null if not
+ *   applicable (no auth / not Instagram Login) or the call failed.
+ */
+export async function ensureInstagramWebhookSubscription(shopId) {
+  if (!shopId) return null;
+  const auth = await getMetaAuthWithRefresh(shopId).catch(() => null);
+  if (!auth || auth.auth_type !== "instagram" || !auth.page_access_token) {
+    return null;
+  }
+  try {
+    const result = await metaGraphAPIInstagram("/me/subscribed_apps", auth.page_access_token, {
+      method: "POST",
+      params: { subscribed_fields: "messages,comments" },
+    });
+    // console.log (not logger.debug) so the subscription self-heal is visible
+    // in production logs — it's the fix for "connected but 0 messages" shops.
+    console.log(
+      `[meta] Instagram webhook subscription ensured for shop ${shopId}:`,
+      JSON.stringify(result),
+    );
+    return result;
+  } catch (error) {
+    console.error(
+      `[meta] Failed to subscribe shop ${shopId} to Instagram webhooks:`,
+      error?.message || error,
+    );
+    return null;
+  }
+}
+
+/**
  * Make authenticated request to Meta Graph API with automatic token refresh
  * Uses graph.facebook.com (Facebook Login) or graph.instagram.com (Instagram Login) based on auth_type.
  */

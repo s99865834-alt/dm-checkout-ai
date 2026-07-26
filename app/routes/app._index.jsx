@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState, useRef } from "react";
 import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
+import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
@@ -23,6 +23,10 @@ const REVIEW_MAX_ASKS = 3; // worst case: day 0, ~30, ~60, then stop forever
 const PRODUCTS_TTL_MS = 5 * 60 * 1000;
 const IG_TTL_MS = 5 * 60 * 1000;
 const TRIAL_TTL_MS = 15 * 60 * 1000;
+// Re-assert the Instagram webhook subscription at most once a day — without
+// it Meta delivers no message/comment events for the account (see
+// ensureInstagramWebhookSubscription).
+const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // The loader is split for Core Web Vitals (LCP < 2.5s):
 //   - Awaited: everything the shell + banners need — cheap DB reads plus the
@@ -81,6 +85,13 @@ export const loader = async ({ request }) => {
   const hasIg = !!metaAuth && (!!igBusinessId || metaAuth.auth_type === "instagram");
   const deferred = (async () => {
     if (!shopId) return { shopifyProducts: [], instagramInfo: null, mediaData: null };
+    // Self-heal the per-account webhook subscription (daily, best-effort,
+    // off the critical path). Result is unused; failures resolve to null.
+    if (hasIg) {
+      cached(`igsub:${shopId}`, IG_SUBSCRIBE_TTL_MS, () =>
+        ensureInstagramWebhookSubscription(shopId),
+      ).catch(() => null);
+    }
     const [shopifyProducts, instagramInfo, mediaData] = await Promise.all([
       cached(`products:${shopId}`, PRODUCTS_TTL_MS, async () => {
         try {
