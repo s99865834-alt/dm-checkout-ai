@@ -3,7 +3,7 @@ import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRevalidator
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 
@@ -118,6 +118,13 @@ export const action = async ({ request }) => {
 
     const formData = await request.formData();
     const actionType = formData.get("action");
+
+    // ── Record review-prompt attempt (fire-and-forget from the client) ────
+    if (actionType === "record-review-prompt") {
+      if (!shop?.id) return { error: "Shop not found" };
+      await recordReviewPrompt(shop.id, formData.get("result"));
+      return { success: true };
+    }
 
     // ── Disconnect Instagram ───────────────────────────────────────────────
     if (actionType === "disconnect") {
@@ -364,6 +371,11 @@ export default function Index() {
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
+  const reviewReportFetcher = useFetcher(); // Fire-and-forget review-prompt logging
+  // Ref so the review effect can submit without adding the fetcher (whose
+  // identity changes on every state transition) to its dependency array.
+  const reviewReportRef = useRef(reviewReportFetcher);
+  reviewReportRef.current = reviewReportFetcher;
   const automationFormRef = useRef(null);
 
   // Automation / brand voice local state
@@ -518,6 +530,19 @@ export default function Index() {
       }
     };
 
+    // Log the attempt server-side (best-effort) so the admin dashboard can
+    // show whether this merchant has been asked and what Shopify decided.
+    const report = (result) => {
+      try {
+        reviewReportRef.current.submit(
+          { action: "record-review-prompt", result },
+          { method: "post" },
+        );
+      } catch {
+        /* logging only — never let it affect the page */
+      }
+    };
+
     let cancelled = false;
     const timer = setTimeout(async () => {
       if (cancelled) return;
@@ -528,10 +553,12 @@ export default function Index() {
         const done =
           result?.success === true || result?.code === "already-reviewed";
         persist({ lastAt: Date.now(), count: record.count + 1, done });
+        report(result?.success === true ? "shown" : result?.code || "not-shown");
       } catch {
         // Treat a thrown error as an attempt so we still respect the cooldown
         // instead of retrying on the next render.
         persist({ lastAt: Date.now(), count: record.count + 1, done: false });
+        report("error");
       }
     }, 2500);
 
