@@ -757,7 +757,7 @@ export default function Index() {
                           <span className="srCardDesc">
                             For automation to work, Instagram must allow apps to access your messages.
                             In the <strong>Instagram app</strong> on your phone, go to{" "}
-                            <strong>Settings → Messages and story replies → Message request</strong>{" "}
+                            <strong>Settings → Messages and story replies → Message requests</strong>{" "}
                             and turn on <strong>&ldquo;Allow access to messages&rdquo;</strong> (under Connected tools).
                             If it&apos;s already on, you&apos;re all set — this check turns green automatically
                             after your first customer DM or comment.
