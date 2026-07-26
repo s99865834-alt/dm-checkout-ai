@@ -11,6 +11,7 @@ import { redirect } from "react-router";
 import { getShopByDomain, findActiveShopWithSameInstagram } from "../lib/db.server";
 import {
   saveMetaAuthForInstagram,
+  ensureInstagramWebhookSubscription,
   INSTAGRAM_TOKEN_URL,
   INSTAGRAM_GRAPH_BASE,
   META_INSTAGRAM_APP_ID,
@@ -148,6 +149,17 @@ export async function loader({ request }) {
     }
 
     await saveMetaAuthForInstagram(shopData.id, igBusinessId, longLivedToken, tokenExpiresAt);
+
+    // 5. Subscribe this account to message/comment webhooks. Without this,
+    // Meta never delivers events for the account and automation is silently
+    // dead. Best-effort: a failure here shouldn't break the connect flow
+    // (the loaders re-attempt it daily as a self-heal).
+    const subResult = await ensureInstagramWebhookSubscription(shopData.id);
+    if (!subResult) {
+      console.warn(
+        `[oauth][instagram-login] Webhook subscription could not be confirmed for ${targetShop}; will retry from loaders`,
+      );
+    }
 
     const shopName = targetShop.replace(".myshopify.com", "");
     const appClientId = process.env.SHOPIFY_API_KEY || "";

@@ -9,8 +9,13 @@ import {
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
-import { getInstagramAccountInfo } from "../lib/meta.server";
+import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
+import { cached } from "../lib/loader-cache.server";
+
+// Re-assert each connected account's Instagram webhook subscription at most
+// once a day (see ensureInstagramWebhookSubscription for why this matters).
+const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -40,6 +45,20 @@ export const loader = async ({ request }) => {
     const shopId = url.searchParams.get("queue_shop_id") || null;
     const status = url.searchParams.get("queue_status") || null;
     const stores = await getAdminDashboardStores();
+
+    // Self-heal: make sure every Instagram-Login account is subscribed to
+    // message/comment webhooks (accounts connected before the subscribe step
+    // existed never were — they look connected but receive nothing). Cached
+    // per shop for a day; best-effort so it can't slow down or break the table.
+    await Promise.allSettled(
+      stores.map((s) =>
+        s.instagram_connected
+          ? cached(`igsub:${s.shop_id}`, IG_SUBSCRIBE_TTL_MS, () =>
+              ensureInstagramWebhookSubscription(s.shop_id),
+            )
+          : Promise.resolve(null)
+      )
+    );
 
     // Live-lookup Instagram usernames for connected shops in parallel.
     // Falls back to null on failure so a single bad token doesn't break the table.

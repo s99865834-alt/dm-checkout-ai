@@ -1029,6 +1029,33 @@ export async function getMissedCommentCount(shopId) {
 }
 
 /**
+ * When did we last receive ANY inbound Instagram event (DM or comment) for
+ * this shop? Rows in `messages` are only created while processing webhook
+ * events, so a row existing proves the whole delivery chain works: webhook
+ * subscription, Meta's per-account "Allow access to messages" toggle (which
+ * has no API to query directly), and our processing. Null = never received.
+ *
+ * @param {string} shopId
+ * @returns {Promise<string|null>} ISO timestamp of the latest message, or null
+ */
+export async function getLastInboundMessageAt(shopId) {
+  if (!shopId) return null;
+  const { data, error } = await supabase
+    .from("messages")
+    .select("created_at")
+    .eq("shop_id", shopId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("getLastInboundMessageAt error", error);
+    return null;
+  }
+
+  return data?.[0]?.created_at || null;
+}
+
+/**
  * Get product mapping for an Instagram media ID
  */
 export async function getProductMapping(shopId, igMediaId) {
