@@ -3,7 +3,7 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData } from "
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, recordReviewPrompt } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -45,11 +45,12 @@ export const loader = async ({ request }) => {
   let missedComments = 0;
   let trialStatus = null;
   let reviewEligible = false;
+  let lastInboundMessageAt = null;
 
   if (shop?.id) {
     let attributionCount = 0;
     let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -73,6 +74,9 @@ export const loader = async ({ request }) => {
         // Review-prompt eligibility: first attributed order OR 20+ sent replies.
         getAttributionCount(shop.id),
         getSentLinkCount(shop.id),
+        // Message-access health: proof that webhook events actually reach us
+        // (Meta's "Allow access to messages" toggle isn't queryable via API).
+        getLastInboundMessageAt(shop.id),
       ]);
     reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
   }
@@ -135,7 +139,7 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -391,7 +395,7 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -709,29 +713,65 @@ export default function Index() {
             {/* Right: Instagram status + action on one line, details below */}
             <div className="srIGSide">
               {isConnected ? (
-                <div className="srIGConnectedRow">
-                  <div className="srIGConnectedInfo">
-                    <span className="srCardTitle">
-                      Connected
-                      {/* Username streams in with the deferred data; the row
-                          height is fixed so it appends without layout shift. */}
-                      <Suspense fallback={null}>
-                        <Await resolve={deferred} errorElement={null}>
-                          {(d) => (d?.instagramInfo?.username ? ` · @${d.instagramInfo.username}` : "")}
-                        </Await>
-                      </Suspense>
-                    </span>
+                <>
+                  <div className="srIGConnectedRow">
+                    <div className="srIGConnectedInfo">
+                      <span className="srCardTitle">
+                        Connected
+                        {/* Username streams in with the deferred data; the row
+                            height is fixed so it appends without layout shift. */}
+                        <Suspense fallback={null}>
+                          <Await resolve={deferred} errorElement={null}>
+                            {(d) => (d?.instagramInfo?.username ? ` · @${d.instagramInfo.username}` : "")}
+                          </Await>
+                        </Suspense>
+                      </span>
+                    </div>
+                    <s-button
+                      variant="secondary" size="slim" className="srBtnCompact"
+                      onClick={() => {
+                        connectFetcher.submit({ action: "disconnect" }, { method: "post" });
+                      }}
+                      disabled={connectFetcher.state === "submitting"}
+                    >
+                      {connectFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
+                    </s-button>
                   </div>
-                  <s-button
-                    variant="secondary" size="slim" className="srBtnCompact"
-                    onClick={() => {
-                      connectFetcher.submit({ action: "disconnect" }, { method: "post" });
-                    }}
-                    disabled={connectFetcher.state === "submitting"}
-                  >
-                    {connectFetcher.state === "submitting" ? "Disconnecting…" : "Disconnect"}
-                  </s-button>
-                </div>
+
+                  {/* Message-access health. Meta gives no API to read Instagram's
+                      "Allow access to messages" toggle, so we show proof instead:
+                      an inbound message/comment reaching us means the whole chain
+                      (webhooks + toggle) works. Until then, show how to enable it. */}
+                  {lastInboundMessageAt ? (
+                    <span className="srCardDesc" style={{ color: "#1a7f37", marginTop: "6px", display: "block" }}>
+                      ✓ Message access working — last Instagram message received{" "}
+                      {new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  ) : (
+                    <div style={{ marginTop: "8px" }}>
+                      <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span className="srCardTitle" style={{ color: "#9a6700" }}>
+                            ⚠ No Instagram messages received yet
+                          </span>
+                          <span className="srCardDesc">
+                            For automation to work, Instagram must allow apps to access your messages.
+                            In the <strong>Instagram app</strong> on your phone, go to{" "}
+                            <strong>Settings → Messages and story replies → Message controls</strong>{" "}
+                            and turn on <strong>&ldquo;Allow access to messages&rdquo;</strong> (under Connected tools).
+                            If it&apos;s already on, you&apos;re all set — this check turns green automatically
+                            after your first customer DM or comment.
+                          </span>
+                          <div>
+                            <s-button href="/app/support" variant="secondary" size="slim" className="srBtnCompact">
+                              Need help? Contact support
+                            </s-button>
+                          </div>
+                        </div>
+                      </s-box>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="srIGConnectedRow">
                   <span className="srCardDesc">
