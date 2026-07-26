@@ -172,6 +172,35 @@ export async function markShopUninstalled(shopifyDomain) {
 }
 
 /**
+ * Record one App Store review-prompt attempt for a shop, so the admin
+ * dashboard can see whether merchants have been asked. `result` is what
+ * shopify.reviews.request() reported: "shown" when the modal was displayed,
+ * otherwise Shopify's decline code (e.g. "already-reviewed",
+ * "annual-limit-reached", "cooldown-period") or "error".
+ */
+export async function recordReviewPrompt(shopId, result) {
+  if (!shopId) return;
+  const { data: current } = await supabase
+    .from("shops")
+    .select("review_prompt_count")
+    .eq("id", shopId)
+    .single();
+
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      review_prompt_count: (current?.review_prompt_count || 0) + 1,
+      review_prompt_last_at: new Date().toISOString(),
+      review_prompt_result: result || "unknown",
+    })
+    .eq("id", shopId);
+
+  if (error) {
+    console.error("recordReviewPrompt error", error);
+  }
+}
+
+/**
  * Increment usage, resetting month if needed.
  */
 export async function incrementUsage(shopId, delta) {
@@ -1802,7 +1831,7 @@ export async function getProAnalytics(shopId, options = {}) {
 export async function getAdminDashboardStores() {
   const { data: shops, error: shopsError } = await supabase
     .from("shops")
-    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at")
+    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
     .eq("active", true)
     .order("id", { ascending: true });
 
@@ -1811,7 +1840,7 @@ export async function getAdminDashboardStores() {
     if (shopsError.code === "42703" || shopsError.message?.includes("created_at")) {
       const { data: shopsFallback, error: fallbackError } = await supabase
         .from("shops")
-        .select("id, shopify_domain, active, plan, beta_trial_expires_at")
+        .select("id, shopify_domain, active, plan, beta_trial_expires_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
         .eq("active", true)
         .order("id", { ascending: true });
       if (fallbackError) {
@@ -1973,6 +2002,13 @@ async function buildAdminStoresResult(shops) {
       revenue: revenueByShop.get(s.id) || 0,
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
+      review_prompt: s.review_prompt_count
+        ? {
+            count: s.review_prompt_count,
+            lastAt: s.review_prompt_last_at,
+            result: s.review_prompt_result,
+          }
+        : null,
     };
   });
 }

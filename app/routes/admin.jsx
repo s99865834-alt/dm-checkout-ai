@@ -217,6 +217,35 @@ function SortHeader({ label, sortKey, sort, onSort }) {
 }
 
 // Total store sales YTD. Unlike attributed revenue, 0 is a real value (store
+// Review-prompt status for a store. "shown" (green) means Shopify actually
+// displayed the review modal to the merchant; any other result means we asked
+// but Shopify declined to show it (already reviewed, annual limit, etc.);
+// null means the merchant never hit the eligibility criteria on a page load.
+function ReviewPromptCell({ reviewPrompt }) {
+  if (!reviewPrompt) return <span style={{ color: "#8a8a8a" }}>Not asked</span>;
+  const when = reviewPrompt.lastAt
+    ? new Date(reviewPrompt.lastAt).toLocaleDateString()
+    : null;
+  const shown = reviewPrompt.result === "shown";
+  const alreadyReviewed = reviewPrompt.result === "already-reviewed";
+  const label = shown
+    ? `Shown${when ? ` · ${when}` : ""}`
+    : alreadyReviewed
+      ? "Already reviewed"
+      : `Asked ${reviewPrompt.count}× · ${reviewPrompt.result || "no show"}`;
+  return (
+    <span
+      title={`Attempts: ${reviewPrompt.count}${when ? ` · last ${when}` : ""} · result: ${reviewPrompt.result || "unknown"}`}
+      style={{
+        color: shown || alreadyReviewed ? "#1a7f37" : "#9a6700",
+        fontWeight: 500,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 // made no sales this year) and is shown as such; null means we couldn't read
 // it (no/expired token) and renders as "—". A trailing "+" marks a capped
 // lower bound for very high-volume stores.
@@ -364,6 +393,7 @@ export default function Admin() {
               <SortHeader label="Messages sent" sortKey="messages" sort={sort} onSort={toggleSort} />
               <SortHeader label="Revenue attribution" sortKey="revenue" sort={sort} onSort={toggleSort} />
               <SortHeader label="Store revenue (YTD)" sortKey="storeRevenue" sort={sort} onSort={toggleSort} />
+              <th style={styles.th}>Review ask</th>
             </tr>
           </thead>
           <tbody>
@@ -405,11 +435,14 @@ export default function Admin() {
                   <td style={styles.td}>
                     {formatStoreRevenue(row.total_revenue_ytd, row.total_revenue_currency, row.total_revenue_capped)}
                   </td>
+                  <td style={styles.td}>
+                    <ReviewPromptCell reviewPrompt={row.review_prompt} />
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={7} style={styles.tdEmpty}>
+                <td colSpan={8} style={styles.tdEmpty}>
                   No stores yet.
                 </td>
               </tr>
