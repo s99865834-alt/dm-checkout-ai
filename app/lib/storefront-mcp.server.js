@@ -166,20 +166,35 @@ async function callMcpTool(endpoint, toolName, toolArguments, opts = {}) {
 /**
  * MCP tool responses come back as `{ content: [{ type: 'text', text: '...' }] }`.
  * Catalog/UCP responses usually encode a JSON payload inside the text block.
- * Try to parse it; if it isn't JSON, return the raw text.
+ * Shopify also appends housekeeping blocks (e.g. a DEPRECATION NOTICE for the
+ * /api/mcp endpoint) that must not leak into AI context — drop those, then
+ * parse each remaining block as JSON individually (joining first would break
+ * JSON.parse whenever more than one block is present).
  */
 function parseToolContent(result) {
   if (!result) return null;
   if (Array.isArray(result.content)) {
     const textBlocks = result.content
       .filter((c) => c?.type === "text" && typeof c.text === "string")
-      .map((c) => c.text);
-    const joined = textBlocks.join("\n");
-    try {
-      return JSON.parse(joined);
-    } catch {
-      return joined || null;
+      .map((c) => c.text)
+      .filter((t) => !/^\s*DEPRECATION NOTICE/i.test(t));
+    if (textBlocks.length === 0) return null;
+    if (textBlocks.length === 1) {
+      try {
+        return JSON.parse(textBlocks[0]);
+      } catch {
+        return textBlocks[0] || null;
+      }
     }
+    // Multiple payload blocks: parse what we can, keep the rest as text.
+    const parsed = textBlocks.map((t) => {
+      try {
+        return JSON.parse(t);
+      } catch {
+        return t;
+      }
+    });
+    return parsed;
   }
   return result;
 }

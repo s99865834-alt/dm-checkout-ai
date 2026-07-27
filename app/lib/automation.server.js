@@ -65,15 +65,26 @@ function generateLinkId() {
 
 /**
  * MCP policy/FAQ responses come back in a few shapes depending on how Shopify
- * encodes the content block: plain text, JSON with an `answer` key, or a
- * `{ content: [...] }` wrapper. Normalise to a single answer string or null.
+ * encodes the content block: plain text, JSON with an `answer` key, an array
+ * of `{ question, answer }` FAQ matches, or a `{ content: [...] }` wrapper.
+ * Normalise to a single answer string or null. Housekeeping text (deprecation
+ * notices) is stripped so it never reaches AI context.
  */
 function extractMcpAnswerText(mcpResult) {
   if (!mcpResult) return null;
   if (typeof mcpResult === "string") {
-    return mcpResult.trim() || null;
+    const cleaned = mcpResult.replace(/DEPRECATION NOTICE:[\s\S]*$/i, "").trim();
+    return cleaned || null;
+  }
+  if (Array.isArray(mcpResult)) {
+    // Array of FAQ matches ({ question, answer }) and/or nested payloads.
+    const parts = mcpResult.map((item) => extractMcpAnswerText(item)).filter(Boolean);
+    return parts.length ? parts.join("\n\n") : null;
   }
   if (typeof mcpResult === "object") {
+    if (mcpResult.question && mcpResult.answer) {
+      return `Q: ${String(mcpResult.question).trim()}\nA: ${String(mcpResult.answer).trim()}`;
+    }
     const candidate =
       mcpResult.answer ||
       mcpResult.text ||
@@ -87,6 +98,7 @@ function extractMcpAnswerText(mcpResult) {
       const joined = mcpResult.content
         .filter((c) => c?.type === "text" && typeof c.text === "string")
         .map((c) => c.text)
+        .filter((t) => !/^\s*DEPRECATION NOTICE/i.test(t))
         .join("\n")
         .trim();
       if (joined) return joined;

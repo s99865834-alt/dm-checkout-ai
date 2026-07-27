@@ -368,13 +368,15 @@ export function buildStoreContextForAI(storeInfo) {
   const allowedUrls = [];
   const urlMap = {};
 
-  // When the Storefront MCP returned an authoritative answer for this
-  // question, put it first so the AI prefers it over any cached storeInfo
-  // fields. The rest of storeInfo is still included so URL placeholder
-  // tokens (e.g. {{refund_policy_url}}) continue to resolve.
+  // Storefront MCP FAQ search result, if any. It's a nearest-match search, so
+  // it can come back with something unrelated to the customer's question —
+  // labelling it "authoritative, use verbatim" made the AI anchor on an
+  // irrelevant match and ignore the structured store data below (e.g. it said
+  // "I don't have that information" to "how many products do you have?" while
+  // the product count sat lower in this same context). Frame it as optional.
   if (typeof storeInfo.mcpAnswer === "string" && storeInfo.mcpAnswer.trim()) {
     sections.push(
-      `Authoritative answer from merchant's store (use this verbatim when it answers the question): ${storeInfo.mcpAnswer.trim()}`
+      `Store FAQ search result for this question (nearest match — it may not actually answer what the customer asked; if it doesn't, ignore it and answer from the store data below): ${storeInfo.mcpAnswer.trim()}`
     );
   }
 
