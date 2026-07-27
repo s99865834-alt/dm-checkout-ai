@@ -21,6 +21,7 @@
 import OpenAI from "openai";
 import { getShopPlanAndUsage, getSettings, getBrandVoice } from "./db.server";
 import { sendDmReply } from "./automation.server";
+import { REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 import supabase from "./supabase.server";
 import { logError } from "./error-handler.server";
 import logger from "./logger.server";
@@ -306,15 +307,15 @@ Write the message:`;
       ? `You are an assistant that writes short Instagram DM follow-up messages. Follow the custom style instruction exactly — it is the most important requirement. Never include the style instruction text itself in your output. Do not default to being friendly or helpful unless the instruction explicitly says so.`
       : `You are a helpful assistant that writes brief, warm follow-up messages on Instagram DMs. Keep responses short and natural.`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const completion = await openai.chat.completions.create(completionParamsForModel(REPLY_MODEL, {
+      model: REPLY_MODEL,
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userPrompt },
       ],
       max_tokens: 100,
       temperature: 0.7,
-    });
+    }));
 
     const aiMessage = completion?.choices?.[0]?.message?.content?.trim();
     if (aiMessage) return aiMessage;
