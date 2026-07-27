@@ -5,6 +5,7 @@
 
 import { unauthenticated } from "../shopify.server";
 import { markShopUninstalled } from "./db.server";
+import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
 
 // ---------------------------------------------------------------------------
@@ -453,6 +454,46 @@ export function buildStoreContextForAI(storeInfo) {
 
   const text = sections.filter(Boolean).join("\n\n");
   return { text, allowedUrls: [...new Set(allowedUrls)], urlMap };
+}
+
+/**
+ * The shop's primary CUSTOM storefront domain (e.g. "velahaircare.com"), or
+ * null when the store only has its *.myshopify.com domain or SSL isn't ready.
+ * Used to serve DM tracking links on the merchant's own domain via the app
+ * proxy (/a/go/{linkId}) so links look like the store, not a shortener.
+ * Cached 24h per shop — primary domains effectively never change.
+ *
+ * @param {string} shopDomain - the *.myshopify.com domain (session key)
+ * @returns {Promise<string|null>}
+ */
+export async function getShopPrimaryDomainHost(shopDomain) {
+  if (!shopDomain) return null;
+  return cached(`primarydomain:${shopDomain}`, 24 * 60 * 60 * 1000, async () => {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) return null;
+    const response = await shopGraphql(
+      admin,
+      `query getPrimaryDomain {
+        shop {
+          primaryDomain {
+            host
+            sslEnabled
+          }
+        }
+      }`
+    );
+    const primary = response?.data?.shop?.primaryDomain;
+    const host = (primary?.host || "").trim().toLowerCase();
+    // myshopify.com hosts are excluded by design (merchant preference: links
+    // must show the real brand domain). No SSL → https link would warn.
+    if (!host || host.endsWith(".myshopify.com") || primary?.sslEnabled === false) {
+      return null;
+    }
+    return host;
+  }).catch((err) => {
+    logger.debug(`[shopify-data] primaryDomain lookup failed for ${shopDomain}: ${err?.message || err}`);
+    return null;
+  });
 }
 
 /**
