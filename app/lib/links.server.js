@@ -35,7 +35,12 @@ export function generateLinkId() {
 
 function getShortLinkBase() {
   let shortBase = (process.env.SHORT_LINK_DOMAIN || "").trim().replace(/\/$/, "");
-  if (!shortBase) shortBase = "https://www.srai.link";
+  // Default to the marketing domain: it has an established reputation with
+  // the threat-intel feeds that ISP filters use. The old srai.link shortener
+  // domain got flagged by Xfinity Advanced Security (safebrowse.io) — .link
+  // shortener domains are treated as suspicious by default. srai.link stays
+  // pointed at this app so previously sent links keep resolving.
+  if (!shortBase) shortBase = "https://www.socialrepl.ai";
   return shortBase;
 }
 
