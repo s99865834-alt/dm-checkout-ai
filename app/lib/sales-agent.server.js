@@ -454,6 +454,7 @@ You have tools to look up live store data. Use them — never answer from assump
 
 HOW TO SELL:
 - Answer their actual question first, accurately and specifically (exact prices, exact options).
+- When they name a product, search for it and check the title actually matches their words. Never assume they mean a product from earlier in the conversation when they've named a different one.
 - If the exact thing they want isn't available, search for the closest alternative and offer it — don't just say no.
 - When they show buying intent, create a checkout link and include it naturally.
 - When they ask for a link to a product, call get_product_page_link (or get_checkout_link if they're buying) for that product — never promise a link without calling a link tool.
@@ -490,15 +491,17 @@ function buildUserMessage({ message, intent, threadContext }) {
   const lastProductLink = threadContext?.lastProductLink;
   if (lastProductLink?.product_id) {
     parts.push(
-      `The conversation is about a specific product already (e.g. they commented on a post for it). product_id: ${toProductGid(lastProductLink.product_id)}${
+      `Earlier in this conversation you linked a product with product_id: ${toProductGid(lastProductLink.product_id)}${
         lastProductLink.variant_id ? `, variant_id: ${toVariantGid(lastProductLink.variant_id)}` : ""
-      }. Prefer this product unless their message is clearly about something else.`
+      }. Reuse it ONLY when their message doesn't identify a product on its own ("yes", "how much?", "send the link"). If their message names or describes ANY product, call search_products with their words and compare titles — customers switch products mid-conversation, and this context product may not be the one they mean now.`
     );
   }
 
   const entityProduct = message.ai_entities?.product_name;
   if (entityProduct) {
-    parts.push(`They seem to be referring to a product called: "${entityProduct}"`);
+    parts.push(
+      `They named a product: "${entityProduct}". Find it with search_products and make sure the title matches what they said before linking or quoting a price.`
+    );
   }
   if (intent) {
     parts.push(`Classifier's intent guess (may be wrong, trust the message itself): ${intent}`);
