@@ -375,11 +375,17 @@ export async function checkInstagramMessageAccess(shopId) {
     return "on";
   } catch (error) {
     const meta = error?.meta;
+    // Verified against the live API (Jul 2026): with the toggle off, Meta
+    // returns HTTP 403, code 200, type IGApiException, message "The account
+    // owner has disabled access to Instagram Direct Messaging." — and NO
+    // error_subcode. Match on the message prefix ("...instagram direct"),
+    // not "direct message", because the live wording is "Direct Messaging".
+    // The subcode check is kept for the documented send-API variant (2534041).
     const disabled =
       meta?.error_subcode === 2534041 ||
       String(meta?.message || "")
         .toLowerCase()
-        .includes("disabled access to instagram direct message");
+        .includes("disabled access to instagram direct");
     if (disabled) {
       console.log(`[meta] Message access is DISABLED for shop ${shopId} (connected-tools toggle off)`);
       return "off";
