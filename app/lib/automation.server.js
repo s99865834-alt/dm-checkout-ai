@@ -223,6 +223,22 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
     }
 
+    // Confidence gate (same thresholds as the comment path): only reply when
+    // the classifier is reasonably sure the message is actually a commerce
+    // question. Applies only when the intent came from the classifier — the
+    // deterministic inferIntentFromText() path above (short follow-up replies
+    // like "yes" / "link?" with prior product context) has no confidence score
+    // and is exact-match by construction.
+    if (intent === message.ai_intent) {
+      const minConfidence = intent === "purchase" ? 0.5 : 0.7;
+      if (!message.ai_confidence || message.ai_confidence < minConfidence) {
+        logger.debug(
+          `[automation] DM confidence ${message.ai_confidence} below threshold (${minConfidence}) for intent "${intent}", skipping`
+        );
+        return { sent: false, reason: `Confidence ${message.ai_confidence ?? "none"} below threshold` };
+      }
+    }
+
     // Guardrail: demote questions that reference the catalog/store as a whole
     // to "store_question" so we don't blindly answer with a stale product link
     // inherited from prior conversation context (e.g. an earlier comment-to-DM).
