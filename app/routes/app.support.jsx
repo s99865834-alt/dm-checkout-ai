@@ -41,7 +41,7 @@ export default function SupportPage() {
                 <ul>
                   <li><strong>Green &ldquo;Message access verified/working&rdquo;</strong> — we confirmed Instagram is letting the app read and reply to your DMs. Nothing to do.</li>
                   <li><strong>Red &ldquo;Instagram is blocking message access&rdquo;</strong> — Instagram told us directly that your &ldquo;Allow access to messages&rdquo; setting is off. Automation can&apos;t reply until you turn it on (see the next question), then tap <strong>Check again</strong> for instant confirmation.</li>
-                  <li><strong>Orange &ldquo;No Instagram messages received yet&rdquo;</strong> — we couldn&apos;t verify the setting either way and no customer message has come through yet. That&apos;s normal right after you install. If it stays orange while customers are messaging you, check the &ldquo;Allow access to messages&rdquo; setting and tap <strong>Check again</strong>.</li>
+                  <li><strong>Orange &ldquo;Couldn&apos;t verify message access right now&rdquo;</strong> — rare. The check didn&apos;t get a clear answer from Instagram, usually a temporary hiccup on their side. Tap <strong>Check again</strong> and it will normally turn green (or red) immediately. If it stays orange, confirm the &ldquo;Allow access to messages&rdquo; setting manually (see the next question).</li>
                 </ul>
               </div>
             </details>

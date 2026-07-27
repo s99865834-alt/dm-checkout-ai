@@ -839,15 +839,15 @@ export default function Index() {
                       <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                           <span className="srCardTitle srIGHealthTitle" style={{ color: "#9a6700" }}>
-                            ⚠ No Instagram messages received yet
+                            ⚠ Couldn&apos;t verify message access right now
                           </span>
                           <span className="srCardDesc srIGHealthText">
-                            For automation to work, Instagram must allow apps to access your messages.
-                            In the <strong>Instagram app</strong> on your phone, go to{" "}
-                            <strong>Settings → Messages and story replies → Message requests</strong>{" "}
-                            and turn on <strong>&ldquo;Allow access to messages&rdquo;</strong> (under Connected tools).
-                            If it&apos;s already on, you&apos;re all set — this check turns green automatically
-                            after your first customer DM or comment.
+                            Instagram didn&apos;t give us a clear answer when we checked your message-access
+                            setting — usually just a temporary hiccup on Instagram&apos;s side. Tap{" "}
+                            <strong>Check again</strong> and this will normally turn green right away.
+                            If it keeps showing, confirm the setting in the <strong>Instagram app</strong>:{" "}
+                            <strong>Settings → Messages and story replies → Message requests</strong> →
+                            turn on <strong>&ldquo;Allow access to messages&rdquo;</strong> (under Connected tools).
                           </span>
                           <div style={{ display: "flex", gap: "8px" }}>
                             <s-button
