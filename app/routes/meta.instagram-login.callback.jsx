@@ -17,6 +17,7 @@ import {
   META_INSTAGRAM_APP_ID,
   META_INSTAGRAM_APP_SECRET,
 } from "../lib/meta.server";
+import { invalidateCached } from "../lib/loader-cache.server";
 import logger from "../lib/logger.server";
 
 const PRODUCTION_URL = "https://dm-checkout-ai-production.up.railway.app";
@@ -149,6 +150,14 @@ export async function loader({ request }) {
     }
 
     await saveMetaAuthForInstagram(shopData.id, igBusinessId, longLivedToken, tokenExpiresAt);
+
+    // Drop caches computed before this connect: the message-access probe may
+    // have cached "unknown" (no auth yet), and any IG info/media belongs to a
+    // previously linked account. Ensures the post-connect banner and health
+    // box reflect this account, probed fresh.
+    invalidateCached(`igmsgaccess:${shopData.id}`);
+    invalidateCached(`iginfo:${shopData.id}`);
+    invalidateCached(`igmedia:${shopData.id}`);
 
     // 5. Subscribe this account to message/comment webhooks. Without this,
     // Meta never delivers events for the account and automation is silently

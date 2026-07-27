@@ -35,14 +35,15 @@ export default function SupportPage() {
               <p className="srFaqAnswer">Go to the Home page and click "Connect Instagram" in the Plan & Instagram section. You'll be guided through the Meta authorization process.</p>
             </details>
             <details className="srFaqItem">
-              <summary className="srFaqSummary">What does the orange "No Instagram messages received yet" warning mean?</summary>
-              <p className="srFaqAnswer">
-                It means your Instagram account is connected, but no customer message or comment has reached SocialRepl.ai yet.
-                That's normal right after you install — it simply hasn't had anything to reply to.
-                But if the warning stays for a while even though customers are messaging you, the most common cause is Instagram's
-                "Allow access to messages" setting being turned off (see the next question).
-                The warning turns green automatically the moment your first customer DM or comment comes through.
-              </p>
+              <summary className="srFaqSummary">What do the message-access statuses on the Home page mean?</summary>
+              <div className="srFaqAnswer">
+                <p>Under your Instagram handle in Plan &amp; Instagram you&apos;ll see one of three states:</p>
+                <ul>
+                  <li><strong>Green &ldquo;Message access verified/working&rdquo;</strong> — we confirmed Instagram is letting the app read and reply to your DMs. Nothing to do.</li>
+                  <li><strong>Red &ldquo;Instagram is blocking message access&rdquo;</strong> — Instagram told us directly that your &ldquo;Allow access to messages&rdquo; setting is off. Automation can&apos;t reply until you turn it on (see the next question), then tap <strong>Check again</strong> for instant confirmation.</li>
+                  <li><strong>Orange &ldquo;No Instagram messages received yet&rdquo;</strong> — we couldn&apos;t verify the setting either way and no customer message has come through yet. That&apos;s normal right after you install. If it stays orange while customers are messaging you, check the &ldquo;Allow access to messages&rdquo; setting and tap <strong>Check again</strong>.</li>
+                </ul>
+              </div>
             </details>
             <details className="srFaqItem">
               <summary className="srFaqSummary">How do I turn on &ldquo;Allow access to messages&rdquo; in Instagram?</summary>
@@ -59,8 +60,9 @@ export default function SupportPage() {
                   <li>Under <strong>Connected tools</strong>, turn on <strong>&ldquo;Allow access to messages&rdquo;</strong>.</li>
                 </ol>
                 <p>
-                  No need to reconnect or restart anything afterwards — the change takes effect right away,
-                  and the warning on your Home page turns green after the next customer message arrives.
+                  No need to reconnect or restart anything afterwards — the change takes effect right away.
+                  Go back to the Home page and tap <strong>Check again</strong> in the Plan &amp; Instagram
+                  section to confirm instantly that the status is green.
                 </p>
               </div>
             </details>

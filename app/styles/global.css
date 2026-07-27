@@ -816,6 +816,26 @@ s-page s-box.srCardCompact {
   min-width: 0;
 }
 
+/* Message-access health under the Instagram handle: smaller text, tight gap */
+.srIGHealthLine {
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 2px;
+  display: block;
+}
+
+.srIGHealthBox {
+  margin-top: 6px;
+}
+
+.srIGHealthBox .srIGHealthTitle {
+  font-size: 13px;
+}
+
+.srIGHealthBox .srIGHealthText {
+  font-size: 12px;
+}
+
 /* Connected row: status+details left, button right */
 .srIGConnectedRow {
   display: flex;
