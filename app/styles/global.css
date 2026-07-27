@@ -827,22 +827,36 @@ s-page .srIGHealthLine,
   display: block;
 }
 
-/* Inline re-probe link shown next to the green status so a merchant who just
-   changed the Instagram setting isn't stuck with a cached verdict. */
-.srIGHealthRecheck {
+/* Tiny inline refresh icon next to the green status so a merchant who just
+   changed the Instagram setting isn't stuck with a cached verdict. Spins
+   while the re-check request is in flight. */
+.srIGHealthRecheckIcon {
   background: none;
   border: none;
   padding: 0;
-  margin-left: 8px;
-  font-size: inherit;
-  line-height: inherit;
+  margin-left: 6px;
   color: #6d7175;
-  text-decoration: underline;
   cursor: pointer;
+  display: inline-flex;
+  vertical-align: -1px;
+  line-height: 0;
 }
-.srIGHealthRecheck:disabled {
-  opacity: 0.6;
+.srIGHealthRecheckIcon:hover {
+  color: #303030;
+}
+.srIGHealthRecheckIcon:disabled {
   cursor: default;
+}
+.srIGHealthRecheckSpinning svg {
+  animation: srSpin 0.8s linear infinite;
+}
+@keyframes srSpin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srIGHealthRecheckSpinning svg {
+    animation: none;
+  }
 }
 
 .srIGHealthBox {

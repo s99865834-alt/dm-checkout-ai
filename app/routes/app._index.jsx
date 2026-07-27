@@ -414,6 +414,26 @@ export const action = async ({ request }) => {
   }
 };
 
+/* Tiny refresh icon that re-probes message access; spins while the check is
+   in flight. Used on the green statuses where a full button would be noisy. */
+function RecheckIconButton({ onClick, checking }) {
+  return (
+    <button
+      type="button"
+      className={`srIGHealthRecheckIcon${checking ? " srIGHealthRecheckSpinning" : ""}`}
+      onClick={onClick}
+      disabled={checking}
+      aria-label="Check message access again"
+      title="Check again"
+    >
+      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polyline points="23 4 23 10 17 10" />
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+      </svg>
+    </button>
+  );
+}
+
 export default function Index() {
   const loaderData = useLoaderData();
   const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred } = loaderData || {};
@@ -795,7 +815,7 @@ export default function Index() {
                         (green if we've ever received a message, amber otherwise) */}
                   {messageAccessUi === "off" ? (
                     <div className="srIGHealthBox">
-                      <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
+                      <s-box padding="tight" borderRadius="base" background="subdued">
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                           <span className="srCardTitle srIGHealthTitle" style={{ color: "#d82c0d" }}>
                             ✕ Instagram is blocking message access
@@ -828,21 +848,17 @@ export default function Index() {
                       ✓ Message access verified
                       {lastInboundMessageAt &&
                         ` — last message ${new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
-                      <button type="button" className="srIGHealthRecheck" onClick={recheckMessageAccess} disabled={accessChecking}>
-                        {accessChecking ? "Checking…" : "Check again"}
-                      </button>
+                      <RecheckIconButton onClick={recheckMessageAccess} checking={accessChecking} />
                     </span>
                   ) : lastInboundMessageAt ? (
                     <span className="srCardDesc srIGHealthLine" style={{ color: "#1a7f37" }}>
                       ✓ Message access working — last Instagram message received{" "}
                       {new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      <button type="button" className="srIGHealthRecheck" onClick={recheckMessageAccess} disabled={accessChecking}>
-                        {accessChecking ? "Checking…" : "Check again"}
-                      </button>
+                      <RecheckIconButton onClick={recheckMessageAccess} checking={accessChecking} />
                     </span>
                   ) : (
                     <div className="srIGHealthBox">
-                      <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
+                      <s-box padding="tight" borderRadius="base" background="subdued">
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                           <span className="srCardTitle srIGHealthTitle" style={{ color: "#9a6700" }}>
                             ⚠ Couldn&apos;t verify message access right now
