@@ -368,18 +368,6 @@ export function buildStoreContextForAI(storeInfo) {
   const allowedUrls = [];
   const urlMap = {};
 
-  // Storefront MCP FAQ search result, if any. It's a nearest-match search, so
-  // it can come back with something unrelated to the customer's question —
-  // labelling it "authoritative, use verbatim" made the AI anchor on an
-  // irrelevant match and ignore the structured store data below (e.g. it said
-  // "I don't have that information" to "how many products do you have?" while
-  // the product count sat lower in this same context). Frame it as optional.
-  if (typeof storeInfo.mcpAnswer === "string" && storeInfo.mcpAnswer.trim()) {
-    sections.push(
-      `Store FAQ search result for this question (nearest match — it may not actually answer what the customer asked; if it doesn't, ignore it and answer from the store data below): ${storeInfo.mcpAnswer.trim()}`
-    );
-  }
-
   if (storeInfo.name) sections.push(`Store name: ${storeInfo.name}`);
   if (storeInfo.email) {
     sections.push(`Contact email: ${storeInfo.email}`);

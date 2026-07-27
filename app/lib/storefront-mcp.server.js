@@ -1,13 +1,16 @@
 /**
- * Shopify Storefront MCP client.
+ * Shopify Storefront MCP client (UCP catalog tools).
  *
- * Wraps JSON-RPC 2.0 calls to a merchant store's MCP endpoints:
- *   - Standard tools:     https://{shop}.myshopify.com/api/mcp
- *       search_shop_policies_and_faqs, get_cart, update_cart
- *   - UCP catalog tools:  https://{shop}.myshopify.com/api/ucp/mcp
- *       search_catalog, lookup_catalog, get_product
+ * Wraps JSON-RPC 2.0 calls to a merchant store's UCP MCP endpoint:
+ *   https://{shop}.myshopify.com/api/ucp/mcp
+ *     search_catalog, lookup_catalog, get_product
  *
- * Docs: https://shopify.dev/docs/apps/build/storefront-mcp/servers/storefront
+ * Docs: https://shopify.dev/docs/agents/catalog/storefront-catalog
+ *
+ * The legacy standard tools (search_shop_policies_and_faqs, get_cart,
+ * update_cart on /api/mcp) were removed here ahead of Shopify shutting that
+ * endpoint down on 2026-08-31; store questions are answered from the
+ * Admin-API store context instead.
  *
  * The MCP endpoints do NOT require authentication — they're storefront-scoped.
  * We just need the shop's *.myshopify.com domain.
@@ -34,10 +37,6 @@ function normalizeShopDomain(shop) {
   host = host.split(":")[0];
   if (!host.endsWith(".myshopify.com")) return null;
   return host;
-}
-
-function standardEndpoint(shopDomain) {
-  return `https://${shopDomain}/api/mcp`;
 }
 
 function ucpEndpoint(shopDomain) {
@@ -273,78 +272,6 @@ export async function getProduct(shop, catalog, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Standard storefront tools (/api/mcp)
-// ---------------------------------------------------------------------------
-
-/**
- * Ask a natural-language question about the merchant's policies and FAQs.
- * Returns Shopify's authoritative answer text — safer than scraping policy
- * pages ourselves.
- *
- * @param {string} shop
- * @param {string} query
- * @param {string} [context] - optional extra context, e.g. current product
- */
-export async function searchShopPoliciesAndFaqs(shop, query, context, opts = {}) {
-  const shopDomain = normalizeShopDomain(shop);
-  if (!shopDomain) throw new Error("searchShopPoliciesAndFaqs: invalid shop domain");
-  if (!query) throw new Error("searchShopPoliciesAndFaqs: query is required");
-  const args = { query };
-  if (context) args.context = context;
-  const result = await callMcpTool(
-    standardEndpoint(shopDomain),
-    "search_shop_policies_and_faqs",
-    args,
-    opts
-  );
-  return parseToolContent(result);
-}
-
-/**
- * Read the current contents of a cart.
- */
-export async function getCart(shop, cartId, opts = {}) {
-  const shopDomain = normalizeShopDomain(shop);
-  if (!shopDomain) throw new Error("getCart: invalid shop domain");
-  if (!cartId) throw new Error("getCart: cartId is required");
-  const result = await callMcpTool(
-    standardEndpoint(shopDomain),
-    "get_cart",
-    { cart_id: cartId },
-    opts
-  );
-  return parseToolContent(result);
-}
-
-/**
- * Create or update a Shopify cart and get back a checkout URL.
- *
- * The args are passed through verbatim so callers can use either
- * `lines` or `add_items` depending on what Shopify currently accepts.
- * Set `quantity: 0` to remove a line item.
- *
- * @param {string} shop
- * @param {Object} args
- * @param {string} [args.cart_id]     - omit to create a new cart
- * @param {Array}  [args.lines]       - [{ merchandise_id, quantity, line_item_id? }]
- * @param {Array}  [args.add_items]   - alternative name seen in Shopify docs
- */
-export async function updateCart(shop, args, opts = {}) {
-  const shopDomain = normalizeShopDomain(shop);
-  if (!shopDomain) throw new Error("updateCart: invalid shop domain");
-  if (!args || (!args.lines && !args.add_items)) {
-    throw new Error("updateCart: args.lines[] or args.add_items[] is required");
-  }
-  const result = await callMcpTool(
-    standardEndpoint(shopDomain),
-    "update_cart",
-    args,
-    opts
-  );
-  return parseToolContent(result);
-}
-
-// ---------------------------------------------------------------------------
 // Normalisers — adapt UCP catalog shapes to the Admin-API shapes the rest of
 // the codebase already expects, so MCP can be a drop-in for
 // searchProductsByDomain() / getShopifyProductContextForReply().
@@ -537,28 +464,3 @@ export async function searchCatalogNormalized(shop, query, opts = {}) {
     .filter((p) => p && p.variants.nodes.length > 0);
 }
 
-// ---------------------------------------------------------------------------
-// Convenience wrapper: swallow errors, return null, log
-// ---------------------------------------------------------------------------
-
-/**
- * Wrap an MCP call in a try/catch that returns null on failure.
- * Use this at every call site where the existing Admin API path is the
- * fallback so a Storefront MCP outage doesn't break DM automation.
- *
- * McpUnavailableError (store not reachable, password-gated, UCP not
- * enabled, etc.) is logged at debug — expected, not an error.
- * Other errors are logged at warn.
- */
-export async function tryMcp(label, fn) {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof McpUnavailableError) {
-      logger.debug(`[mcp] ${label} skipped: ${err.reason}`);
-    } else {
-      logger.warn(`[mcp] ${label} failed: ${err?.message || err}`);
-    }
-    return null;
-  }
-}
