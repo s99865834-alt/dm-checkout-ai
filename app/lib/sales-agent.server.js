@@ -39,7 +39,7 @@ import { searchCatalogNormalized } from "./storefront-mcp.server";
 import {
   buildCheckoutLink,
   buildProductPageLink,
-  getClickTrackingUrlForMessage,
+  getTrackedLinkUrl,
   shortenUrlsInReply,
 } from "./links.server";
 
@@ -294,7 +294,7 @@ export async function generateAgentReply({
         const variantGid = toVariantGid(args.variant_id);
         const qty = Number.isInteger(args.quantity) && args.quantity > 0 ? args.quantity : 1;
         const link = await buildCheckoutLink(shop, gid, variantGid, qty);
-        const shortUrl = getClickTrackingUrlForMessage(link.linkId);
+        const shortUrl = await getTrackedLinkUrl(shop, link.linkId);
         linksCreated.push({ productId: gid, variantId: variantGid, url: link.url, linkId: link.linkId });
         allowedUrls.add(shortUrl);
         return { checkout_url: shortUrl, note: "Paste this URL into your reply exactly as-is." };
@@ -305,7 +305,7 @@ export async function generateAgentReply({
         const variantGid = toVariantGid(args.variant_id);
         const pdp = await buildProductPageLink(shop, gid, variantGid);
         if (!pdp) return { error: "Could not build a product page link; use get_checkout_link instead" };
-        const shortUrl = getClickTrackingUrlForMessage(pdp.linkId);
+        const shortUrl = await getTrackedLinkUrl(shop, pdp.linkId);
         linksCreated.push({ productId: gid, variantId: variantGid, url: pdp.url, linkId: pdp.linkId });
         allowedUrls.add(shortUrl);
         return { product_page_url: shortUrl, note: "Paste this URL into your reply exactly as-is." };
@@ -407,7 +407,7 @@ export async function generateAgentReply({
   // Store policy/page URLs (from get_store_info) are raw storefront URLs —
   // convert them to tracked info_ short links. Checkout/PDP links are already
   // short and are skipped by shortenUrlsInReply.
-  text = await shortenUrlsInReply(shop.id, message.id, text);
+  text = await shortenUrlsInReply(shop, message.id, text);
 
   logger.debug(
     `[sales-agent] Reply generated for message ${message.id} (${linksCreated.length} tracked links, model=${REPLY_MODEL})`

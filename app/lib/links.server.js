@@ -16,7 +16,7 @@ import supabase from "./supabase.server";
 import logger from "./logger.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
-import { getShopifyProductContextForReply } from "./shopify-data.server";
+import { getShopifyProductContextForReply, getShopPrimaryDomainHost } from "./shopify-data.server";
 
 /** Base62 alphabet for URL-safe short IDs (62^8 ≈ 218T combinations) */
 const ID_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -45,7 +45,7 @@ function getShortLinkBase() {
 }
 
 /**
- * Branded short URL shown in DMs.
+ * Fallback short URL on the shared short-link domain.
  * Root path /{linkId} (no /c/) for shorter URLs. Uses SHORT_LINK_DOMAIN when set.
  */
 export function getClickTrackingUrlForMessage(linkId) {
@@ -53,12 +53,41 @@ export function getClickTrackingUrlForMessage(linkId) {
 }
 
 /**
- * Replace full URLs in reply text with srai.link short links.
- * Creates a links_sent row for each URL so the redirect route can resolve it.
- * URLs that already point at the short-link domain are left untouched (they
- * are tracked links minted earlier in the same reply).
+ * The tracked URL to paste into a DM for `linkId`, preferring the merchant's
+ * own storefront domain via the app proxy: https://{store-domain}/a/go/{id}.
+ * On-brand ("feels like the store, not a third-party tool") and immune to
+ * shortener-domain blocklists, since each link rides the merchant's own
+ * domain reputation. Falls back to the shared short-link domain when the
+ * store has no custom domain (myshopify.com hosts are excluded by design).
+ *
+ * @param {Object} shop - shops row (needs shopify_domain)
+ * @param {string} linkId
+ * @returns {Promise<string>}
  */
-export async function shortenUrlsInReply(shopId, messageId, text) {
+export async function getTrackedLinkUrl(shop, linkId) {
+  const host = shop?.shopify_domain
+    ? await getShopPrimaryDomainHost(shop.shopify_domain)
+    : null;
+  if (host) return `https://${host}/a/go/${linkId}`;
+  return getClickTrackingUrlForMessage(linkId);
+}
+
+/** True when a URL is already one of our tracked links (either form). */
+function isTrackedLinkUrl(url, shortBase) {
+  return url.startsWith(shortBase + "/") || url.includes("/a/go/");
+}
+
+/**
+ * Replace full URLs in reply text with tracked short links.
+ * Creates a links_sent row for each URL so the redirect routes can resolve it.
+ * URLs that are already tracked links (short domain or merchant-domain proxy)
+ * are left untouched — they were minted earlier in the same reply.
+ *
+ * @param {Object} shop - shops row (id + shopify_domain)
+ * @param {string|null} messageId
+ * @param {string} text
+ */
+export async function shortenUrlsInReply(shop, messageId, text) {
   if (!text) return text;
   const urlRegex = /https?:\/\/[^\s)]+/g;
   const urls = text.match(urlRegex);
@@ -67,10 +96,10 @@ export async function shortenUrlsInReply(shopId, messageId, text) {
   const shortBase = getShortLinkBase();
   let result = text;
   for (const url of [...new Set(urls)]) {
-    if (url.startsWith(shortBase + "/")) continue; // already a tracked short link
+    if (isTrackedLinkUrl(url, shortBase)) continue;
     const linkId = `info_${randomBytes(6).toString("hex")}`;
     const { error } = await supabase.from("links_sent").insert({
-      shop_id: shopId,
+      shop_id: shop.id,
       message_id: messageId,
       url,
       link_id: linkId,
@@ -79,7 +108,7 @@ export async function shortenUrlsInReply(shopId, messageId, text) {
       logger.debug(`[links] Short-link insert failed for ${url}: ${error.message}`);
       continue;
     }
-    const shortUrl = getClickTrackingUrlForMessage(linkId);
+    const shortUrl = await getTrackedLinkUrl(shop, linkId);
     result = result.split(url).join(shortUrl);
   }
   return result;

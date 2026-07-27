@@ -33,5 +33,15 @@ api_version = "2026-01"
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_products,read_orders,read_legal_policies,read_content"
 
+# Serves DM tracking links on the merchant's own storefront domain:
+# https://{store-domain}/a/go/{linkId} → forwarded to /proxy/go/{linkId}.
+# On-brand links (looks like the store, not a third-party shortener) that
+# inherit each merchant's domain reputation, so ISP filters can't flag a
+# shared shortener domain.
+[app_proxy]
+url = "https://dm-checkout-ai-production.up.railway.app/proxy/go"
+prefix = "a"
+subpath = "go"
+
 [auth]
 redirect_urls = [ "https://dm-checkout-ai-production.up.railway.app/auth/callback" ]

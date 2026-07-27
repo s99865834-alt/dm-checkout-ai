@@ -21,7 +21,7 @@ import {
 import {
   buildCheckoutLink,
   buildProductPageLink,
-  getClickTrackingUrlForMessage,
+  getTrackedLinkUrl,
   shortenUrlsInReply,
   getShopHomepageUrl,
 } from "./links.server";
@@ -371,7 +371,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         }
       );
 
-      replyText = await shortenUrlsInReply(shop.id, message.id, replyText);
+      replyText = await shortenUrlsInReply(shop, message.id, replyText);
 
       // Claim the one-reply slot (atomic); if duplicate webhook, only one wins
       if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -472,7 +472,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
             const checkoutUrl = checkoutLink.url;
             const linkId = checkoutLink.linkId;
-            const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
+            const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
 
             const replyText = await generateReplyMessage(
               brandVoiceData,
@@ -571,8 +571,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           };
         }
 
-        const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
-        const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
+        const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
+        const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
         const replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
@@ -766,8 +766,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           };
         }
 
-        const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
-        const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
+        const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
+        const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
 
         const replyText = await generateReplyMessage(
           brandVoiceData,
@@ -1237,8 +1237,8 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
       };
     }
-    const checkoutUrlForMessage = getClickTrackingUrlForMessage(linkId) || checkoutUrl;
-    const productPageUrlForMessage = pdpLinkId ? getClickTrackingUrlForMessage(pdpLinkId) : null;
+    const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
+    const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
     const replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
