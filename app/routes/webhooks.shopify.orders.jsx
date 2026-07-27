@@ -105,7 +105,7 @@ export const action = async ({ request }) => {
   
   try {
     // Authenticate and verify the webhook
-    const { shop, topic, payload } = await authenticate.webhook(request);
+    const { shop, payload } = await authenticate.webhook(request);
     logger.debug(`[webhook] Authenticated orders/create webhook for shop: ${shop}`);
 
     // Get shop from database to get shop_id

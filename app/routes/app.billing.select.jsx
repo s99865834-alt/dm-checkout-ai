@@ -93,8 +93,12 @@ function PlanActionButton({ fetcher, planName, variant, label }) {
 }
 
 export default function BillingSelect() {
-  const { shop, plan: currentPlan } = useOutletContext() || useLoaderData();
-  const { subscription, trialStatus } = useLoaderData();
+  // Hooks must run unconditionally (`useOutletContext() || useLoaderData()`
+  // skipped the second hook whenever context existed — a rules-of-hooks bug).
+  const outletContext = useOutletContext();
+  const loaderData = useLoaderData();
+  const { shop, plan: currentPlan } = outletContext || loaderData;
+  const { trialStatus } = loaderData;
   const currentPlanName = currentPlan?.name || "FREE";
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");

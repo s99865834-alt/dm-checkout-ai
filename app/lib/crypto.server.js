@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import logger from "./logger.server";
 
 // Read key from base64 (more secure) or fallback to UTF-8
 const keyString = process.env.ENCRYPTION_KEY_32B || "";

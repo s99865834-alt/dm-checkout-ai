@@ -407,7 +407,7 @@ export function PostsSection({ mediaData, shopifyProducts, productMappings, disa
                             : "AI will NOT respond to comments/DMs on this post"}
                         </span>
                       </div>
-                      <label className="srToggle">
+                      <label className="srToggle" aria-label="Automation for this post">
                         <input
                           type="checkbox"
                           checked={automationEnabled}

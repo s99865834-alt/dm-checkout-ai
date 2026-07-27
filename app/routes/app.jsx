@@ -65,12 +65,6 @@ export default function App() {
     };
   }, [navigate]);
 
-  const planBadgeColor = {
-    FREE: "subdued",
-    GROWTH: "info",
-    PRO: "success",
-  }[plan.name] || "subdued";
-
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav ref={navRef}>

@@ -101,7 +101,7 @@ export default function ProductContextPreview() {
     variantCount,
     error,
   } = useLoaderData();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
 
   const handleSelect = (e) => {
     const id = e.target.value;

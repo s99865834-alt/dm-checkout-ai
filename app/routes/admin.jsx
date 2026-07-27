@@ -408,13 +408,11 @@ export default function Admin() {
             <input type="hidden" name="intent" value="login" />
             <label style={styles.label}>
               Password
-              <input
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                style={styles.input}
-                autoFocus
-              />
+              {/* Single-field internal login form: focusing the password input
+                  is expected and helps, not hinders, so the a11y rule is
+                  intentionally overridden here. */}
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+              <input type="password" name="password" autoComplete="current-password" style={styles.input} autoFocus />
             </label>
             {actionData?.error && (
               <>

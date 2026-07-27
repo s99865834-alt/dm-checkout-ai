@@ -17,7 +17,19 @@ module.exports = {
   env: {
     browser: true,
     commonjs: true,
-    es6: true,
+    // es2021 (not es6) so modern globals like globalThis are recognized.
+    es2021: true,
+    // SSR app: route modules, loaders/actions and scripts all run in Node and
+    // read process.env, so Node globals are valid everywhere.
+    node: true,
+  },
+  rules: {
+    // Underscore prefix marks intentionally unused params/vars (e.g. a
+    // positional arg kept for signature clarity).
+    "no-unused-vars": [
+      "error",
+      { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
+    ],
   },
   ignorePatterns: ["!**/.server", "!**/.client"],
 
@@ -50,6 +62,13 @@ module.exports = {
       },
       rules: {
         "react/no-unknown-property": ["error", { ignore: ["variant"] }],
+        // The project doesn't use the prop-types library; components are
+        // documented via JSDoc and usage instead.
+        "react/prop-types": "off",
+        // Only forbid the characters that catch real JSX mistakes (stray > or
+        // }). Literal apostrophes/quotes in copy render fine and keep the
+        // marketing/blog content readable in source.
+        "react/no-unescaped-entities": ["error", { forbid: [">", "}"] }],
       },
     },
 

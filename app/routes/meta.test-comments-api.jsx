@@ -265,7 +265,7 @@ export const loader = async ({ request }) => {
       }
     }
 
-    return json(results);
+    return Response.json(results);
   } catch (error) {
     console.error("[test-comments-api] Error:", error);
     return new Response(
