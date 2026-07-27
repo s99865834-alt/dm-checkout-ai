@@ -520,9 +520,42 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           logger.debug(`[automation] Size follow-up but no size detected in message ${message.id}, re-asking`);
         }
 
+        // Product-switch guard: prior-link context is only right when the
+        // customer is still talking about the SAME product. If the classifier
+        // extracted a product name, search the catalog for it and switch
+        // context when it resolves to a different product (e.g. "I like the
+        // complete snowboard" after a conversation about another board).
+        let contextProductId = lastProductLink.product_id;
+        let contextVariantId = lastProductLink.variant_id || null;
+        const namedProductDm = message.ai_entities?.product_name || null;
+        if (namedProductDm && shop.shopify_domain) {
+          try {
+            let candidates = await searchCatalogNormalized(shop.shopify_domain, namedProductDm, { limit: 3 });
+            if (!candidates || candidates.length === 0) {
+              candidates = await searchProductsByDomain(shop.shopify_domain, namedProductDm, 3).catch(() => []);
+            }
+            const lower = namedProductDm.toLowerCase();
+            const best =
+              (candidates || []).find((p) => (p.title || "").toLowerCase() === lower) ||
+              (candidates || []).find((p) => (p.title || "").toLowerCase().includes(lower)) ||
+              (candidates || [])[0] ||
+              null;
+            const numericId = (id) => String(id || "").replace("gid://shopify/Product/", "");
+            if (best?.id && numericId(best.id) !== numericId(contextProductId)) {
+              logger.debug(
+                `[automation] DM names "${namedProductDm}" → switching product context from ${contextProductId} to ${best.id}`
+              );
+              contextProductId = best.id;
+              contextVariantId = best.variants?.nodes?.[0]?.id || null;
+            }
+          } catch (err) {
+            logger.debug(`[automation] Product-switch search failed, keeping prior context: ${err?.message || err}`);
+          }
+        }
+
         const productMapping = {
-          product_id: lastProductLink.product_id,
-          variant_id: lastProductLink.variant_id || null,
+          product_id: contextProductId,
+          variant_id: contextVariantId,
           product_handle: null,
         };
 
