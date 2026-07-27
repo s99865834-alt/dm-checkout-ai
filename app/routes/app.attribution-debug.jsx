@@ -1,4 +1,4 @@
-import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit } from "react-router";
+import { useRouteError, useLoaderData, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getAttributionRecords } from "../lib/db.server";
@@ -35,8 +35,7 @@ export const loader = async ({ request }) => {
 };
 
 export default function AttributionDebugPage() {
-  const { shop, plan, attributionRecords, filters } = useLoaderData();
-  const [searchParams] = useSearchParams();
+  const { attributionRecords, filters } = useLoaderData();
   const submit = useSubmit();
 
   // Format date for display

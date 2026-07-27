@@ -11,7 +11,7 @@ import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { getStoredStoreContext } from "./db.server";
-import { sendInstagramPrivateReply, sendInstagramDm, getMetaAuth } from "./meta.server";
+import { sendInstagramPrivateReply, sendInstagramDm } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import { sessionStorage } from "../shopify.server";
@@ -93,16 +93,6 @@ function extractMcpAnswerText(mcpResult) {
     }
   }
   return null;
-}
-
-/**
- * URL for click tracking: user hits this, we log the click and redirect to the real URL.
- * Root path /{linkId} (no /c/) for shorter URLs.
- */
-function getClickTrackingUrl(linkId) {
-  const base = (process.env.SHOPIFY_APP_URL || process.env.APP_URL || "").replace(/\/$/, "");
-  if (!base) return null;
-  return `${base}/${linkId}`;
 }
 
 /**
@@ -1880,7 +1870,6 @@ export async function generateReplyMessage(brandVoice, productName = null, check
 
         // Use AI to generate a response based on the custom instruction or product_question intent
         let promptBase = `Generate an Instagram DM reply to a customer`;
-        let styleInstruction = customInstruction || tone; // Use custom instruction if provided, otherwise use tone
         
         // Include original message for context (especially important for purchase intent)
         if (originalMessage) {

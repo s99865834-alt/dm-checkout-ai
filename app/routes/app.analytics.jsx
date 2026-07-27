@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useSubmit, useNavigate } from "react-router";
+import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -140,10 +140,9 @@ export const loader = async ({ request }) => {
 
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
-  const { hasAccess, isFree, isGrowth, isPro } = usePlanAccess();
+  const { isFree, isPro } = usePlanAccess();
   const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId } = useLoaderData();
   const [searchParams] = useSearchParams();
-  const submit = useSubmit();
   const navigate = useNavigate();
   const [expandedMessages, setExpandedMessages] = useState(new Set());
 

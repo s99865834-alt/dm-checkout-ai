@@ -1188,7 +1188,7 @@ export async function deleteProductMapping(shopId, igMediaId) {
  * Update product mappings that have null variant_id by fetching the first variant from Shopify
  * This fixes existing mappings that were created before the auto-fetch logic was added
  */
-export async function updateNullVariantMappings(shopId, shopDomain) {
+export async function updateNullVariantMappings(shopId, _shopDomain) {
   try {
     // Get all mappings with null variant_id
     const { data: mappings, error: fetchError } = await supabase

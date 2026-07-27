@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState, useRef } from "react";
 import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription } from "../lib/meta.server";
+import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
@@ -27,6 +27,10 @@ const TRIAL_TTL_MS = 15 * 60 * 1000;
 // it Meta delivers no message/comment events for the account (see
 // ensureInstagramWebhookSubscription).
 const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
+// Message-access probe (is the merchant's "Allow access to messages" toggle
+// on?). Cached briefly so repeat loads don't re-hit the API; the "Check
+// again" action busts this cache for instant feedback.
+const MSG_ACCESS_TTL_MS = 10 * 60 * 1000;
 
 // The loader is split for Core Web Vitals (LCP < 2.5s):
 //   - Awaited: everything the shell + banners need — cheap DB reads plus the
@@ -46,11 +50,12 @@ export const loader = async ({ request }) => {
   let trialStatus = null;
   let reviewEligible = false;
   let lastInboundMessageAt = null;
+  let messageAccess = "unknown";
 
   if (shop?.id) {
     let attributionCount = 0;
     let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -77,6 +82,11 @@ export const loader = async ({ request }) => {
         // Message-access health: proof that webhook events actually reach us
         // (Meta's "Allow access to messages" toggle isn't queryable via API).
         getLastInboundMessageAt(shop.id),
+        // Deterministic probe of the toggle itself (via the documented error
+        // messaging APIs return while it's off). Cached; "unknown" on failure.
+        cached(`igmsgaccess:${shop.id}`, MSG_ACCESS_TTL_MS, () =>
+          checkInstagramMessageAccess(shop.id),
+        ).catch(() => "unknown"),
       ]);
     reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
   }
@@ -139,12 +149,12 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred };
 };
 
 export const action = async ({ request }) => {
   try {
-    const { session, shop, plan, admin } = await getShopWithPlan(request);
+    const { session, shop, admin } = await getShopWithPlan(request);
 
     if (!session?.shop) {
       return { error: "Authentication failed. Please try again." };
@@ -160,6 +170,16 @@ export const action = async ({ request }) => {
       return { success: true };
     }
 
+    // ── Re-check Instagram message access (the "Check again" button) ──────
+    if (actionType === "check-message-access") {
+      if (!shop?.id) return { error: "Shop not found" };
+      invalidateCached(`igmsgaccess:${shop.id}`);
+      const messageAccess = await cached(`igmsgaccess:${shop.id}`, MSG_ACCESS_TTL_MS, () =>
+        checkInstagramMessageAccess(shop.id),
+      ).catch(() => "unknown");
+      return { success: true, actionType: "check-message-access", messageAccess };
+    }
+
     // ── Disconnect Instagram ───────────────────────────────────────────────
     if (actionType === "disconnect") {
       if (!shop?.id) return { error: "Shop not found" };
@@ -168,6 +188,7 @@ export const action = async ({ request }) => {
       // reconnect doesn't briefly show the old account's posts.
       invalidateCached(`iginfo:${shop.id}`);
       invalidateCached(`igmedia:${shop.id}`);
+      invalidateCached(`igmsgaccess:${shop.id}`);
       return { success: true, message: "Instagram account disconnected successfully" };
     }
 
@@ -395,14 +416,23 @@ export const action = async ({ request }) => {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const isConnected = !!metaAuth;
   const disconnected = searchParams.get("disconnected") === "true";
+  const justConnected = searchParams.get("connected") === "true";
   const error = searchParams.get("error");
+
+  // Message-access status: the "Check again" button re-probes via a fetcher;
+  // prefer its (fresher) result over the loader's cached one.
+  const accessFetcher = useFetcher();
+  const messageAccessUi = accessFetcher.data?.messageAccess ?? messageAccess ?? "unknown";
+  const accessChecking = accessFetcher.state !== "idle";
+  const recheckMessageAccess = () =>
+    accessFetcher.submit({ action: "check-message-access" }, { method: "post" });
 
   // Separate fetchers so actions don't conflict
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
@@ -544,6 +574,24 @@ export default function Index() {
       )}
       {disconnected && !error && !isConnected && (
         <s-banner tone="info"><s-text>Instagram account disconnected.</s-text></s-banner>
+      )}
+      {/* Post-connect checkpoint: the moment they land back from Instagram
+          OAuth, tell them definitively whether they're done or one step away. */}
+      {justConnected && isConnected && !error && (
+        messageAccessUi === "on" ? (
+          <s-banner tone="success">
+            <s-text variant="strong">Instagram connected — you&apos;re all set!</s-text>
+            <s-text> Message access is verified and automation is live.</s-text>
+          </s-banner>
+        ) : (
+          <s-banner tone="warning">
+            <s-text variant="strong">Instagram connected — one step left.</s-text>
+            <s-text>
+              {" "}Instagram needs to allow message access before automation can reply.
+              Follow the steps in the Plan &amp; Instagram section below.
+            </s-text>
+          </s-banner>
+        )
       )}
       {connectFetcher.data?.error && (
         <s-banner tone="critical"><s-text>{connectFetcher.data.error}</s-text></s-banner>
@@ -738,23 +786,62 @@ export default function Index() {
                     </s-button>
                   </div>
 
-                  {/* Message-access health. Meta gives no API to read Instagram's
-                      "Allow access to messages" toggle, so we show proof instead:
-                      an inbound message/comment reaching us means the whole chain
-                      (webhooks + toggle) works. Until then, show how to enable it. */}
-                  {lastInboundMessageAt ? (
-                    <span className="srCardDesc" style={{ color: "#1a7f37", marginTop: "6px", display: "block" }}>
+                  {/* Message-access health, three states:
+                      - "on": the API probe verified the toggle is enabled → green
+                      - "off": Meta returned the specific "owner has disabled
+                        access" error → red, with fix steps and a Check again
+                        button that re-probes instantly
+                      - "unknown": probe inconclusive → fall back to proof
+                        (green if we've ever received a message, amber otherwise) */}
+                  {messageAccessUi === "off" ? (
+                    <div className="srIGHealthBox">
+                      <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span className="srCardTitle srIGHealthTitle" style={{ color: "#d82c0d" }}>
+                            ✕ Instagram is blocking message access
+                          </span>
+                          <span className="srCardDesc srIGHealthText">
+                            Your Instagram account has &ldquo;Allow access to messages&rdquo; turned off,
+                            so automation can&apos;t see or reply to DMs. In the{" "}
+                            <strong>Instagram app</strong> on your phone, go to{" "}
+                            <strong>Settings → Messages and story replies → Message requests</strong>{" "}
+                            and turn on <strong>&ldquo;Allow access to messages&rdquo;</strong> (under Connected tools).
+                            Then come back and tap Check again.
+                          </span>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <s-button
+                              variant="primary" size="slim" className="srBtnCompact"
+                              onClick={recheckMessageAccess}
+                              disabled={accessChecking}
+                            >
+                              {accessChecking ? "Checking…" : "Check again"}
+                            </s-button>
+                            <s-button href="/app/support" variant="secondary" size="slim" className="srBtnCompact">
+                              Step-by-step fix & FAQs
+                            </s-button>
+                          </div>
+                        </div>
+                      </s-box>
+                    </div>
+                  ) : messageAccessUi === "on" ? (
+                    <span className="srCardDesc srIGHealthLine" style={{ color: "#1a7f37" }}>
+                      ✓ Message access verified
+                      {lastInboundMessageAt &&
+                        ` — last message ${new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                    </span>
+                  ) : lastInboundMessageAt ? (
+                    <span className="srCardDesc srIGHealthLine" style={{ color: "#1a7f37" }}>
                       ✓ Message access working — last Instagram message received{" "}
                       {new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </span>
                   ) : (
-                    <div style={{ marginTop: "8px" }}>
+                    <div className="srIGHealthBox">
                       <s-box padding="tight" borderWidth="base" borderRadius="base" background="subdued">
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          <span className="srCardTitle" style={{ color: "#9a6700" }}>
+                          <span className="srCardTitle srIGHealthTitle" style={{ color: "#9a6700" }}>
                             ⚠ No Instagram messages received yet
                           </span>
-                          <span className="srCardDesc">
+                          <span className="srCardDesc srIGHealthText">
                             For automation to work, Instagram must allow apps to access your messages.
                             In the <strong>Instagram app</strong> on your phone, go to{" "}
                             <strong>Settings → Messages and story replies → Message requests</strong>{" "}
@@ -762,7 +849,14 @@ export default function Index() {
                             If it&apos;s already on, you&apos;re all set — this check turns green automatically
                             after your first customer DM or comment.
                           </span>
-                          <div>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <s-button
+                              variant="secondary" size="slim" className="srBtnCompact"
+                              onClick={recheckMessageAccess}
+                              disabled={accessChecking}
+                            >
+                              {accessChecking ? "Checking…" : "Check again"}
+                            </s-button>
                             <s-button href="/app/support" variant="secondary" size="slim" className="srBtnCompact">
                               Step-by-step fix & FAQs
                             </s-button>
@@ -813,7 +907,7 @@ export default function Index() {
                       <span className="srCardTitle">DM automation</span>
                       <span className="srCardDesc">Process and reply to Instagram DMs</span>
                     </div>
-                    <label className="srToggle">
+                    <label className="srToggle" aria-label="DM automation">
                       <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />
                       <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                     </label>
@@ -829,7 +923,7 @@ export default function Index() {
                           : "Upgrade to Growth to unlock comment automation"}
                       </span>
                     </div>
-                    <label className="srToggle">
+                    <label className="srToggle" aria-label="Comment automation">
                       <input
                         type="checkbox"
                         checked={hasAccess("GROWTH") ? commentAutomationEnabled : false}
@@ -850,7 +944,7 @@ export default function Index() {
                           : "Upgrade to Pro to unlock follow-ups"}
                       </span>
                     </div>
-                    <label className="srToggle">
+                    <label className="srToggle" aria-label="Follow-up messages">
                       <input
                         type="checkbox"
                         checked={hasAccess("PRO") ? followupEnabled : false}

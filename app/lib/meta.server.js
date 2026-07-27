@@ -10,7 +10,6 @@ const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 // Instagram Login (Business Login) - separate product; uses different App ID/Secret if set
 export const META_INSTAGRAM_APP_ID = process.env.META_INSTAGRAM_APP_ID || process.env.META_APP_ID;
 export const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
-const INSTAGRAM_OAUTH_AUTHORIZE = "https://api.instagram.com/oauth/authorize";
 export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
 const INSTAGRAM_GRAPH_VERSION = process.env.META_INSTAGRAM_API_VERSION || "v24.0";
 export const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
@@ -317,7 +316,11 @@ export async function metaGraphAPIInstagram(endpoint, accessToken, options = {})
   });
   const data = await res.json();
   if (data.error) {
-    throw new Error(`Instagram API error: ${data.error.message} (Code: ${data.error.code})`);
+    const err = new Error(`Instagram API error: ${data.error.message} (Code: ${data.error.code})`);
+    // Preserve the raw Graph error so callers can classify by code/subcode
+    // (e.g. detecting the "account owner has disabled access" error).
+    err.meta = data.error;
+    throw err;
   }
   return data;
 }
@@ -339,6 +342,53 @@ export async function getInstagramUserIdFromToken(accessToken) {
   } catch (e) {
     console.warn("[meta] getInstagramUserIdFromToken failed:", e?.message);
     return null;
+  }
+}
+
+/**
+ * Probe whether the merchant's Instagram "Allow access to messages" toggle
+ * (Settings → Messages and story replies → Message requests → Connected
+ * tools) is enabled. Meta exposes no API to read the toggle directly, but
+ * its state is observable: any messaging API call fails with a specific,
+ * documented error while it's off.
+ *
+ * We call GET /me/conversations?limit=1 and classify:
+ *   - "on":      the call succeeds (an empty list still proves access)
+ *   - "off":     Meta returns code 200 / subcode 2534041 ("The account owner
+ *                has disabled access to instagram direct messages.")
+ *   - "unknown": anything else (no auth, not Instagram Login, network issue,
+ *                unrelated API error) — callers must NOT treat this as "off"
+ *
+ * @param {string} shopId
+ * @returns {Promise<"on"|"off"|"unknown">}
+ */
+export async function checkInstagramMessageAccess(shopId) {
+  if (!shopId) return "unknown";
+  const auth = await getMetaAuthWithRefresh(shopId).catch(() => null);
+  if (!auth || auth.auth_type !== "instagram" || !auth.page_access_token) {
+    return "unknown";
+  }
+  try {
+    await metaGraphAPIInstagram("/me/conversations", auth.page_access_token, {
+      params: { limit: "1" },
+    });
+    return "on";
+  } catch (error) {
+    const meta = error?.meta;
+    const disabled =
+      meta?.error_subcode === 2534041 ||
+      String(meta?.message || "")
+        .toLowerCase()
+        .includes("disabled access to instagram direct message");
+    if (disabled) {
+      console.log(`[meta] Message access is DISABLED for shop ${shopId} (connected-tools toggle off)`);
+      return "off";
+    }
+    console.warn(
+      `[meta] Message-access probe inconclusive for shop ${shopId}:`,
+      error?.message || error,
+    );
+    return "unknown";
   }
 }
 
@@ -639,7 +689,6 @@ export async function processManualToken(shopId, userAccessToken) {
     
     // If we got token info but it failed validation, provide specific feedback
     if (tokenInfo && tokenInfo.data) {
-      const tokenType = tokenInfo.data.type || 'unknown';
       const tokenAppId = tokenInfo.data.app_id;
       const hasScopes = tokenInfo.data.scopes || [];
       
@@ -972,7 +1021,7 @@ export async function checkWebhookStatus(shopId, pageId) {
   }
 }
 
-export async function subscribeToWebhooks(shopId, pageId, igBusinessId) {
+export async function subscribeToWebhooks(shopId, pageId, _igBusinessId) {
   try {
     // Get fresh auth with token refresh
     const auth = await getMetaAuthWithRefresh(shopId);

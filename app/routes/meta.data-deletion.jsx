@@ -224,7 +224,7 @@ export const action = async ({ request }) => {
     logger.debug(`[data-deletion] Processing deletion request for user ${userId}`);
 
     // Delete the user's data
-    const result = await deleteUserData(userId);
+    await deleteUserData(userId);
 
     // Return confirmation to Meta
     // Meta will show the confirmation_code to the user
@@ -256,7 +256,7 @@ export const action = async ({ request }) => {
 /**
  * GET handler - Meta may send GET requests to verify the endpoint
  */
-export const loader = async ({ request }) => {
+export const loader = async () => {
   return new Response("Data deletion endpoint is active", {
     status: 200,
     headers: { "Content-Type": "text/plain" },
