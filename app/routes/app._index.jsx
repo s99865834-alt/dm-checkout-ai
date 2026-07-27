@@ -828,11 +828,17 @@ export default function Index() {
                       ✓ Message access verified
                       {lastInboundMessageAt &&
                         ` — last message ${new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                      <button type="button" className="srIGHealthRecheck" onClick={recheckMessageAccess} disabled={accessChecking}>
+                        {accessChecking ? "Checking…" : "Check again"}
+                      </button>
                     </span>
                   ) : lastInboundMessageAt ? (
                     <span className="srCardDesc srIGHealthLine" style={{ color: "#1a7f37" }}>
                       ✓ Message access working — last Instagram message received{" "}
                       {new Date(lastInboundMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      <button type="button" className="srIGHealthRecheck" onClick={recheckMessageAccess} disabled={accessChecking}>
+                        {accessChecking ? "Checking…" : "Check again"}
+                      </button>
                     </span>
                   ) : (
                     <div className="srIGHealthBox">

@@ -816,12 +816,33 @@ s-page s-box.srCardCompact {
   min-width: 0;
 }
 
-/* Message-access health under the Instagram handle: smaller text, tight gap */
+/* Message-access health under the Instagram handle: smaller text, tight gap.
+   The s-page-prefixed selector is required to outrank `s-page .srCardDesc`
+   (14px), which otherwise wins on specificity. */
+s-page .srIGHealthLine,
 .srIGHealthLine {
   font-size: 12px;
   line-height: 1.35;
   margin-top: 2px;
   display: block;
+}
+
+/* Inline re-probe link shown next to the green status so a merchant who just
+   changed the Instagram setting isn't stuck with a cached verdict. */
+.srIGHealthRecheck {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 8px;
+  font-size: inherit;
+  line-height: inherit;
+  color: #6d7175;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.srIGHealthRecheck:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .srIGHealthBox {
