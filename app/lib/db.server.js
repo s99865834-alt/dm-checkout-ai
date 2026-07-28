@@ -185,23 +185,33 @@ export async function markShopUninstalled(shopifyDomain) {
  * dashboard can see whether merchants have been asked. `result` is what
  * shopify.reviews.request() reported: "shown" when the modal was displayed,
  * otherwise Shopify's decline code (e.g. "already-reviewed",
- * "annual-limit-reached", "cooldown-period") or "error".
+ * "annual-limit-reached", "cooldown-period", "mobile-app") or "error".
+ *
+ * review_prompt_count counts times the modal was ACTUALLY DISPLAYED — not
+ * attempts. Declines still update last_at/result (so the dashboard shows why
+ * nothing displayed) but must not inflate the count: a merchant who only
+ * opens the app on their phone gets "mobile-app" declines forever, and that
+ * previously read as "Asked 3×" with zero real asks.
  */
 export async function recordReviewPrompt(shopId, result) {
   if (!shopId) return;
-  const { data: current } = await supabase
-    .from("shops")
-    .select("review_prompt_count")
-    .eq("id", shopId)
-    .single();
+  const update = {
+    review_prompt_last_at: new Date().toISOString(),
+    review_prompt_result: result || "unknown",
+  };
+
+  if (result === "shown") {
+    const { data: current } = await supabase
+      .from("shops")
+      .select("review_prompt_count")
+      .eq("id", shopId)
+      .single();
+    update.review_prompt_count = (current?.review_prompt_count || 0) + 1;
+  }
 
   const { error } = await supabase
     .from("shops")
-    .update({
-      review_prompt_count: (current?.review_prompt_count || 0) + 1,
-      review_prompt_last_at: new Date().toISOString(),
-      review_prompt_result: result || "unknown",
-    })
+    .update(update)
     .eq("id", shopId);
 
   if (error) {
@@ -2106,9 +2116,12 @@ async function buildAdminStoresResult(shops) {
         tokenExpired,
         tokenExpiresAt: metaAuth?.token_expires_at || null,
       },
-      review_prompt: s.review_prompt_count
+      // count = times the modal was actually displayed; result = latest
+      // attempt outcome. A decline-only store has count 0 but still gets an
+      // entry so the dashboard can show WHY nothing has displayed yet.
+      review_prompt: s.review_prompt_count || s.review_prompt_result
         ? {
-            count: s.review_prompt_count,
+            count: s.review_prompt_count || 0,
             lastAt: s.review_prompt_last_at,
             result: s.review_prompt_result,
           }
