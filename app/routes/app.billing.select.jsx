@@ -307,6 +307,7 @@ export default function BillingSelect() {
           borderRadius="base"
           background="subdued"
         >
+          <div className="srTableWrap">
           <table className="srTable">
             <thead>
               <tr>
@@ -397,6 +398,7 @@ export default function BillingSelect() {
               </tr>
             </tbody>
           </table>
+          </div>
         </s-box>
       </s-section>
     </s-page>

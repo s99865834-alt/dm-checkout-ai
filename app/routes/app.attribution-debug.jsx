@@ -190,6 +190,7 @@ export default function AttributionDebugPage() {
           </s-box>
         ) : (
           <s-box padding="base" borderWidth="base" borderRadius="base">
+            <div className="srTableWrap">
             <table className="srTable">
               <thead>
                 <tr>
@@ -234,6 +235,7 @@ export default function AttributionDebugPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </s-box>
         )}
       </s-section>
