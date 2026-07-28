@@ -92,12 +92,19 @@ async function hasAnyLinkBeenClicked(linkIds) {
 }
 
 /**
- * True when this customer already got a follow-up for ANY of their messages
- * in the past 7 days. Customers get at most one follow-up per conversation —
- * without this, every linked message in a session earned its own follow-up
- * and people received 2-4 duplicate check-ins.
+ * Products that recent follow-ups (past 7 days) to this customer were
+ * chasing. Returns:
+ *   - null       → no recent follow-up (a new one is allowed)
+ *   - Set<gid>   → product IDs of the links those follow-ups nudged about
+ *   - "unknown"  → a follow-up was sent but its product can't be determined
+ *                  (or a lookup failed) — treat as blocking, fail closed
+ *
+ * One follow-up per CONVERSATION, where a conversation is defined by product:
+ * a reply to the follow-up about the same product must not restart the clock,
+ * but a genuinely new exchange about a different product (new comment, new
+ * question) gets its own single follow-up even within the 7 days.
  */
-async function hasRecentFollowupForUser(shopId, fromUserId) {
+async function recentFollowupProducts(shopId, fromUserId) {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: msgs, error: msgsError } = await supabase
     .from("messages")
@@ -107,22 +114,36 @@ async function hasRecentFollowupForUser(shopId, fromUserId) {
     .gte("created_at", since);
   if (msgsError) {
     console.error("[followup] Error fetching user messages:", msgsError);
-    return true; // fail closed: better to skip than double-send
+    return "unknown"; // fail closed: better to skip than double-send
   }
   const ids = (msgs || []).map((m) => m.id);
-  if (ids.length === 0) return false;
+  if (ids.length === 0) return null;
 
-  const { data: existing, error: fuError } = await supabase
+  const { data: followups, error: fuError } = await supabase
     .from("followups")
-    .select("message_id")
+    .select("link_id")
     .eq("shop_id", shopId)
-    .in("message_id", ids)
-    .limit(1);
+    .in("message_id", ids);
   if (fuError) {
     console.error("[followup] Error checking existing followups:", fuError);
-    return true; // fail closed
+    return "unknown"; // fail closed
   }
-  return !!(existing && existing.length > 0);
+  if (!followups || followups.length === 0) return null;
+
+  const linkIds = followups.map((f) => f.link_id).filter(Boolean);
+  if (linkIds.length === 0) return "unknown";
+
+  const { data: links, error: linksError } = await supabase
+    .from("links_sent")
+    .select("product_id")
+    .eq("shop_id", shopId)
+    .in("link_id", linkIds);
+  if (linksError) {
+    console.error("[followup] Error resolving followup products:", linksError);
+    return "unknown"; // fail closed
+  }
+  const products = new Set((links || []).map((l) => l.product_id).filter(Boolean));
+  return products.size > 0 ? products : "unknown";
 }
 
 /**
@@ -231,7 +252,7 @@ export async function processFollowups() {
         const messageIds = allMessages.map((m) => m.id);
         const { data: linksSent, error: linksError } = await supabase
           .from("links_sent")
-          .select("id, message_id, link_id, url")
+          .select("id, message_id, link_id, url, product_id")
           .eq("shop_id", shop.id)
           .in("message_id", messageIds)
           .not("url", "is", null);
@@ -244,12 +265,15 @@ export async function processFollowups() {
           continue;
         }
 
-        // Map message_id → all its product-link IDs (checkout + PDP).
-        const messageToLinkIds = {};
+        // Map message_id → all its product links (checkout + PDP).
+        const messageToLinks = {};
         (linksSent || []).forEach((link) => {
           if (!link.message_id || !link.link_id) return;
           if (link.link_id.startsWith("info_") || link.link_id.startsWith("followup_")) return;
-          (messageToLinkIds[link.message_id] ||= []).push(link.link_id);
+          (messageToLinks[link.message_id] ||= []).push({
+            linkId: link.link_id,
+            productId: link.product_id || null,
+          });
         });
 
         // ONE candidate per customer: their most recent linked message in the
@@ -259,7 +283,7 @@ export async function processFollowups() {
         // duplicate check-ins an hour apart).
         const byUser = new Map();
         for (const m of allMessages) {
-          if (!messageToLinkIds[m.id] || !m.from_user_id) continue;
+          if (!messageToLinks[m.id] || !m.from_user_id) continue;
           const prev = byUser.get(m.from_user_id);
           if (!prev || new Date(m.created_at) > new Date(prev.created_at)) {
             byUser.set(m.from_user_id, m);
@@ -269,7 +293,8 @@ export async function processFollowups() {
         // Process one candidate message per customer
         for (const message of byUser.values()) {
           let claimed = false;
-          const linkIds = messageToLinkIds[message.id];
+          const links = messageToLinks[message.id];
+          const linkIds = links.map((l) => l.linkId);
           const claimLinkId = linkIds[0];
           try {
             // Skip if the customer wrote back after this message.
@@ -283,12 +308,25 @@ export async function processFollowups() {
             // Skip if they clicked ANY link from this exchange.
             if (await hasAnyLinkBeenClicked(linkIds)) continue;
 
-            // At most one follow-up per customer per conversation (7-day window).
-            if (await hasRecentFollowupForUser(shop.id, message.from_user_id)) {
-              logger.debug(
-                `[followup] Customer ${message.from_user_id} already got a follow-up recently, skipping`
-              );
-              continue;
+            // One follow-up per conversation. A conversation is scoped by
+            // product: if their recent follow-up chased the same product this
+            // exchange is about, it's the same conversation (e.g. they replied
+            // "still thinking" to the nudge) — no second nudge. If this
+            // exchange is about a DIFFERENT product, it's a genuinely new
+            // conversation and gets its own follow-up.
+            const chasedProducts = await recentFollowupProducts(shop.id, message.from_user_id);
+            if (chasedProducts) {
+              const candidateProducts = links.map((l) => l.productId).filter(Boolean);
+              const isNewConversation =
+                chasedProducts !== "unknown" &&
+                candidateProducts.length > 0 &&
+                candidateProducts.some((p) => !chasedProducts.has(p));
+              if (!isNewConversation) {
+                logger.debug(
+                  `[followup] Customer ${message.from_user_id} already got a follow-up for this conversation, skipping`
+                );
+                continue;
+              }
             }
 
             const usageData = await getShopPlanAndUsage(shop.id);
