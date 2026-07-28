@@ -890,6 +890,21 @@ export default function AnalyticsPage() {
                                     </div>
                                   </div>
                                 )}
+
+                                {/* 24h follow-up check-in, if one was sent for this message */}
+                                {message.followup_text && (
+                                  <div className="srMsgInner">
+                                    <div className="srVStackTight">
+                                      <div className="srHStackTight">
+                                        <span className="srTextStrong">Follow-up:</span>
+                                        {message.followup_sent_at && (
+                                          <span className="srTextSubdued">({new Date(message.followup_sent_at).toLocaleString()})</span>
+                                        )}
+                                      </div>
+                                      <span className="srMsgText">{message.followup_text}</span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
