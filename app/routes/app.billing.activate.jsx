@@ -49,6 +49,9 @@ export const loader = async ({ request }) => {
 
   try {
     const subscription = await getCurrentSubscription(admin);
+    // The billing page caches this lookup; the merchant just came back from
+    // Shopify's pricing page, so whatever is cached is now suspect.
+    invalidateCached(`subscription:${shop.id}`);
 
     if (!subscription || subscription.status !== "ACTIVE") {
       // No active subscription: a present charge_id means the charge was

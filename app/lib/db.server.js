@@ -1,6 +1,7 @@
 import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
+import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 
 
@@ -108,6 +109,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     }
 
     logger.debug(`Shop ${shopifyDomain} updated successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    invalidateCached(`shopplan:${shopifyDomain}`);
     return data;
   } else {
     // Shop doesn't exist - do an INSERT
@@ -124,6 +126,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     }
 
     logger.debug(`Shop ${shopifyDomain} created successfully: active=${data.active}, usage_count=${data.usage_count}`);
+    invalidateCached(`shopplan:${shopifyDomain}`);
     return data;
   }
 }
@@ -144,6 +147,11 @@ export async function updateShopPlan(shopId, plan) {
     console.error("updateShopPlan error", error);
     throw error;
   }
+
+  // The cached shop row and the billing page's cached subscription both
+  // embed the plan — drop them so the change shows immediately.
+  invalidateCached("shopplan:");
+  invalidateCached(`subscription:${shopId}`);
 }
 
 /**
@@ -169,6 +177,7 @@ export async function markShopUninstalled(shopifyDomain) {
     console.error("markShopUninstalled error", error);
     throw error;
   }
+  invalidateCached(`shopplan:${shopifyDomain}`);
 }
 
 /**

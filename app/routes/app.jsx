@@ -22,10 +22,13 @@ export const loader = async ({ request }) => {
   };
 };
 
-// Only revalidate when the shop/plan actually changes, not on every navigation
-export const shouldRevalidate = ({ currentUrl, nextUrl }) => {
-  // Only revalidate if the URL path actually changed (not just query params)
-  return currentUrl.pathname !== nextUrl.pathname;
+// shop/plan only change through mutations (billing actions, Instagram
+// connect/disconnect), so only re-run this loader after one. Plain tab
+// switches used to re-run it on every navigation — auth plus shop fetch for
+// data that can't have changed — which added a full loader's latency to
+// every screen switch.
+export const shouldRevalidate = ({ formMethod }) => {
+  return Boolean(formMethod && formMethod.toUpperCase() !== "GET");
 };
 
 export default function App() {

@@ -5,7 +5,13 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
 import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
-import { invalidateCached } from "../lib/loader-cache.server";
+import { cached, invalidateCached } from "../lib/loader-cache.server";
+
+// The active-subscription lookup is a live Shopify GraphQL call — it made
+// every visit to the Billing tab wait on Shopify. Subscriptions only change
+// through our own plan actions, which invalidate this key (updateShopPlan),
+// so a short cache is safe.
+const SUBSCRIPTION_TTL_MS = 5 * 60 * 1000;
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
 // on Shopify's hosted pricing page; the merchant approves there and Shopify
@@ -28,7 +34,9 @@ export const loader = async ({ request }) => {
 
   let subscription = null;
   try {
-    subscription = await getCurrentSubscription(admin);
+    subscription = await cached(`subscription:${shop?.id}`, SUBSCRIPTION_TTL_MS, () =>
+      getCurrentSubscription(admin),
+    );
   } catch (e) {
     console.error("[billing] Error fetching subscription:", e.message);
   }
