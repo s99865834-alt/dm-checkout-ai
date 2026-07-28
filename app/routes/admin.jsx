@@ -235,30 +235,45 @@ function SortHeader({ label, sortKey, sort, onSort }) {
   );
 }
 
-// Total store sales YTD. Unlike attributed revenue, 0 is a real value (store
-// Review-prompt status for a store. "shown" (green) means Shopify actually
-// displayed the review modal to the merchant; any other result means we asked
-// but Shopify declined to show it (already reviewed, annual limit, etc.);
-// null means the merchant never hit the eligibility criteria on a page load.
+// Review-prompt status for a store. count = times Shopify ACTUALLY displayed
+// the review modal (green "Shown N×"); a decline code with count 0 means
+// every attempt so far was refused by Shopify — the merchant has never seen
+// a popup (amber, with the reason). null means the merchant never hit the
+// eligibility criteria on a page load.
+const REVIEW_DECLINE_LABELS = {
+  "mobile-app": "on Shopify mobile app — modals can't display there",
+  "cooldown-period": "shown within the last 60 days",
+  "annual-limit-reached": "already shown 3× in the last 365 days",
+  "recently-installed": "installed less than 24h ago",
+  "merchant-ineligible": "merchant not eligible to review",
+};
+
 function ReviewPromptCell({ reviewPrompt }) {
   if (!reviewPrompt) return <span style={{ color: "#8a8a8a" }}>Not asked</span>;
   const when = reviewPrompt.lastAt
     ? new Date(reviewPrompt.lastAt).toLocaleDateString()
     : null;
-  const shown = reviewPrompt.result === "shown";
   const alreadyReviewed = reviewPrompt.result === "already-reviewed";
-  const label = shown
-    ? `Shown${when ? ` · ${when}` : ""}`
-    : alreadyReviewed
-      ? "Already reviewed"
-      : `Asked ${reviewPrompt.count}× · ${reviewPrompt.result || "no show"}`;
+  const shownCount = reviewPrompt.count || 0;
+
+  let label;
+  let color;
+  if (alreadyReviewed) {
+    label = "Already reviewed";
+    color = "#1a7f37";
+  } else if (shownCount > 0) {
+    label = `Shown ${shownCount}×${when ? ` · ${when}` : ""}`;
+    color = "#1a7f37";
+  } else {
+    label = `Never shown · ${reviewPrompt.result || "unknown"}`;
+    color = "#9a6700";
+  }
+
+  const explain = REVIEW_DECLINE_LABELS[reviewPrompt.result] || reviewPrompt.result || "unknown";
   return (
     <span
-      title={`Attempts: ${reviewPrompt.count}${when ? ` · last ${when}` : ""} · result: ${reviewPrompt.result || "unknown"}`}
-      style={{
-        color: shown || alreadyReviewed ? "#1a7f37" : "#9a6700",
-        fontWeight: 500,
-      }}
+      title={`Displayed ${shownCount}×${when ? ` · last attempt ${when}` : ""} · latest result: ${explain}`}
+      style={{ color, fontWeight: 500 }}
     >
       {label}
     </span>

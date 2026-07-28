@@ -12,10 +12,14 @@ import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSect
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
 
-// Review-prompt pacing. We re-ask only after a cooldown, and never more than
-// a hard cap of times, so a merchant who keeps dismissing isn't pestered.
-const REVIEW_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days between asks
-const REVIEW_MAX_ASKS = 3; // worst case: day 0, ~30, ~60, then stop forever
+// Review-prompt attempt throttle (per device). Real pacing is Shopify's:
+// the Reviews API only ever displays the modal once per 60 days and 3x per
+// 365 days, and never on mobile / already-reviewed / recently-installed.
+// We must NOT add our own ask-count on top — declined attempts (e.g.
+// code "mobile-app" on every Shopify-mobile-app visit) would silently burn
+// through a local cap without the merchant ever seeing the modal. We only
+// throttle how often we *call* the API so page loads aren't spammy.
+const REVIEW_RETRY_MS = 24 * 60 * 60 * 1000; // one attempt per device per day
 
 // Server-side cache TTLs for slow, slow-changing loader data. Product catalog
 // and Instagram media tolerate a few minutes of staleness; trial status only
@@ -510,40 +514,39 @@ export default function Index() {
 
   // Ask for an App Store review once the merchant has a real win (first
   // attributed order or 20+ sent replies). Uses Shopify's native Reviews API,
-  // which is compliant (never incentivized) and enforces its own annual limit.
-  // We pace it ourselves with a per-shop localStorage record so we don't ask
-  // on every load: re-ask only after REVIEW_COOLDOWN_MS, never more than
-  // REVIEW_MAX_ASKS times, and stop forever once the merchant has reviewed (or
-  // Shopify reports they already have). Fired from an effect (not a click) per
-  // Shopify's guidance; failures are swallowed so it never affects the page.
+  // which is compliant (never incentivized) and enforces all real pacing
+  // itself: max once per 60 days, 3x per 365 days, never on mobile devices
+  // or after the merchant reviewed. We only throttle attempts (once per
+  // device per day) and stop for good on "already-reviewed". Fired from an
+  // effect (not a click) per Shopify's guidance; failures are swallowed so
+  // it never affects the page.
   useEffect(() => {
     if (!reviewEligible || !shop?.id) return;
     if (typeof window === "undefined" || typeof window.shopify === "undefined") return;
     if (!window.shopify.reviews?.request) return;
 
-    const flagKey = `srai_review_requested_${shop.id}`;
+    // v2: the v1 record counted Shopify's DECLINES (mobile-app, cooldown…)
+    // against a local 3-ask lifetime cap, permanently disabling the prompt on
+    // devices that never displayed it. New key so poisoned v1 records are
+    // ignored; Shopify's own annual limit backstops any re-asks.
+    const flagKey = `srai_review_v2_${shop.id}`;
 
-    // Read the pacing record. Tolerates the legacy format (a bare timestamp
-    // string written by the previous version) by treating it as one prior ask.
-    let record = { lastAt: 0, count: 0, done: false };
+    let record = { lastAttemptAt: 0, done: false };
     try {
       const raw = window.localStorage.getItem(flagKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (typeof parsed === "number") {
-          record = { lastAt: parsed, count: 1, done: false };
-        } else if (parsed && typeof parsed === "object") {
-          record = { lastAt: 0, count: 0, done: false, ...parsed };
+        if (parsed && typeof parsed === "object") {
+          record = { lastAttemptAt: 0, done: false, ...parsed };
         }
       }
     } catch {
       // Unparseable/unavailable (e.g. private mode). Proceed with defaults;
-      // Shopify's own annual limit is the backstop.
+      // Shopify's own rate limits are the backstop.
     }
 
     if (record.done) return;
-    if (record.count >= REVIEW_MAX_ASKS) return;
-    if (record.lastAt && Date.now() - record.lastAt < REVIEW_COOLDOWN_MS) return;
+    if (record.lastAttemptAt && Date.now() - record.lastAttemptAt < REVIEW_RETRY_MS) return;
 
     const persist = (next) => {
       try {
@@ -571,16 +574,14 @@ export default function Index() {
       if (cancelled) return;
       try {
         const result = await window.shopify.reviews.request();
-        // success === true means the modal was shown; code "already-reviewed"
-        // means they've already left one. Either way, never ask again.
-        const done =
-          result?.success === true || result?.code === "already-reviewed";
-        persist({ lastAt: Date.now(), count: record.count + 1, done });
+        // "already-reviewed" is terminal — stop calling on this device.
+        // Everything else (shown, mobile-app, cooldown-period, …) just sets
+        // the daily attempt throttle; Shopify decides whether a future
+        // attempt displays anything.
+        persist({ lastAttemptAt: Date.now(), done: result?.code === "already-reviewed" });
         report(result?.success === true ? "shown" : result?.code || "not-shown");
       } catch {
-        // Treat a thrown error as an attempt so we still respect the cooldown
-        // instead of retrying on the next render.
-        persist({ lastAt: Date.now(), count: record.count + 1, done: false });
+        persist({ lastAttemptAt: Date.now(), done: false });
         report("error");
       }
     }, 2500);
