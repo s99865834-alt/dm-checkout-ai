@@ -74,13 +74,14 @@ async function releaseFollowupSlot(shopId, messageId, linkId) {
 }
 
 /**
- * Check if a link has been clicked
+ * Check if the customer clicked ANY of the given links.
  */
-async function hasLinkBeenClicked(linkId) {
+async function hasAnyLinkBeenClicked(linkIds) {
+  if (!linkIds || linkIds.length === 0) return false;
   const { count, error } = await supabase
     .from("clicks")
     .select("*", { count: "exact", head: true })
-    .eq("link_id", linkId);
+    .in("link_id", linkIds);
 
   if (error) {
     console.error("[followup] Error checking clicks:", error);
@@ -88,6 +89,62 @@ async function hasLinkBeenClicked(linkId) {
   }
 
   return (count || 0) > 0;
+}
+
+/**
+ * True when this customer already got a follow-up for ANY of their messages
+ * in the past 7 days. Customers get at most one follow-up per conversation —
+ * without this, every linked message in a session earned its own follow-up
+ * and people received 2-4 duplicate check-ins.
+ */
+async function hasRecentFollowupForUser(shopId, fromUserId) {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: msgs, error: msgsError } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("from_user_id", fromUserId)
+    .gte("created_at", since);
+  if (msgsError) {
+    console.error("[followup] Error fetching user messages:", msgsError);
+    return true; // fail closed: better to skip than double-send
+  }
+  const ids = (msgs || []).map((m) => m.id);
+  if (ids.length === 0) return false;
+
+  const { data: existing, error: fuError } = await supabase
+    .from("followups")
+    .select("message_id")
+    .eq("shop_id", shopId)
+    .in("message_id", ids)
+    .limit(1);
+  if (fuError) {
+    console.error("[followup] Error checking existing followups:", fuError);
+    return true; // fail closed
+  }
+  return !!(existing && existing.length > 0);
+}
+
+/**
+ * True when the customer sent another DM after this message — they responded,
+ * so the conversation moved on and this exchange must not get a follow-up.
+ * (If the newer exchange goes quiet with an unclicked link, it triggers its
+ * own follow-up when it crosses the 23-24h window.)
+ */
+async function customerRespondedAfter(shopId, fromUserId, createdAt) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("channel", "dm")
+    .eq("from_user_id", fromUserId)
+    .gt("created_at", createdAt)
+    .limit(1);
+  if (error) {
+    console.error("[followup] Error checking newer messages:", error);
+    return true; // fail closed: skip rather than risk a redundant follow-up
+  }
+  return !!(data && data.length > 0);
 }
 
 /**
@@ -167,13 +224,17 @@ export async function processFollowups() {
           continue;
         }
 
-        // Get links_sent for these messages
+        // Get real outbound links for these messages. url IS NOT NULL excludes
+        // the dm_reply_* claim rows (url=null) that made EVERY replied message
+        // look like it had a link; info_ shortlinks (policy pages etc.) don't
+        // count either — follow-ups are about unclicked product links.
         const messageIds = allMessages.map((m) => m.id);
         const { data: linksSent, error: linksError } = await supabase
           .from("links_sent")
-          .select("id, message_id, link_id")
+          .select("id, message_id, link_id, url")
           .eq("shop_id", shop.id)
-          .in("message_id", messageIds);
+          .in("message_id", messageIds)
+          .not("url", "is", null);
 
         if (linksError) {
           console.error(
@@ -183,35 +244,52 @@ export async function processFollowups() {
           continue;
         }
 
-        // Map message_id → { linkId, rowId } keeping the row with the highest id (most recent)
-        const messageToLink = {};
+        // Map message_id → all its product-link IDs (checkout + PDP).
+        const messageToLinkIds = {};
         (linksSent || []).forEach((link) => {
-          if (!link.message_id) return;
-          const prev = messageToLink[link.message_id];
-          if (!prev || String(link.id) > String(prev.rowId)) {
-            messageToLink[link.message_id] = {
-              linkId: link.link_id,
-              rowId: link.id,
-            };
-          }
+          if (!link.message_id || !link.link_id) return;
+          if (link.link_id.startsWith("info_") || link.link_id.startsWith("followup_")) return;
+          (messageToLinkIds[link.message_id] ||= []).push(link.link_id);
         });
-        const messageToLinkId = {};
-        for (const [msgId, val] of Object.entries(messageToLink)) {
-          messageToLinkId[msgId] = val.linkId;
+
+        // ONE candidate per customer: their most recent linked message in the
+        // window. A single session usually produces several linked messages,
+        // and they cross the 23-24h window on different hourly ticks — without
+        // this collapse, each one earned its own follow-up (customers got
+        // duplicate check-ins an hour apart).
+        const byUser = new Map();
+        for (const m of allMessages) {
+          if (!messageToLinkIds[m.id] || !m.from_user_id) continue;
+          const prev = byUser.get(m.from_user_id);
+          if (!prev || new Date(m.created_at) > new Date(prev.created_at)) {
+            byUser.set(m.from_user_id, m);
+          }
         }
 
-        // Filter messages that have links sent
-        const messages = allMessages.filter((m) => messageToLinkId[m.id]);
-
-        // Process each message
-        for (const message of messages) {
+        // Process one candidate message per customer
+        for (const message of byUser.values()) {
           let claimed = false;
+          const linkIds = messageToLinkIds[message.id];
+          const claimLinkId = linkIds[0];
           try {
-            const linkId = messageToLinkId[message.id];
-            if (!linkId) continue;
+            // Skip if the customer wrote back after this message.
+            if (await customerRespondedAfter(shop.id, message.from_user_id, message.created_at)) {
+              logger.debug(
+                `[followup] Customer ${message.from_user_id} responded after message ${message.id}, skipping`
+              );
+              continue;
+            }
 
-            // Skip if customer already clicked the link.
-            if (await hasLinkBeenClicked(linkId)) continue;
+            // Skip if they clicked ANY link from this exchange.
+            if (await hasAnyLinkBeenClicked(linkIds)) continue;
+
+            // At most one follow-up per customer per conversation (7-day window).
+            if (await hasRecentFollowupForUser(shop.id, message.from_user_id)) {
+              logger.debug(
+                `[followup] Customer ${message.from_user_id} already got a follow-up recently, skipping`
+              );
+              continue;
+            }
 
             const usageData = await getShopPlanAndUsage(shop.id);
             if (!usageData?.plan) continue;
@@ -225,7 +303,7 @@ export async function processFollowups() {
 
             // Atomically claim the follow-up slot. If another tick already
             // claimed (or sent) this one we skip silently.
-            claimed = await claimFollowupSlot(shop.id, message.id, linkId);
+            claimed = await claimFollowupSlot(shop.id, message.id, claimLinkId);
             if (!claimed) {
               logger.debug(
                 `[followup] Already claimed for message ${message.id}, skipping`
@@ -240,17 +318,28 @@ export async function processFollowups() {
 
             await sendDmReply(shop.id, message.from_user_id, followupMessage);
 
+            // Record the follow-up on the triggering message so the analytics
+            // message log shows it in the conversation. link_id is stable per
+            // message (one follow-up max), url stays null (nothing to click).
+            const { error: logFuError } = await supabase.from("links_sent").insert({
+              shop_id: shop.id,
+              message_id: message.id,
+              url: null,
+              link_id: `followup_${message.id}`,
+              reply_text: followupMessage,
+            });
+            if (logFuError && logFuError.code !== "23505") {
+              console.error("[followup] Error logging follow-up to conversation:", logFuError);
+            }
+
             logger.debug(
               `[followup] ✅ Follow-up sent for message ${message.id} in shop ${shop.id}`
             );
           } catch (error) {
             // If the send failed AFTER we claimed, release the slot so the
             // next hourly tick (still within 23–24h) can retry.
-            if (claimed) {
-              const linkId = messageToLinkId[message.id];
-              if (linkId) {
-                await releaseFollowupSlot(shop.id, message.id, linkId);
-              }
+            if (claimed && claimLinkId) {
+              await releaseFollowupSlot(shop.id, message.id, claimLinkId);
             }
             logError("processFollowups - message", error, {
               shopId: shop.id,

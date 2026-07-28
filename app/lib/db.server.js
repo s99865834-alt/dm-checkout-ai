@@ -942,12 +942,20 @@ export async function getMessages(shopId, options = {}) {
     throw error;
   }
 
-  // Transform data to include AI response info
+  // Transform data to include AI response info. followup_* rows are the
+  // 23-24h check-in DMs — they're shown as their own entry, not as the AI
+  // response (otherwise the follow-up text would displace the original reply,
+  // since it's always the newest row).
   const messages = (data || []).map((message) => {
-    const linksSent = message.links_sent || [];
+    const allRows = message.links_sent || [];
+    const followupRows = allRows.filter((l) => l.link_id?.startsWith("followup_"));
+    const linksSent = allRows.filter((l) => !l.link_id?.startsWith("followup_"));
     const aiResponded = linksSent.length > 0;
     const latestResponse = linksSent.length > 0 
       ? linksSent.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0]
+      : null;
+    const latestFollowup = followupRows.length > 0
+      ? followupRows.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0]
       : null;
 
     return {
@@ -956,6 +964,8 @@ export async function getMessages(shopId, options = {}) {
       ai_response_sent_at: latestResponse?.sent_at || null,
       ai_response_link_id: latestResponse?.link_id || null,
       ai_response_text: latestResponse?.reply_text || null,
+      followup_text: latestFollowup?.reply_text || null,
+      followup_sent_at: latestFollowup?.sent_at || null,
       links_sent: undefined, // Remove the nested array from response
     };
   });
@@ -1445,14 +1455,16 @@ export async function getAnalytics(shopId, planName, options = {}) {
     }
 
     // Checkout link_ids are plain 8-char base62 strings. Non-checkout entries
-    // (claim slots, size questions, info/policy short links, PDP links) use
-    // prefixed IDs and should not inflate click/CTR metrics.
+    // (claim slots, size questions, info/policy short links, PDP links,
+    // follow-up check-ins) use prefixed IDs and should not inflate click/CTR
+    // metrics.
     const isCheckoutLinkId = (id) =>
       !!id &&
       !id.startsWith("dm_reply_") &&
       !id.startsWith("size_q_") &&
       !id.startsWith("info_") &&
-      !id.startsWith("pdp_");
+      !id.startsWith("pdp_") &&
+      !id.startsWith("followup_");
 
     // Count only checkout links sent (used for CTR denominator)
     analytics.linksSent = (linksSent || []).filter(l => isCheckoutLinkId(l.link_id)).length;
@@ -1732,7 +1744,8 @@ export async function getProAnalytics(shopId, options = {}) {
         !id.startsWith("dm_reply_") &&
         !id.startsWith("size_q_") &&
         !id.startsWith("info_") &&
-        !id.startsWith("pdp_");
+        !id.startsWith("pdp_") &&
+        !id.startsWith("followup_");
       const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
       const messageToLink = {};
       linksSent.forEach(link => {
