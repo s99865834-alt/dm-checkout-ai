@@ -443,6 +443,72 @@ s-page s-box.srCardCompact {
   min-height: 32px;
 }
 
+/* ── Mobile audit fixes ─────────────────────────────────────────────
+   Filter fields overlapped on phones: flex children default to
+   min-width:auto (can't shrink), and iOS WebKit gives input[type=date]
+   an intrinsic width that ignores the flex basis — fields ended up
+   painting over each other instead of wrapping. Let everything shrink,
+   normalize date inputs, and below 640px switch the filter rows to a
+   deterministic 2-column grid. */
+.srFilterRow > .srFieldLabel {
+  min-width: 0;
+}
+.srInput,
+.srSelect {
+  min-width: 0;
+  max-width: 100%;
+}
+input[type="date"].srInput {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #fff;
+  /* iOS collapses an empty date input to near-zero height without this */
+  min-height: 32px;
+}
+
+/* Limit field: fixed narrow width on desktop, full cell on mobile */
+.srInputLimit {
+  width: 80px;
+}
+
+@media (max-width: 640px) {
+  .srFilterRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+  .srFilterRow .srFieldLabel {
+    width: 100%;
+  }
+  .srFilterRow .srFilterActions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .srInputLimit {
+    width: 100%;
+  }
+}
+
+/* Tables (attribution records, plan comparison): horizontally scrollable
+   container so wide rows scroll within their card instead of escaping it
+   and stretching the whole page on phones. */
+.srTableWrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.srTableWrap .srTable {
+  min-width: 560px;
+}
+@media (max-width: 640px) {
+  .srTable th,
+  .srTable td {
+    padding: 8px;
+    font-size: 13px;
+  }
+}
+
 /* Analytics layout */
 .srKpiGrid {
   display: grid;
@@ -609,6 +675,12 @@ s-page s-box.srCardCompact {
   line-height: 1.5;
   color: #303030;
   white-space: pre-wrap;
+  /* Long unbroken strings (URLs in AI replies) must wrap, not overflow the card */
+  overflow-wrap: anywhere;
+}
+.srMsgCard,
+.srMsgInner {
+  min-width: 0;
 }
 
 /* Pagination row */

@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState, useRef } from "react";
-import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData } from "react-router";
+import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
@@ -84,9 +84,18 @@ export const loader = async ({ request }) => {
         getLastInboundMessageAt(shop.id),
         // Deterministic probe of the toggle itself (via the documented error
         // messaging APIs return while it's off). Cached; "unknown" on failure.
-        cached(`igmsgaccess:${shop.id}`, MSG_ACCESS_TTL_MS, () =>
-          checkInstagramMessageAccess(shop.id),
-        ).catch(() => "unknown"),
+        // The probe is a live Meta API call that can take seconds on a cold
+        // cache — it must never hold the whole first paint hostage (this was
+        // the multi-second blank screen on mobile). Budget it: on timeout the
+        // client gets "pending" and immediately re-requests via the
+        // check-message-access action; the probe keeps running here and warms
+        // the cache, so that re-check usually returns instantly.
+        Promise.race([
+          cached(`igmsgaccess:${shop.id}`, MSG_ACCESS_TTL_MS, () =>
+            checkInstagramMessageAccess(shop.id),
+          ).catch(() => "unknown"),
+          new Promise((resolve) => setTimeout(() => resolve("pending"), 1500)),
+        ]),
       ]);
     reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
   }
@@ -454,6 +463,16 @@ export default function Index() {
   const recheckMessageAccess = () =>
     accessFetcher.submit({ action: "check-message-access" }, { method: "post" });
 
+  // "pending" means the loader's probe timed out to protect first paint —
+  // finish the check client-side (the server cache is warming, so this is
+  // usually instant).
+  useEffect(() => {
+    if (messageAccessUi === "pending" && accessFetcher.state === "idle" && !accessFetcher.data) {
+      recheckMessageAccess();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageAccessUi, accessFetcher.state, accessFetcher.data]);
+
   // Separate fetchers so actions don't conflict
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
@@ -602,6 +621,11 @@ export default function Index() {
           <s-banner tone="success">
             <s-text variant="strong">Instagram connected — you&apos;re all set!</s-text>
             <s-text> Message access is verified and automation is live.</s-text>
+          </s-banner>
+        ) : messageAccessUi === "pending" || accessChecking ? (
+          <s-banner tone="info">
+            <s-text variant="strong">Instagram connected.</s-text>
+            <s-text> Verifying message access…</s-text>
           </s-banner>
         ) : (
           <s-banner tone="warning">
@@ -813,7 +837,11 @@ export default function Index() {
                         button that re-probes instantly
                       - "unknown": probe inconclusive → fall back to proof
                         (green if we've ever received a message, amber otherwise) */}
-                  {messageAccessUi === "off" ? (
+                  {messageAccessUi === "pending" ? (
+                    <span className="srCardDesc srIGHealthLine" style={{ color: "#6d7175" }}>
+                      Checking message access…
+                    </span>
+                  ) : messageAccessUi === "off" ? (
                     <div className="srIGHealthBox">
                       <s-box padding="tight" borderRadius="base" background="subdued">
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -1090,3 +1118,11 @@ export default function Index() {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
+
+// Shopify boundary: lets the library's special re-auth responses (thrown by
+// authenticate.admin when the session token is stale — common on mobile,
+// where the webview idles longer) be handled with the right headers instead
+// of rendering an error screen.
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
+}

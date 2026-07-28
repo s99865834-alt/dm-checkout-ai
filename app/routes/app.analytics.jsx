@@ -703,7 +703,7 @@ export default function AnalyticsPage() {
                         </label>
                         <label className="srFieldLabel">
                           <span className="srTextSubdued">Limit</span>
-                          <input type="number" id="limit" name="limit" min="1" max="200" defaultValue={filters.limit || 50} className="srInput" style={{ width: 80 }} />
+                          <input type="number" id="limit" name="limit" min="1" max="200" defaultValue={filters.limit || 50} className="srInput srInputLimit" />
                         </label>
                       </div>
                       <div className="srFilterActions">
@@ -722,6 +722,7 @@ export default function AnalyticsPage() {
                   {attributionRecords.length === 0 ? (
                     <span className="srTextSubdued">No attribution records found.</span>
                   ) : (
+                    <div className="srTableWrap">
                     <table className="srTable">
                       <thead>
                         <tr>
@@ -748,6 +749,7 @@ export default function AnalyticsPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
               </s-box>
