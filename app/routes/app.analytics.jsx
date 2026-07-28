@@ -42,11 +42,17 @@ export const loader = async ({ request }) => {
   // post filter. Mappings are the source of truth: fetching each mapped post
   // by ID means the filter works no matter how old the post is, instead of
   // only covering the account's most recent page of media.
-  let mediaPosts = [];
-  let productMappings = [];
-  if (plan?.name === "PRO") {
-    const metaAuth = await getMetaAuthWithRefresh(shop.id).catch(() => null);
-    productMappings = (await getProductMappings(shop.id).catch(() => [])) || [];
+  // Started here but only awaited before the main queries when a post filter
+  // is active (post_id → product resolution needs the mappings); otherwise it
+  // runs concurrently with them instead of serially in front — this block was
+  // adding its full latency to every Analytics load for Pro shops.
+  const proContextPromise = (async () => {
+    if (plan?.name !== "PRO") return { mediaPosts: [], productMappings: [] };
+    const [metaAuth, productMappings] = await Promise.all([
+      getMetaAuthWithRefresh(shop.id).catch(() => null),
+      getProductMappings(shop.id).catch(() => []).then((m) => m || []),
+    ]);
+    let mediaPosts = [];
     if (metaAuth && productMappings.length > 0) {
       const mediaIds = [...new Set(productMappings.map((m) => m.ig_media_id).filter(Boolean))].sort();
       mediaPosts = await cached(
@@ -55,13 +61,15 @@ export const loader = async ({ request }) => {
         () => getInstagramMediaByIds(shop.id, mediaIds),
       ).catch(() => []);
     }
-  }
+    return { mediaPosts, productMappings };
+  })();
 
   // Resolve post_id → product_id for query filtering, and pre-fetch scoped IDs
   let postProductId = null;
   let postFilterMessageIds = null;
   let postFilterLinkIds = null;
   if (postFilterId && plan?.name === "PRO") {
+    const { productMappings } = await proContextPromise;
     const mapping = productMappings.find(m => m.ig_media_id === postFilterId);
     if (mapping) {
       postProductId = mapping.product_id;
@@ -107,6 +115,8 @@ export const loader = async ({ request }) => {
     plan?.name ? getAnalytics(shop.id, plan.name, analyticsDateRange) : Promise.resolve(null),
     plan?.name === "PRO" ? getProAnalytics(shop.id, analyticsDateRange) : Promise.resolve(null),
   ]);
+
+  const { mediaPosts, productMappings } = await proContextPromise;
 
   const messageTotalPages = Math.ceil(messageTotalCount / messageLimit);
 

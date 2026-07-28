@@ -5,7 +5,13 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
 import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
-import { invalidateCached } from "../lib/loader-cache.server";
+import { cached, invalidateCached } from "../lib/loader-cache.server";
+
+// The active-subscription lookup is a live Shopify GraphQL call — it made
+// every visit to the Billing tab wait on Shopify. Subscriptions only change
+// through our own plan actions, which invalidate this key (updateShopPlan),
+// so a short cache is safe.
+const SUBSCRIPTION_TTL_MS = 5 * 60 * 1000;
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
 // on Shopify's hosted pricing page; the merchant approves there and Shopify
@@ -28,7 +34,9 @@ export const loader = async ({ request }) => {
 
   let subscription = null;
   try {
-    subscription = await getCurrentSubscription(admin);
+    subscription = await cached(`subscription:${shop?.id}`, SUBSCRIPTION_TTL_MS, () =>
+      getCurrentSubscription(admin),
+    );
   } catch (e) {
     console.error("[billing] Error fetching subscription:", e.message);
   }
@@ -216,57 +224,48 @@ export default function BillingSelect() {
             const downgrade = canDowngrade(plan.name);
 
             return (
-              <s-card key={plan.name}>
-                <s-stack direction="block" gap="base">
-                  <s-stack direction="inline" gap="base" alignment="center">
-                    <s-heading level="2">{plan.name}</s-heading>
-                    {isCurrent && (
-                      <s-badge tone="success">Current Plan</s-badge>
-                    )}
-                    {plan.badge && !isCurrent && (
-                      <s-badge tone="info">{plan.badge}</s-badge>
-                    )}
-                  </s-stack>
-
-                  <s-stack direction="inline" gap="tight" alignment="baseline">
-                    <s-text variant="heading2xl" as="span">
-                      {plan.price}
-                    </s-text>
-                    <s-text variant="bodyMd" as="span" tone="subdued">
-                      /{plan.period}
-                    </s-text>
-                  </s-stack>
-
-                  {plan.trialNote && !isCurrent && (
-                    <s-text variant="bodySm" tone="success">{plan.trialNote}</s-text>
+              <div key={plan.name} className={`srBillPlanCard${isCurrent ? " srBillPlanCardCurrent" : ""}`}>
+                <div className="srBillPlanHead">
+                  <span className="srBillPlanName">{plan.name}</span>
+                  {isCurrent && (
+                    <s-badge tone="success">Current Plan</s-badge>
                   )}
+                  {plan.badge && !isCurrent && (
+                    <s-badge tone="info">{plan.badge}</s-badge>
+                  )}
+                </div>
 
-                  <s-paragraph tone="subdued">{plan.description}</s-paragraph>
+                <div className="srBillPlanPrice">
+                  {plan.price}
+                  <span className="srBillPlanPeriod">/{plan.period}</span>
+                </div>
 
-                  <s-stack direction="block" gap="tight">
-                    <s-heading level="3">Includes:</s-heading>
-                    <s-unordered-list>
-                      {plan.features.map((feature, idx) => (
-                        <s-list-item key={idx}>{feature}</s-list-item>
-                      ))}
-                    </s-unordered-list>
-                  </s-stack>
+                {plan.trialNote && !isCurrent && (
+                  <span className="srBillPlanTrial">{plan.trialNote}</span>
+                )}
 
-                  <div>
-                    {isCurrent ? (
-                      <button className="srPrimaryBtn" disabled style={{ opacity: 0.5, cursor: "default" }}>
-                        Current Plan
-                      </button>
-                    ) : upgrade ? (
-                      <PlanActionButton fetcher={fetcher} planName={plan.name} variant="primary" label={`Upgrade to ${plan.name}`} />
-                    ) : downgrade && plan.name === "FREE" ? (
-                      <PlanActionButton fetcher={fetcher} planName="FREE" variant="secondary" label="Switch to Free" />
-                    ) : downgrade ? (
-                      <PlanActionButton fetcher={fetcher} planName={plan.name} variant="secondary" label={`Switch to ${plan.name}`} />
-                    ) : null}
-                  </div>
-                </s-stack>
-              </s-card>
+                <span className="srBillPlanDesc">{plan.description}</span>
+
+                <ul className="srBillPlanFeatures">
+                  {plan.features.map((feature, idx) => (
+                    <li key={idx}>{feature}</li>
+                  ))}
+                </ul>
+
+                <div className="srBillPlanAction">
+                  {isCurrent ? (
+                    <button className="srPrimaryBtn" disabled style={{ opacity: 0.5, cursor: "default" }}>
+                      Current Plan
+                    </button>
+                  ) : upgrade ? (
+                    <PlanActionButton fetcher={fetcher} planName={plan.name} variant="primary" label={`Upgrade to ${plan.name}`} />
+                  ) : downgrade && plan.name === "FREE" ? (
+                    <PlanActionButton fetcher={fetcher} planName="FREE" variant="secondary" label="Switch to Free" />
+                  ) : downgrade ? (
+                    <PlanActionButton fetcher={fetcher} planName={plan.name} variant="secondary" label={`Switch to ${plan.name}`} />
+                  ) : null}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -307,7 +306,7 @@ export default function BillingSelect() {
           borderRadius="base"
           background="subdued"
         >
-          <div className="srTableWrap">
+          <div className="srTableWrap srCompareWrap">
           <table className="srTable">
             <thead>
               <tr>

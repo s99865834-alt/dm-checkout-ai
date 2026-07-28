@@ -2,9 +2,17 @@ import { authenticate } from "../shopify.server";
 import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
 import { getPlanConfig } from "./plans";
 import { getShopifyStoreInfo } from "./shopify-data.server";
+import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
 
 const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
+
+// Shop rows are read by every loader of every navigation (parent layout and
+// child page both call getShopWithPlan) but only change through explicit
+// writes — all of which invalidate the "shopplan:" prefix (createOrUpdateShop,
+// updateShopPlan, markShopUninstalled in db.server.js). A short TTL turns
+// those repeated Supabase round trips into memory reads.
+const SHOP_CACHE_TTL_MS = 30 * 1000;
 
 // Cache authenticate.admin per request so parent + child loaders don't double-exchange the token.
 const _authCache = new WeakMap();
@@ -55,38 +63,42 @@ export async function getShopWithPlan(request) {
   }
   const shopDomain = session.shop;
 
-  let shop = await getShopByDomain(shopDomain);
+  let shop;
+  try {
+    shop = await cached(`shopplan:${shopDomain}`, SHOP_CACHE_TTL_MS, async () => {
+      let s = await getShopByDomain(shopDomain);
 
-  if (!shop) {
-    try {
-      shop = await createOrUpdateShop(shopDomain, {
-        plan: "FREE",
-        monthly_cap: 100,
-        active: true,
-      });
-      logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
-    } catch (error) {
-      console.error(`[getShopWithPlan] Error creating shop ${shopDomain}:`, error);
-      return { shop: null, plan: getPlanConfig("FREE"), session, admin };
-    }
-  } else if (!shop.active) {
-    // Reinstall / reactivation path. Always reset to FREE so that the merchant
-    // must explicitly re-approve a paid charge via the Billing API before
-    // regaining any paid-plan features — required by Shopify App Store rules.
-    try {
-      shop = await createOrUpdateShop(shopDomain, {
-        plan: "FREE",
-        monthly_cap: 100,
-        active: true,
-        usage_count: 0,
-      });
-      logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} on FREE (fallback)`);
-    } catch (error) {
-      console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
-    }
+      if (!s) {
+        // Creation failures throw out of cached() so a miss is never stored.
+        s = await createOrUpdateShop(shopDomain, {
+          plan: "FREE",
+          monthly_cap: 100,
+          active: true,
+        });
+        logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
+      } else if (!s.active) {
+        // Reinstall / reactivation path. Always reset to FREE so that the merchant
+        // must explicitly re-approve a paid charge via the Billing API before
+        // regaining any paid-plan features — required by Shopify App Store rules.
+        try {
+          s = await createOrUpdateShop(shopDomain, {
+            plan: "FREE",
+            monthly_cap: 100,
+            active: true,
+            usage_count: 0,
+          });
+          logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} on FREE (fallback)`);
+        } catch (error) {
+          console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
+        }
+      }
+
+      return ensureUsageMonthCurrent(s);
+    });
+  } catch (error) {
+    console.error(`[getShopWithPlan] Error resolving shop ${shopDomain}:`, error);
+    return { shop: null, plan: getPlanConfig("FREE"), session, admin };
   }
-
-  shop = await ensureUsageMonthCurrent(shop);
 
   const isBetaActive = shop.beta_trial_expires_at &&
     new Date(shop.beta_trial_expires_at) > new Date();
