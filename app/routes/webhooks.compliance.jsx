@@ -30,12 +30,16 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { authenticate } from "../shopify.server";
+import { authenticateWebhookTolerant } from "../lib/webhook-auth.server";
 import supabase from "../lib/supabase.server";
 import logger from "../lib/logger.server";
 
 export const action = async ({ request }) => {
-  const { topic, shop, payload } = await authenticate.webhook(request);
+  // Tolerant auth: shop/redact arrives 48 hours AFTER uninstall, when the
+  // shop's tokens are already revoked — the library's token-refresh step
+  // would 500 on an otherwise-authentic webhook. Failing mandatory
+  // compliance webhooks risks App Store standing, so never let that happen.
+  const { topic, shop, payload } = await authenticateWebhookTolerant(request);
 
   logger.debug(`[webhook/compliance] Received ${topic} for ${shop}`);
 
