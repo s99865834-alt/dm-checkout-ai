@@ -25,7 +25,7 @@ import {
   shortenUrlsInReply,
   getShopHomepageUrl,
 } from "./links.server";
-import { generateAgentReply, REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
+import { generateAgentReply, isExplicitLinkRequest, REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 
 // Link builders moved to links.server.js; re-exported for existing callers
 // (e.g. meta.test-webhook.jsx imports them from here).
@@ -210,11 +210,18 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       return null;
     };
 
+    // Explicit link requests are unambiguous even with NO prior product
+    // context: the customer is asking us to send them a URL ("Send me a link
+    // absolutely" gets classified clarification_needed and previously went
+    // unanswered). Route them to the agent as purchase intent — without a
+    // specific product it answers with the store's browse-all-products link.
     let intent = message.ai_intent || null;
     if (!intent || !eligibleIntents.includes(intent)) {
       // If we have prior product context, try a lightweight inference.
       if (hasPriorProductContext) {
         intent = inferIntentFromText(message.text);
+      } else if (isExplicitLinkRequest(message.text)) {
+        intent = "purchase";
       }
     }
 
@@ -854,6 +861,51 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
         logger.debug(`[automation] ✅ Product-matched DM reply sent for message ${message.id} (product: ${productName})`);
         return { sent: true };
+      }
+
+      // No product match, but the customer explicitly asked for a link — the
+      // only correct reply is one that contains a link. Send the store
+      // homepage/browse link on EVERY plan (asking a clarifying question, or
+      // worse, staying silent, breaks the product's core promise). Only runs
+      // when the sales agent already declined or errored.
+      if (isExplicitLinkRequest(message.text)) {
+        const homepageUrl = getShopHomepageUrl(shop);
+        if (homepageUrl) {
+          const brandVoiceData = await getBrandVoice(shop.id);
+          let replyText = await generateReplyMessage(
+            brandVoiceData,
+            null,
+            homepageUrl,
+            "purchase",
+            null,
+            null,
+            message.text,
+            null,
+            {
+              originChannel: "dm",
+              inboundChannel: "dm",
+              triggerChannel: "dm",
+              isHomepageFallback: true,
+              recentMessages: (threadContext?.messages || [])
+                .filter((m) => m.id !== message.id)
+                .slice(0, 8)
+                .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+            }
+          );
+          // Converts the raw homepage URL into a tracked info_ link (and
+          // records the links_sent row that makes the redirect resolve).
+          replyText = await shortenUrlsInReply(shop, message.id, replyText);
+
+          if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
+            return { sent: false, reason: "Already replied to this message" };
+          }
+          const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
+          if (sendResult?.sent === false) return sendResult;
+          await incrementUsage(shop.id, 1);
+
+          logger.debug(`[automation] ✅ Browse link sent for explicit link request ${message.id} (no product match)`);
+          return { sent: true };
+        }
       }
 
       // No product match found => ask clarifying question (PRO with followup enabled)
@@ -1830,6 +1882,28 @@ Write the response:`;
       // We deliberately do NOT prepend the raw `custom_instruction` text,
       // because that would leak the merchant's style directive
       // (e.g. "use emojis") into the customer-facing message.
+    }
+  }
+
+  // LINK GUARANTEE (deterministic — does not depend on the model): every
+  // caller that passes a checkoutUrl also records a links_sent row, i.e. the
+  // link is the point of the reply. If the AI-generated text ended up without
+  // any of the allowed URLs (omitted them, or the URL sanitizers above
+  // stripped a mangled version), append the right one so the customer always
+  // receives a working link. store_question is exempt — its links are
+  // optional policy tokens with their own fallback.
+  if (intent !== "store_question" && checkoutUrl && message) {
+    const allowedReplyUrls = [productPageUrl, checkoutUrl].filter(Boolean);
+    const hasAllowedLink = allowedReplyUrls.some((u) => message.includes(u));
+    if (!hasAllowedLink) {
+      const appendUrl =
+        (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
+          ? productPageUrl
+          : checkoutUrl;
+      message = `${message.trim().replace(/[\s:：]+$/, "")}\n\n${appendUrl}`;
+      console.warn(
+        `[automation] Link guarantee: reply for intent "${intent}" was missing its link; appended ${appendUrl}`
+      );
     }
   }
 
