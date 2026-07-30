@@ -1,8 +1,9 @@
 /**
  * Dry-run the DM sales agent against a real store, without sending anything.
  * generateAgentReply only produces text + tracked link IDs — claiming, sending,
- * and usage accounting live in handleIncomingDm — so this is side-effect-free
- * apart from possible info_ short-link rows for store-page URLs.
+ * and usage accounting live in handleIncomingDm — so this is side-effect-free.
+ * The info_ short-link rows that shortenUrlsInReply writes for store-page URLs
+ * are deleted again on exit so dry-runs never inflate the admin "sent" count.
  *
  * Usage: npx vite-node scripts/test-sales-agent.mjs <shop-domain> "<message>"
  */
@@ -53,6 +54,7 @@ console.log(`Shop: ${shop.shopify_domain} (${shop.id})`);
 console.log(`Message: "${text}"\n`);
 
 const started = Date.now();
+const startedIso = new Date(started).toISOString();
 const result = await generateAgentReply({
   shop,
   message: { id: null, text, ai_entities: null },
@@ -62,6 +64,20 @@ const result = await generateAgentReply({
   allowClarify: true,
 });
 const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+
+// Clean up the info_ short-link rows this dry-run created (message_id is null
+// only for harness-minted links; real DM links always carry a message_id).
+const { data: cleaned } = await supabase
+  .from("links_sent")
+  .delete()
+  .eq("shop_id", shop.id)
+  .is("message_id", null)
+  .like("link_id", "info_%")
+  .gte("sent_at", startedIso)
+  .select("link_id");
+if (cleaned?.length) {
+  console.log(`(cleaned up ${cleaned.length} test link row${cleaned.length > 1 ? "s" : ""})`);
+}
 
 if (!result) {
   console.log(`Agent declined (would fall back to legacy pipeline). [${elapsed}s]`);
