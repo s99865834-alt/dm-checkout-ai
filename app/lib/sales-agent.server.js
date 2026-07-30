@@ -41,6 +41,7 @@ import {
   buildProductPageLink,
   getTrackedLinkUrl,
   shortenUrlsInReply,
+  getShopHomepageUrl,
 } from "./links.server";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -58,6 +59,21 @@ const MAX_TOOL_ROUNDS = 4;
 
 export function isSalesAgentEnabled() {
   return !!openai && process.env.SALES_AGENT_DISABLED !== "1";
+}
+
+/**
+ * True when the customer is explicitly asking us to send them a URL
+ * ("send me a link", "can I get the link?", "link please"). These messages
+ * MUST be answered with a reply that contains a real link — the classifier
+ * often labels them clarification_needed, and the reply generators must not
+ * be allowed to answer without one. Shared by the intent gate in
+ * automation.server.js and the link-guarantee in this module.
+ */
+export function isExplicitLinkRequest(text) {
+  const t = (text || "").trim().toLowerCase();
+  if (!t) return false;
+  if (/^(?:yes,?\s*)?link\s*(?:\?|!|please|pls)?$/.test(t)) return true;
+  return /\b(?:send|share|give|get|drop|need|want|have)\b[^.!?]*\blink\b/.test(t);
 }
 
 /**
@@ -372,6 +388,36 @@ export async function generateAgentReply({
     return null;
   };
 
+  // Deterministic fallback link, best-first: a link the model already minted
+  // this run but forgot to paste → a PDP link for the conversation's context
+  // product → the store's browse-all page (raw URL; shortenUrlsInReply
+  // converts it into a tracked info_ link before send). Used by the link
+  // guarantee below so a required link NEVER depends on the model behaving.
+  const getFallbackLinkUrl = async () => {
+    if (linksCreated.length > 0) {
+      const last = linksCreated[linksCreated.length - 1];
+      const url = await getTrackedLinkUrl(shop, last.linkId).catch(() => null);
+      if (url) return url;
+    }
+    const ctxProductId = threadContext?.lastProductLink?.product_id;
+    if (ctxProductId) {
+      try {
+        const gid = toProductGid(ctxProductId);
+        const variantGid = toVariantGid(threadContext.lastProductLink.variant_id);
+        const pdp = await buildProductPageLink(shop, gid, variantGid);
+        if (pdp) {
+          linksCreated.push({ productId: gid, variantId: variantGid, url: pdp.url, linkId: pdp.linkId });
+          const url = await getTrackedLinkUrl(shop, pdp.linkId).catch(() => null);
+          if (url) return url;
+        }
+      } catch (err) {
+        logger.debug(`[sales-agent] Fallback PDP link failed: ${err?.message || err}`);
+      }
+    }
+    const homepage = getShopHomepageUrl(shop);
+    return homepage ? `${homepage}/collections/all` : null;
+  };
+
   const finalText = await runToolLoop(MAX_TOOL_ROUNDS);
   if (!finalText) {
     logger.warn(`[sales-agent] No final text produced for message ${message.id}`);
@@ -399,9 +445,52 @@ export async function generateAgentReply({
     }
   }
 
+  // The model sometimes PROMISES a link ("here's the link to browse
+  // everything:") without ever calling a link tool or writing a URL — nothing
+  // gets stripped, so the pass above can't catch it, and the customer would
+  // receive a dangling promise. Same remedy: one corrective pass to mint a
+  // real tracked link (observed live: "…here's the link to see everything
+  // available:" sent with no link).
+  if (text && promisesLinkWithoutUrl(text)) {
+    logger.debug(`[sales-agent] Reply promises a link but contains none for message ${message.id}; running corrective pass`);
+    messages.push({ role: "assistant", content: text });
+    messages.push({
+      role: "user",
+      content:
+        "Your reply mentions or promises a link, but it doesn't contain one. Call get_product_page_link or get_checkout_link for the product (or use the browse-all-products URL from get_store_info) and rewrite the reply with the real URL included. If a link isn't appropriate, rewrite the reply without mentioning a link. Do not mention this correction.",
+    });
+    const retryText = await runToolLoop(2);
+    if (retryText) {
+      const retry = sanitizeReplyText(retryText, allowedUrls);
+      if (retry.text) text = retry.text;
+    }
+  }
+
   if (!text) {
     logger.warn(`[sales-agent] Reply empty after URL sanitization for message ${message.id}`);
     return null;
+  }
+
+  // LINK GUARANTEE (deterministic — does not depend on the model):
+  // 1. A reply that still promises a link but has none gets the fallback link
+  //    appended, fulfilling the promise instead of shipping it broken.
+  // 2. An explicit "send me a link" request must ALWAYS be answered with a
+  //    URL, whatever the reply says.
+  const mustHaveLink = isExplicitLinkRequest(message.text);
+  if (promisesLinkWithoutUrl(text) || (mustHaveLink && !/https?:\/\//i.test(text))) {
+    const fallbackUrl = await getFallbackLinkUrl();
+    if (fallbackUrl) {
+      const trimmed = text.trim();
+      text = /[:：]$/.test(trimmed) ? `${trimmed} ${fallbackUrl}` : `${trimmed}\n\n${fallbackUrl}`;
+      logger.warn(
+        `[sales-agent] Link guarantee appended fallback link for message ${message.id} (explicit_request=${mustHaveLink})`
+      );
+    } else if (promisesLinkWithoutUrl(text)) {
+      // No link source at all (shop has no domain) — never send a linkless
+      // promise; let the legacy pipeline try.
+      logger.warn(`[sales-agent] Reply promises a link, none available for message ${message.id}; declining`);
+      return null;
+    }
   }
 
   // Store policy/page URLs (from get_store_info) are raw storefront URLs —
@@ -510,6 +599,21 @@ function buildUserMessage({ message, intent, threadContext }) {
   parts.push(`Customer's message: "${message.text}"`);
   parts.push("Write the reply now (use tools first if you need data).");
   return parts.join("\n\n");
+}
+
+/**
+ * True when the reply talks about an included link ("here's the link…",
+ * "this link", "link:") or ends with a colon lead-in, but contains no URL at
+ * all. Deliberately narrow: offering to send a link later ("let me know if
+ * you'd like a link") must NOT match — only phrasing that implies the link
+ * is present in this very message.
+ */
+function promisesLinkWithoutUrl(text) {
+  if (!text || /https?:\/\//i.test(text)) return false;
+  const t = text.trim();
+  // A reply ending in ":" is always a broken lead-in to something missing.
+  if (/[:：]$/.test(t)) return true;
+  return /\b(?:here'?s\s+(?:the|a|your)\s+link|here\s+is\s+(?:the|a|your)\s+link|the\s+link\s+(?:below|here)|(?:via|using|through)\s+this\s+link|link\s*:)/i.test(t);
 }
 
 /**
