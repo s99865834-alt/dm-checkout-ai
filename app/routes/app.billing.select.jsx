@@ -135,6 +135,8 @@ export default function BillingSelect() {
       features: [
         "100 messages/month",
         "DM automation with AI",
+        "Store question answering",
+        "Multi-language replies",
         "Checkout links",
         "Basic analytics",
       ],
@@ -150,8 +152,7 @@ export default function BillingSelect() {
         "500 messages/month",
         "DMs + Comment-to-DM",
         "Brand voice customization",
-        "Multi-language replies",
-        "Store question answering",
+        "Custom reply language",
         "Order attribution + full analytics",
       ],
     },
@@ -342,6 +343,18 @@ export default function BillingSelect() {
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
+                <td><span className="srTextStrong">Store Question Answering</span></td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Multi-language Replies</span></td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
                 <td><span className="srTextStrong">Comment-to-DM Automation</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
@@ -354,13 +367,7 @@ export default function BillingSelect() {
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td><span className="srTextStrong">Multi-language Replies</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Store Question Answering</span></td>
+                <td><span className="srTextStrong">Custom Reply Language</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
