@@ -29,6 +29,16 @@ function isTokenRevokedError(error) {
   );
 }
 
+/** True when Shopify says the STORE itself is suspended (402 Payment
+ * Required — the owner stopped paying their Shopify subscription). Every API
+ * call fails this way until they pay or the store is closed; nothing on our
+ * side is wrong or fixable, so callers should negative-cache and stay quiet
+ * instead of error-logging on every dashboard load. */
+function isStoreFrozenError(error) {
+  if (error?.networkStatusCode === 402 || error?.response?.code === 402) return true;
+  return String(error?.message || "").includes("402 Payment Required");
+}
+
 /**
  * Admin GraphQL client for a shop's stored offline session, or null when the
  * shop has no usable session. When Shopify reports the token as revoked
@@ -148,6 +158,13 @@ export async function getStoreTotalRevenueYTD(shopDomain) {
     if (value) _revenueYtdCache.set(shopDomain, { value, at: Date.now() });
     return value;
   } catch (error) {
+    if (isStoreFrozenError(error)) {
+      // Frozen store — expected and not actionable. Negative-cache so we
+      // don't re-query (and re-log) on every admin dashboard load.
+      _revenueYtdCache.set(shopDomain, { value: null, at: Date.now() });
+      logger.debug(`[shopify-data] ${shopDomain} is frozen (402); skipping revenue YTD`);
+      return null;
+    }
     console.error(
       `[shopify-data] revenue YTD failed for ${shopDomain}:`,
       error?.message || error,
@@ -226,6 +243,13 @@ export async function getStoreManagedTrial(shopDomain) {
     _trialCache.set(shopDomain, { value, at: Date.now() });
     return value;
   } catch (error) {
+    if (isStoreFrozenError(error)) {
+      // Frozen store — expected and not actionable. Negative-cache so we
+      // don't re-query (and re-log) on every admin dashboard load.
+      _trialCache.set(shopDomain, { value: null, at: Date.now() });
+      logger.debug(`[shopify-data] ${shopDomain} is frozen (402); skipping trial lookup`);
+      return null;
+    }
     console.error(
       `[shopify-data] managed trial lookup failed for ${shopDomain}:`,
       error?.message || error,
