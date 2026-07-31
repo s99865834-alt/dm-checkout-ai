@@ -956,7 +956,7 @@ export default function Index() {
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">DM automation</span>
-                      <span className="srCardDesc">Process and reply to Instagram DMs</span>
+                      <span className="srCardDesc">Process and reply to Instagram DMs. If you reply to a customer yourself, the AI steps aside in that conversation for 6 hours so it never talks over you.</span>
                     </div>
                     <label className="srToggle" aria-label="DM automation">
                       <input type="checkbox" checked={dmAutomationEnabled} onChange={(e) => setDmAutomationEnabled(e.target.checked)} />

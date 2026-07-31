@@ -4,7 +4,7 @@
  */
 
 import OpenAI from "openai";
-import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -137,6 +137,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     if (optOutKeywords.some(keyword => messageTextLower.includes(keyword))) {
       logger.debug(`[automation] Opt-out keyword detected in message ${message.id}, skipping automation`);
       return { sent: false, reason: "User opted out of automated messages" };
+    }
+
+    // 1.55. Human-takeover pause: the merchant replied to this customer
+    // manually (detected via echo webhooks), so the owner is handling this
+    // conversation — don't talk over them. Rolling window, resets on every
+    // manual reply.
+    if (message.from_user_id && (await isHumanTakeoverActive(shop.id, message.from_user_id))) {
+      logger.debug(`[automation] Human takeover active for user ${message.from_user_id}, skipping automation`);
+      return { sent: false, reason: "Owner replied manually — automation paused for this conversation" };
     }
 
     // 1.6. Meta Compliance: Verify message is within 24-hour messaging window
@@ -1027,6 +1036,14 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     if (settings?.comment_automation_enabled === false) {
       logger.debug(`[automation] Comment automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "Comment automation disabled" };
+    }
+
+    // 2.5. Human-takeover pause: the comment reply lands as a DM, so if the
+    // merchant is mid-conversation with this person, stay out of it.
+    const commenterUserId = message.from_user_id ?? message.fromUserId;
+    if (commenterUserId && (await isHumanTakeoverActive(shop.id, commenterUserId))) {
+      logger.debug(`[automation] Human takeover active for user ${commenterUserId}, skipping comment automation`);
+      return { sent: false, reason: "Owner replied manually — automation paused for this conversation" };
     }
 
 

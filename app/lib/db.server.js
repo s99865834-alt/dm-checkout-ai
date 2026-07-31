@@ -450,10 +450,12 @@ export async function alreadyRepliedToMessage(messageId) {
 /**
  * Returns true if the given text matches a reply the app recently sent for this shop.
  * Used to detect webhook echoes (Instagram delivering our own outbound DM back to us).
+ * windowMs is configurable because takeover detection matches against a longer
+ * window (queued sends can go out minutes after the links_sent row is written).
  */
-export async function isRecentOutboundReply(shopId, text) {
+export async function isRecentOutboundReply(shopId, text, windowMs = 5 * 60 * 1000) {
   if (!shopId || !text || text.length < 30) return false;
-  const windowStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const windowStart = new Date(Date.now() - windowMs).toISOString();
   const { data, error } = await supabase
     .from("links_sent")
     .select("id")
@@ -466,6 +468,52 @@ export async function isRecentOutboundReply(shopId, text) {
     return false;
   }
   return data && data.length > 0;
+}
+
+/**
+ * Human-takeover pause: when the merchant replies to a customer manually from
+ * their Instagram inbox (detected via echo webhooks that don't match any reply
+ * the app sent), automation for that conversation is paused so the bot doesn't
+ * talk over the owner. Rolling window — every manual reply resets the clock.
+ * Same model as ManyChat-style live-chat takeover pauses.
+ */
+const HUMAN_TAKEOVER_PAUSE_MS =
+  (parseFloat(process.env.HUMAN_TAKEOVER_PAUSE_HOURS || "6") || 6) * 60 * 60 * 1000;
+
+export async function recordHumanTakeover(shopId, igUserId) {
+  if (!shopId || !igUserId) return;
+  const { error } = await supabase.from("human_takeovers").upsert(
+    {
+      shop_id: shopId,
+      ig_user_id: String(igUserId),
+      last_human_at: new Date().toISOString(),
+    },
+    { onConflict: "shop_id,ig_user_id" }
+  );
+  if (error) {
+    console.error("[db] recordHumanTakeover error:", error.message);
+  }
+}
+
+/**
+ * True while the merchant's last manual reply to this customer is within the
+ * pause window. Fails open (false) on errors — a DB blip must not silence the
+ * bot's core reply functionality.
+ */
+export async function isHumanTakeoverActive(shopId, igUserId) {
+  if (!shopId || !igUserId) return false;
+  const { data, error } = await supabase
+    .from("human_takeovers")
+    .select("last_human_at")
+    .eq("shop_id", shopId)
+    .eq("ig_user_id", String(igUserId))
+    .maybeSingle();
+  if (error) {
+    console.warn("[db] isHumanTakeoverActive error:", error.message);
+    return false;
+  }
+  if (!data?.last_human_at) return false;
+  return Date.now() - new Date(data.last_human_at).getTime() < HUMAN_TAKEOVER_PAUSE_MS;
 }
 
 /**
