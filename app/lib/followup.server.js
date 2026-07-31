@@ -19,7 +19,7 @@
  */
 
 import OpenAI from "openai";
-import { getShopPlanAndUsage, getSettings, getBrandVoice } from "./db.server";
+import { getShopPlanAndUsage, getSettings, getBrandVoice, isHumanTakeoverActive } from "./db.server";
 import { sendDmReply } from "./automation.server";
 import { REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 import supabase from "./supabase.server";
@@ -307,6 +307,15 @@ export async function processFollowups() {
 
             // Skip if they clicked ANY link from this exchange.
             if (await hasAnyLinkBeenClicked(linkIds)) continue;
+
+            // Skip while the merchant is handling this customer personally
+            // (human-takeover pause) — a bot check-in would talk over them.
+            if (await isHumanTakeoverActive(shop.id, message.from_user_id)) {
+              logger.debug(
+                `[followup] Human takeover active for user ${message.from_user_id}, skipping follow-up`
+              );
+              continue;
+            }
 
             // One follow-up per conversation. A conversation is scoped by
             // product: if their recent follow-up chased the same product this

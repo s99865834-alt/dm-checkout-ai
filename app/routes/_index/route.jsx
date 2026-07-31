@@ -23,6 +23,7 @@ const JSON_LD = {
     "Automatically reply to post comments with private DMs and product links",
     "Multi-language replies — auto-match each customer's language or force a specific one",
     "No flow builder — AI handles questions you never scripted, multi-turn to checkout",
+    "Human takeover detection — reply to a customer yourself and the AI steps aside in that conversation",
   ],
   offers: [
     {
@@ -30,7 +31,7 @@ const JSON_LD = {
       name: "Free",
       price: "0",
       priceCurrency: "USD",
-      description: "100 messages/mo · DM automation with AI · Checkout links · Basic analytics",
+      description: "100 messages/mo · DM automation with AI · Store question answering · Multi-language replies · Checkout links · Basic analytics",
     },
     {
       "@type": "Offer",
@@ -39,7 +40,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "500 messages/mo · DMs + Comment-to-DM · Brand voice customization · Multi-language replies · Order attribution + full analytics",
+        "500 messages/mo · DMs + Comment-to-DM · Brand voice customization · Custom reply language · Order attribution + full analytics",
     },
     {
       "@type": "Offer",
@@ -102,6 +103,10 @@ const FAQS = [
   {
     q: "Does SocialReplAI reply in other languages?",
     a: "Yes. On Growth and Pro, you can set a reply language. Leave it on Auto and the AI answers each customer in the same language they messaged in, or force a specific language (such as Brazilian Portuguese, Spanish, or French) so every reply goes out in that language regardless of the customer's input.",
+  },
+  {
+    q: "What happens if I reply to a customer myself?",
+    a: "The AI steps aside. When you send a manual reply from your Instagram inbox, SocialReplAI detects it and pauses automation for that one conversation for 6 hours — so it never talks over you mid-conversation. Every manual reply resets the clock, your other conversations keep getting automated replies, and the AI picks the thread back up once you've been quiet for 6 hours. Nothing to configure.",
   },
   {
     q: "What happens if I hit my message limit?",
@@ -345,6 +350,7 @@ export default function LandingPage() {
               <li>Knows your products, pricing, and store policies.</li>
               <li>Replies in your customer&apos;s language — auto-detected or set to a language you choose.</li>
               <li>Comment-to-DM flow keeps the conversation private.</li>
+              <li>Steps aside when you reply personally — the AI pauses in that thread so it never talks over you.</li>
             </ul>
           </div>
           <div className="srFeatureArt">
@@ -528,6 +534,8 @@ export default function LandingPage() {
             <ul className="srPlanFeatures">
               <li>100 messages / month</li>
               <li>DM automation with AI</li>
+              <li>Store question answering</li>
+              <li>Multi-language replies</li>
               <li>Checkout links</li>
               <li>Basic analytics</li>
             </ul>
@@ -552,8 +560,7 @@ export default function LandingPage() {
               <li>500 messages / month</li>
               <li>DMs + Comment-to-DM</li>
               <li>Brand voice customization</li>
-              <li>Multi-language replies</li>
-              <li>Store question answering</li>
+              <li>Custom reply language</li>
               <li>Order attribution + full analytics</li>
             </ul>
             <a

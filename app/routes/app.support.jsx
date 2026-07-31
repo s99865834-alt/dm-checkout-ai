@@ -76,8 +76,25 @@ export default function SupportPage() {
                   <li><strong>Monthly limit:</strong> check the usage bar in Plan &amp; Instagram — once you hit your plan&apos;s message cap, replies pause until next month.</li>
                   <li><strong>Per-post toggles:</strong> if only certain posts get no replies, check that automation is enabled on those posts in &ldquo;Your Instagram Posts.&rdquo;</li>
                   <li><strong>Account type:</strong> your Instagram must be a professional account (Business or Creator) — personal accounts don&apos;t support message automation.</li>
+                  <li><strong>Did you reply to that customer yourself?</strong> When you send a manual reply from your Instagram inbox, the AI steps aside for that conversation for 6 hours (see the next question). Other customers still get automated replies.</li>
                 </ol>
                 <p>Still stuck? Email us and we&apos;ll investigate your account directly.</p>
+              </div>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">What happens when I reply to a customer myself?</summary>
+              <div className="srFaqAnswer">
+                <p>
+                  The AI steps aside automatically. When you send a manual reply to a customer from your
+                  Instagram inbox, SocialRepl.ai detects it and pauses automation <strong>for that one
+                  conversation</strong> for 6 hours, so it never talks over you mid-conversation. Every
+                  manual reply you send resets the 6-hour clock, and all your other conversations keep
+                  getting automated replies as normal.
+                </p>
+                <p>
+                  Once you&apos;ve been quiet in that thread for 6 hours, the AI picks the conversation
+                  back up automatically — there&apos;s nothing to turn on or off.
+                </p>
               </div>
             </details>
             <details className="srFaqItem">

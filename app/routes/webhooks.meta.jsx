@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import supabase from "../lib/supabase.server";
@@ -386,20 +386,54 @@ export const action = async ({ request }) => {
               const isEcho = message.is_echo === true || message.message?.is_echo === true;
               const hasEditMid = !!message.message_edit?.mid;
               logger.debug(`[webhook] Event: sender=${senderId} is_echo=${isEcho} message_edit.mid=${hasEditMid ? "yes" : "no"}`);
+
+              // Human-takeover detection. An outbound event (echo, or sender =
+              // the business account) is either our own bot reply echoing back
+              // or the MERCHANT replying manually from their Instagram inbox.
+              // Bot replies match a links_sent reply_text we recently wrote;
+              // anything else with a real message payload is the owner typing —
+              // record it so automation pauses for that conversation instead of
+              // talking over them. Must run before the skip below: echoes are
+              // addressed to the customer, so they exit at the recipient check.
+              const isOutboundEvent =
+                isEcho || (igBusinessId && String(senderId) === String(igBusinessId));
+              if (isOutboundEvent) {
+                const outboundCustomerId =
+                  recipientId && String(recipientId) !== String(igBusinessId)
+                    ? String(recipientId)
+                    : null;
+                // Reactions/read receipts have no message payload — not a takeover.
+                const hasMessagePayload = !!(
+                  message.message?.mid ||
+                  message.message?.text ||
+                  message.message?.attachments?.length
+                );
+                if (outboundCustomerId && hasMessagePayload) {
+                  try {
+                    const echoText = message.message?.text || null;
+                    const isBotEcho = echoText
+                      ? await isRecentOutboundReply(shopId, echoText, 30 * 60 * 1000)
+                      : false;
+                    if (!isBotEcho) {
+                      await recordHumanTakeover(shopId, outboundCustomerId);
+                      logger.debug(
+                        `[webhook] Manual owner reply detected → automation paused for user ${outboundCustomerId}`
+                      );
+                    }
+                  } catch (error) {
+                    console.error(`[webhook] Takeover detection error:`, error);
+                  }
+                }
+                logger.debug(`[webhook] Skipping outbound/echo event`);
+                continue;
+              }
+
               if (igBusinessId && recipientId && String(recipientId) !== String(igBusinessId)) {
                 logger.debug(`[webhook] Skipping message not addressed to this IG business id: recipient=${recipientId}`);
                 continue;
               }
-              if (igBusinessId && String(senderId) === String(igBusinessId)) {
-                logger.debug(`[webhook] Skipping outbound message from IG business ID ${igBusinessId}`);
-                continue;
-              }
               if (recipientId && String(senderId) === String(recipientId)) {
                 logger.debug(`[webhook] Skipping message where sender equals recipient (${senderId})`);
-                continue;
-              }
-              if (isEcho) {
-                logger.debug(`[webhook] Skipping is_echo (outbound) message`);
                 continue;
               }
               if (message.message_edit?.mid) {
