@@ -27,10 +27,15 @@ export const loader = async () => {
       );
     }
 
-    return new Response(JSON.stringify({ status: "ok" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    // mode makes production-mode verifiable from outside: NODE_ENV drives
+    // React/React Router runtime optimizations (dev warnings, error detail).
+    return new Response(
+      JSON.stringify({ status: "ok", mode: process.env.NODE_ENV || "unknown" }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error("Health check error:", error);
     return new Response(
