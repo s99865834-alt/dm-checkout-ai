@@ -3,7 +3,7 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -51,6 +51,7 @@ export const loader = async ({ request }) => {
   let brandVoice = null;
   let productMappings = [];
   let missedComments = 0;
+  let monthRevenue = { total: 0, currency: "USD" };
   let trialStatus = null;
   let reviewEligible = false;
   let lastInboundMessageAt = null;
@@ -59,13 +60,19 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     let attributionCount = 0;
     let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
         getBrandVoice(shop.id),
         getProductMappings(shop.id).catch(() => []),
         plan?.name === "FREE" ? getMissedCommentCount(shop.id) : Promise.resolve(0),
+        // This month's attributed revenue, for the honest ROI banner
+        // ("drove $X — Growth costs $39"). Only shown when it's in the
+        // merchant's favor, so fetching for FREE/GROWTH is enough.
+        plan?.name !== "PRO"
+          ? getAttributedRevenueThisMonth(shop.id).catch(() => ({ total: 0, currency: "USD" }))
+          : Promise.resolve({ total: 0, currency: "USD" }),
         // Free-trial countdown for the banner. Failure-safe and cached: a
         // billing API hiccup should never block the dashboard, and the Shopify
         // call only runs once per TTL instead of on every page load.
@@ -162,7 +169,7 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -449,7 +456,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -703,16 +710,46 @@ export default function Index() {
           </div>
         </s-banner>
       )}
+      {/* Honest ROI report: only rendered when tracked sales actually exceed
+          the Growth price, so it reads as a report, not an ad. */}
+      {plan && plan.name === "FREE" && (monthRevenue?.total || 0) >= 39 && (
+        <s-banner tone="success">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month.
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Growth costs $39/mo and adds comment automation, brand voice, and 500 messages — it would already be paying for itself.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+          </div>
+        </s-banner>
+      )}
+      {plan && plan.name === "GROWTH" && (monthRevenue?.total || 0) >= 78 && (
+        <s-banner tone="success">
+          <span className="srTextStrong">
+            SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month
+          </span>
+          <span className="srCardDesc">
+            {" "}— {Math.round((monthRevenue.total / 39) * 10) / 10}x its $39/mo cost.
+          </span>
+        </s-banner>
+      )}
       {plan && plan.name === "FREE" && missedComments > 0 && (
         <s-banner tone="info">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
-              <span className="srTextStrong">{missedComments} comment{missedComments === 1 ? "" : "s"} received this month without an automated reply.</span>
+              <span className="srTextStrong">
+                {missedComments} comment{missedComments === 1 ? "" : "s"} with purchase interest went unanswered this month — comment replies aren&apos;t included in the Free plan.
+              </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Comment-to-DM automation is available on Growth ($39/mo). Turn comments into checkout links automatically.
+                Upgrade to Growth ($39/mo) and the AI will automatically DM each of these customers
+                an answer with a checkout link. You can see the actual comments in Analytics.
               </span>
             </div>
-            <s-button href="/app/billing/select" variant="secondary" size="slim">Unlock comment automation</s-button>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
           </div>
         </s-banner>
       )}
