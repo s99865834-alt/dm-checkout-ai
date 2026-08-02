@@ -3,7 +3,7 @@ import { useOutletContext, useRouteError, useLoaderData, useSearchParams, useNav
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
-import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings } from "../lib/db.server";
+import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings, getMissedOpportunityComments } from "../lib/db.server";
 import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
 import { cached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
@@ -94,6 +94,7 @@ export const loader = async ({ request }) => {
     messageTotalCount,
     analytics,
     proAnalytics,
+    missedOpportunities,
   ] = await Promise.all([
     getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit, linkIds: postFilterLinkIds }),
     getMessages(shop.id, {
@@ -114,6 +115,12 @@ export const loader = async ({ request }) => {
     }),
     plan?.name ? getAnalytics(shop.id, plan.name, analyticsDateRange) : Promise.resolve(null),
     plan?.name === "PRO" ? getProAnalytics(shop.id, analyticsDateRange) : Promise.resolve(null),
+    // FREE only: real purchase-intent comments that got no automated reply
+    // this month (comment automation is Growth+). Shown dimmed below so the
+    // merchant sees the specific conversations they're missing.
+    plan?.name === "FREE"
+      ? getMissedOpportunityComments(shop.id, { limit: 10 }).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const { mediaPosts, productMappings } = await proContextPromise;
@@ -145,13 +152,14 @@ export const loader = async ({ request }) => {
     mediaPosts,
     productMappings,
     postFilterId,
+    missedOpportunities,
   };
 };
 
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
   const { isFree, isPro } = usePlanAccess();
-  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId } = useLoaderData();
+  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId, missedOpportunities } = useLoaderData();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [expandedMessages, setExpandedMessages] = useState(new Set());
@@ -671,6 +679,51 @@ export default function AnalyticsPage() {
               <span className="srTextSubdued">Loading analytics...</span>
             )}
           </s-section>
+
+          {/* Missed opportunities (FREE only): the actual purchase-intent
+              comments that got no automated reply this month, shown dimmed.
+              Specific real conversations beat an abstract feature pitch —
+              and every row here is genuinely a comment the AI would have
+              answered on Growth. */}
+          {isFree && missedOpportunities?.length > 0 && (
+            <s-section heading="Missed opportunities">
+              <div className="srVStack">
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                  <div className="srCardPad srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                    <span className="srCardDesc" style={{ flex: 1 }}>
+                      These comments from this month look like real purchase interest, but comment
+                      replies aren&apos;t included in the Free plan. On Growth, each of these customers
+                      gets an automatic DM with an answer and a checkout link.
+                    </span>
+                    <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+                  </div>
+                </s-box>
+                {missedOpportunities.map((comment) => (
+                  <div key={comment.id} className="srMsgCard srMissedCard">
+                    <div className="srVStack">
+                      <div className="srHStackSpread">
+                        <div className="srHStackTight">
+                          <s-badge tone="success">COMMENT</s-badge>
+                          <span className="srTextSubdued">{new Date(comment.created_at).toLocaleString()}</span>
+                        </div>
+                        {comment.from_username && (
+                          <span className="srTextSubdued">@{comment.from_username}</span>
+                        )}
+                      </div>
+                      <span className="srMsgText">{comment.text}</span>
+                      <div className="srHStackTight">
+                        <s-badge tone="info">
+                          Intent: {comment.ai_intent}
+                          {comment.ai_confidence && ` (${(comment.ai_confidence * 100).toFixed(0)}%)`}
+                        </s-badge>
+                        <s-badge tone="warning">No reply — available on Growth</s-badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </s-section>
+          )}
 
           {/* Order Attribution (Growth+) — hidden entirely for FREE so we
               show only one consolidated upgrade prompt on the analytics page. */}

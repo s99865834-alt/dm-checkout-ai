@@ -1086,23 +1086,102 @@ export async function getMessageCount(shopId, options = {}) {
  * Count comment messages this month for Free-tier shops (no comment automation).
  * Used to show Free users how many comments they received but couldn't auto-reply to.
  */
-export async function getMissedCommentCount(shopId) {
+// Intents that represent a real shopping signal worth replying to.
+const ACTIONABLE_INTENTS = ["purchase", "product_question", "variant_inquiry", "price_request"];
+
+// Buy/question signals for the conservative missed-opportunity filter. The
+// classifier tags emoji compliments ("🔥🔥🔥", "Thank you for my childhood")
+// as high-confidence `purchase`, so intent + confidence alone would badly
+// inflate the "missed comments" upgrade pitch. Only count comments whose text
+// actually reads like a question or buying interest — undercounting keeps the
+// pitch honest.
+const BUY_SIGNAL_RE =
+  /\?|how much|price|cost|buy|purchase|order|link|where (can|do|to)|available|availability|in stock|stock|ship|size|sizes|color|colour|sell|want one|want this|need one|get one|get this|do you have|is there/i;
+
+function isActionableMissedComment(row) {
+  if (!row) return false;
+  if (!ACTIONABLE_INTENTS.includes(row.ai_intent)) return false;
+  if ((row.ai_confidence ?? 0) < 0.9) return false;
+  const text = (row.text || "").trim();
+  // Needs real words (not just emoji/punctuation) and a concrete buy signal.
+  if (text.length < 8 || !/[a-zA-Z]{3,}/.test(text)) return false;
+  return BUY_SIGNAL_RE.test(text);
+}
+
+/**
+ * Comments received this calendar month that look like genuine purchase
+ * interest and got no automated reply (comment automation is Growth+).
+ * Conservative by design — see isActionableMissedComment. Returns newest
+ * first. Failure-safe (empty array).
+ *
+ * @param {string} shopId
+ * @param {{limit?: number}} [opts]
+ * @returns {Promise<Array<{id: string, text: string, from_username: string|null, created_at: string, ai_intent: string, ai_confidence: number}>>}
+ */
+export async function getMissedOpportunityComments(shopId, { limit = 10 } = {}) {
+  if (!shopId) return [];
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from("messages")
-    .select("id", { count: "exact", head: true })
+    .select("id, text, from_username, created_at, ai_intent, ai_confidence")
     .eq("shop_id", shopId)
     .eq("channel", "comment")
+    .gte("created_at", monthStart)
+    .in("ai_intent", ACTIONABLE_INTENTS)
+    .gte("ai_confidence", 0.9)
+    .not("text", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.error("getMissedOpportunityComments error", error);
+    return [];
+  }
+
+  return (data || []).filter(isActionableMissedComment).slice(0, limit);
+}
+
+/**
+ * Count of this month's missed purchase-intent comments (see
+ * getMissedOpportunityComments for the conservative criteria). Drives the
+ * FREE-plan upgrade banner, so accuracy beats volume.
+ */
+export async function getMissedCommentCount(shopId) {
+  const rows = await getMissedOpportunityComments(shopId, { limit: 500 });
+  return rows.length;
+}
+
+/**
+ * Revenue attributed to the app this calendar month (sum of attribution
+ * rows). Powers the honest ROI upgrade pitch ("drove $X — Growth costs
+ * $39"). Currency is taken from the first row; stores bill in a single
+ * currency in practice. Failure-safe (zero).
+ *
+ * @param {string} shopId
+ * @returns {Promise<{total: number, currency: string}>}
+ */
+export async function getAttributedRevenueThisMonth(shopId) {
+  const empty = { total: 0, currency: "USD" };
+  if (!shopId) return empty;
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+  const { data, error } = await supabase
+    .from("attribution")
+    .select("amount, currency")
+    .eq("shop_id", shopId)
     .gte("created_at", monthStart);
 
   if (error) {
-    console.error("getMissedCommentCount error", error);
-    return 0;
+    console.error("getAttributedRevenueThisMonth error", error);
+    return empty;
   }
 
-  return count || 0;
+  const rows = data || [];
+  const total = rows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  return { total, currency: rows.find((r) => r.currency)?.currency || "USD" };
 }
 
 /**

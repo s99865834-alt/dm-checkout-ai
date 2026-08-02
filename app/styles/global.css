@@ -775,6 +775,16 @@ input[type="date"].srInput {
   border-radius: 8px;
   background: #f6f6f7;
 }
+/* Missed-opportunity rows (FREE plan): visibly "inactive" — a conversation
+   that happened but wasn't handled. Dimmed content with a dashed border so
+   it reads as a gap, not an error. */
+.srMissedCard {
+  border-style: dashed;
+  background: #fafbfb;
+}
+.srMissedCard > .srVStack > *:not(:last-child) {
+  opacity: 0.6;
+}
 .srMsgInner {
   padding: 10px 12px;
   border: 1px solid #e1e3e5;
