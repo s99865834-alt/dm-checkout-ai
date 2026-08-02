@@ -563,6 +563,7 @@ HARD RULES:
 - ${languageRule}
 - ${styleRule}
 - Instagram DMs are plain text: no markdown, no [text](url) links — write a short lead-in then the bare URL.
+- Never use an em dash (—) in your reply; use a comma, period, or "and" instead. Em dashes read as AI-written.
 - Keep it short: 2-4 sentences, like a real DM. No sign-offs, no "feel free to reach out".`;
 }
 
@@ -623,7 +624,10 @@ function promisesLinkWithoutUrl(text) {
  * can give the model a corrective pass instead of sending a linkless promise.
  */
 function sanitizeReplyText(text, allowedUrls) {
-  let result = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2");
+  // Em dashes read as AI-written; the prompt bans them but the model can
+  // slip, so strip deterministically (comma reads naturally in DMs).
+  let result = text.replace(/\s*—\s*/g, ", ");
+  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2");
 
   let strippedUrl = false;
   const urlRegex = /https?:\/\/[^\s)]+/g;

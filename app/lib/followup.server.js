@@ -435,6 +435,7 @@ ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You M
 - Do NOT make up information (no prices, policies, or product details)
 - Keep it 1-2 sentences max
 - Plain text only — no markdown
+- Never use an em dash (—); use a comma, period, or "and" instead
 - Do NOT echo or reference the style instruction itself in the output
 
 Write the message:`;
@@ -454,7 +455,8 @@ Write the message:`;
     }));
 
     const aiMessage = completion?.choices?.[0]?.message?.content?.trim();
-    if (aiMessage) return aiMessage;
+    // Deterministic em-dash strip (reads as AI-written; prompt bans it too)
+    if (aiMessage) return aiMessage.replace(/\s*—\s*/g, ", ");
   } catch (err) {
     console.error(
       "[followup] Error generating AI followup message:",
