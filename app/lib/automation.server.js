@@ -1492,8 +1492,8 @@ ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the
 Write the response:`;
 
       const systemMessage = customInstruction 
-        ? `You are an assistant that generates Instagram DM replies. Follow the custom style instruction exactly - it is the most important requirement. Do not default to being friendly or helpful unless the instruction explicitly says so.`
-        : `You are a helpful assistant that generates customer service messages for Instagram DMs. Keep responses brief and friendly.`;
+        ? `You are an assistant that generates Instagram DM replies. Follow the custom style instruction exactly - it is the most important requirement. Do not default to being friendly or helpful unless the instruction explicitly says so. Never use an em dash (—) in your reply; use a comma, period, or "and" instead.`
+        : `You are a helpful assistant that generates customer service messages for Instagram DMs. Keep responses brief and friendly. Never use an em dash (—) in your reply; use a comma, period, or "and" instead.`;
       
       const response = await openai.chat.completions.create(completionParamsForModel(REPLY_MODEL, {
         model: REPLY_MODEL,
@@ -1506,7 +1506,7 @@ Write the response:`;
       }));
 
       if (response?.choices?.[0]?.message?.content) {
-        return response.choices[0].message.content.trim();
+        return stripEmDashes(response.choices[0].message.content.trim());
       }
     }
   } catch (error) {
@@ -1558,7 +1558,7 @@ Write the response:`;
       const response = await openai.chat.completions.create(completionParamsForModel(REPLY_MODEL, {
         model: REPLY_MODEL,
         messages: [
-          { role: "system", content: "You are an assistant that generates brief Instagram DM replies. Keep responses short and natural." },
+          { role: "system", content: "You are an assistant that generates brief Instagram DM replies. Keep responses short and natural. Never use an em dash (—) in your reply; use a comma, period, or \"and\" instead." },
           { role: "user", content: prompt },
         ],
         temperature: 0.3,
@@ -1566,7 +1566,7 @@ Write the response:`;
       }));
 
       if (response?.choices?.[0]?.message?.content) {
-        return response.choices[0].message.content.trim();
+        return stripEmDashes(response.choices[0].message.content.trim());
       }
     }
   } catch (error) {
@@ -1619,12 +1619,41 @@ async function canSendFollowUp(message, shop, plan) {
  *   the AI answers using this product context (e.g. "does it come in black?" → answer from actual options).
  * @returns {string} - Generated reply message
  */
+// A comment is "compliment-style" when it carries no explicit ask — no
+// question, no buy/price/link/variant language. These commenters are warm
+// leads, not active buyers, so the reply must open as a genuine thank-you
+// with the link as a casual invitation rather than a pitch (a hard sell in
+// response to "this is awesome!" is what reads as bot spam).
+const EXPLICIT_ASK_RE =
+  /\?|how much|price|cost|buy|purchase|order|link|where|available|availability|in stock|stock|ship|size|sizes|colou?r|sell|want (one|this|it)|need (one|this)|take it|get one|get this|do you have|is there/i;
+
+function isComplimentOnly(text) {
+  const t = (text || "").trim();
+  if (!t) return false;
+  return !EXPLICIT_ASK_RE.test(t);
+}
+
+// Em dashes read as AI-written. The prompts ban them, but models slip, so
+// every customer-facing reply is also stripped deterministically (a comma
+// reads naturally in a DM). Mirrors sales-agent's sanitizeReplyText.
+function stripEmDashes(text) {
+  if (!text) return text;
+  return text.replace(/\s*—\s*/g, ", ").replace(/,\s+([.!?,;])/g, "$1");
+}
+
 export async function generateReplyMessage(brandVoice, productName = null, checkoutUrl, intent = null, productPrice = null, productPageUrl = null, originalMessage = null, storeInfo = null, channelContext = null, productContextForReply = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
   const safeChannelContext = intent === "store_question"
     ? { ...(channelContext || {}), lastProductLink: null }
     : channelContext;
+
+  // Warmth-first mode: purchase-intent reply to a comment that was really a
+  // compliment ("🔥🔥🔥", "this is awesome!"). Same link, softer delivery.
+  const warmthFirst =
+    intent === "purchase" &&
+    safeChannelContext?.inboundChannel === "comment" &&
+    isComplimentOnly(originalMessage);
 
   const POLICY_KEYWORDS = [
     { pattern: /refund|return/i, token: "{{refund_policy_url}}" },
@@ -1684,7 +1713,9 @@ export async function generateReplyMessage(brandVoice, productName = null, check
     casual: `Hey! 👋 ${productName ? `Love that you're interested in ${productName}! ` : ""}Here's the link: ${checkoutUrl}\n\nHit me up if you need anything!`,
   };
 
-  let message = toneTemplates[tone] || toneTemplates.friendly;
+  let message = warmthFirst
+    ? `Thank you so much — that really means a lot! If you'd ever like ${productName ? productName : "one"} for yourself, it's here: ${checkoutUrl}`
+    : (toneTemplates[tone] || toneTemplates.friendly);
 
   // Use AI generation for product_question (needs PDP link), store_question (needs store info), or if custom instruction provided
   // Always use AI for product_question since it needs PDP link, even without custom instruction
@@ -1805,7 +1836,11 @@ ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previou
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
 ${safeChannelContext?.sizeConfirmation ? `- The customer was asked what size they want and replied with: "${safeChannelContext.sizeConfirmation}". Confirm their size choice and send the checkout link. Keep it brief.` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
-${intent === "purchase" && originalMessage ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
+${warmthFirst ? `COMPLIMENT COMMENT — WARMTH FIRST: This person left a compliment on an Instagram post ("${originalMessage}"), they did NOT ask to buy anything. Your reply is a DM landing in their inbox, so it must read like the store owner personally saying thanks:
+- Open with a genuine, specific thank-you that matches their energy (react to what they actually said — don't use a generic "thanks for your interest").
+- Then casually mention it's available if they'd ever like one of their own, with the link. It's an invitation, not a pitch.
+- NO sales pressure of any kind: no "don't miss out", no "grab yours now", no urgency, no discounts, no exclamation-heavy hype. One warm sentence + one casual availability sentence with the link is the whole reply.` : ""}
+${intent === "purchase" && originalMessage && !warmthFirst ? `The customer's original message was: "${originalMessage}". Analyze this message carefully:
 - If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it", "How do I purchase?", "I'm ready to buy"), then direct them to checkout.
 - If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!", "So cool!", "Love this product!"), then acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing. Don't assume they're ready to buy immediately.` : ""}
 ${intent === "purchase" && !originalMessage ? `The customer expressed interest in a product. This could be explicit purchase intent OR enthusiastic interest. Read the context carefully and respond appropriately.` : ""}
@@ -1823,7 +1858,8 @@ Requirements:
 - ${buildLanguageInstruction(brandVoice)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
-${intent === "purchase" ? `- CRITICAL: Read the original message carefully. If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it"), direct them to checkout. If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!"), acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing.` : ""}
+${warmthFirst ? `- CRITICAL: Thank-you first, link as a casual invitation second. No sales pressure or urgency language whatsoever.` : ""}
+${intent === "purchase" && !warmthFirst ? `- CRITICAL: Read the original message carefully. If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it"), direct them to checkout. If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!"), acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing.` : ""}
 ${intent === "price_request" ? `- CRITICAL: Start your response by acknowledging their price question (e.g., "Yeah!" or "It's..." or "You can see it's...")` : ""}
 ${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge their product question` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
@@ -1850,13 +1886,15 @@ Write the response:`;
 2. ONLY use information explicitly provided in the user's message or context
 3. If information is not provided, say "I don't have that information" or direct them to check the provided links
 4. Follow the custom style instruction exactly - it is the most important requirement after accuracy
-5. Do not default to being friendly or helpful unless the instruction explicitly says so.`
+5. Do not default to being friendly or helpful unless the instruction explicitly says so.
+6. Never use an em dash (—) in your reply; use a comma, period, or "and" instead.`
           : `You are an assistant that generates customer service messages for Instagram DMs. CRITICAL RULES:
 1. NEVER make up, invent, or fabricate any information (email addresses, URLs, contact info, product details, prices, policies, etc.)
 2. ONLY use information explicitly provided in the user's message or context
 3. If information is not provided, say "I don't have that information" or direct them to check the provided links
 4. Keep responses brief and friendly
-5. Accuracy is more important than being helpful - never guess or assume`;
+5. Accuracy is more important than being helpful - never guess or assume
+6. Never use an em dash (—) in your reply; use a comma, period, or "and" instead.`;
         
         const response = await openai.chat.completions.create(completionParamsForModel(REPLY_MODEL, {
           model: REPLY_MODEL,
@@ -1924,6 +1962,6 @@ Write the response:`;
     }
   }
 
-  return message;
+  return stripEmDashes(message);
 }
 
