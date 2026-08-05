@@ -4,7 +4,7 @@
  */
 
 import OpenAI from "openai";
-import { getShopPlanAndUsage, incrementUsage, logLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -98,6 +98,43 @@ export async function sendDmReply(shopId, igUserId, text) {
   }
 
   return { queued: true };
+}
+
+/**
+ * Persist links_sent rows BEFORE the reply goes out. Instagram fetches link
+ * previews the instant a DM is delivered, so rows written after the send
+ * lose that race: the preview fetch 404s and the DM renders without a card.
+ * Returns the inserted link_ids so a failed send can roll them back.
+ *
+ * @param {Object} shop - Shop object
+ * @param {string} messageId - Triggering message UUID
+ * @param {string} replyText - Outbound reply text
+ * @param {Array<{linkId: string, url?: string, productId?: string, variantId?: string}>} links
+ * @returns {Promise<string[]>} inserted link_ids
+ */
+async function persistReplyLinks(shop, messageId, replyText, links) {
+  const inserted = [];
+  for (const link of links || []) {
+    if (!link?.linkId) continue;
+    await logLinkSent({
+      shopId: shop.id,
+      messageId,
+      productId: link.productId || null,
+      variantId: link.variantId || null,
+      url: link.url || null,
+      linkId: link.linkId,
+      replyText,
+    });
+    inserted.push(link.linkId);
+  }
+  return inserted;
+}
+
+/** Undo persistReplyLinks after a failed send (keeps analytics honest). */
+async function rollbackReplyLinks(shopId, linkIds) {
+  for (const linkId of linkIds || []) {
+    await deleteLinkSent(shopId, linkId);
+  }
 }
 
 /**
@@ -304,25 +341,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
+        // Tool-minted links go in BEFORE the send so the /{linkId} redirect
+        // resolves for Instagram's instant preview fetch.
+        const insertedLinkIds = await persistReplyLinks(shop, message.id, agentResult.text, agentResult.links);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, agentResult.text);
         if (sendResult?.sent === false) {
+          await rollbackReplyLinks(shop.id, insertedLinkIds);
           return sendResult;
         }
         await incrementUsage(shop.id, 1);
-
-        // Log each tool-minted link so the /{linkId} redirect resolves and
-        // clicks/sales attribute back to this DM.
-        for (const link of agentResult.links) {
-          await logLinkSent({
-            shopId: shop.id,
-            messageId: message.id,
-            productId: link.productId,
-            variantId: link.variantId || null,
-            url: link.url,
-            linkId: link.linkId,
-            replyText: agentResult.text,
-          });
-        }
 
         logger.debug(
           `[automation] ✅ Sales-agent DM reply sent for message ${message.id} (intent=${intent}, links=${agentResult.links.length})`
@@ -514,19 +541,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
               return { sent: false, reason: "Already replied to this message" };
             }
+            const insertedLinkIds = await persistReplyLinks(shop, message.id, replyText, [
+              { linkId, url: checkoutUrl, productId: lastProductLink.product_id, variantId: resolvedVariantId },
+            ]);
             const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
-            if (sendResult?.sent === false) return sendResult;
+            if (sendResult?.sent === false) {
+              await rollbackReplyLinks(shop.id, insertedLinkIds);
+              return sendResult;
+            }
             await incrementUsage(shop.id, 1);
-
-            await logLinkSent({
-              shopId: shop.id,
-              messageId: message.id,
-              productId: lastProductLink.product_id,
-              variantId: resolvedVariantId,
-              url: checkoutUrl,
-              linkId,
-              replyText,
-            });
 
             logger.debug(`[automation] ✅ Size-resolved checkout sent for message ${message.id} (size=${inferredSize}, variant=${resolvedVariantId})`);
             return { sent: true };
@@ -653,35 +676,20 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
+        // Checkout + (when present) PDP rows go in BEFORE the send so each
+        // /{linkId} redirect resolves for Instagram's instant preview fetch.
+        const insertedLinkIds = await persistReplyLinks(shop, message.id, replyText, [
+          { linkId, url: checkoutUrl, productId: productMapping.product_id, variantId: productMapping.variant_id },
+          ...(productPageUrl && pdpLinkId
+            ? [{ linkId: pdpLinkId, url: productPageUrl, productId: productMapping.product_id, variantId: productMapping.variant_id }]
+            : []),
+        ]);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
         if (sendResult?.sent === false) {
+          await rollbackReplyLinks(shop.id, insertedLinkIds);
           return sendResult;
         }
         await incrementUsage(shop.id, 1);
-
-        // Log both the checkout link and (when present) the PDP link. Each gets
-        // its own links_sent row so the /{linkId} redirect can resolve them
-        // independently and clicks are attributed to the right URL.
-        await logLinkSent({
-          shopId: shop.id,
-          messageId: message.id,
-          productId: productMapping.product_id,
-          variantId: productMapping.variant_id,
-          url: checkoutUrl,
-          linkId,
-          replyText,
-        });
-        if (productPageUrl && pdpLinkId) {
-          await logLinkSent({
-            shopId: shop.id,
-            messageId: message.id,
-            productId: productMapping.product_id,
-            variantId: productMapping.variant_id,
-            url: productPageUrl,
-            linkId: pdpLinkId,
-            replyText,
-          });
-        }
 
         logger.debug(
           `[automation] ✅ Contextual DM reply sent for message ${message.id} (origin=${originChannel})`
@@ -843,30 +851,18 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           return { sent: false, reason: "Already replied to this message" };
         }
+        const insertedLinkIds = await persistReplyLinks(shop, message.id, replyText, [
+          { linkId, url: checkoutUrl, productId: `gid://shopify/Product/${numericProductId}`, variantId: variantGid },
+          ...(productPageUrl && pdpLinkId
+            ? [{ linkId: pdpLinkId, url: productPageUrl, productId: `gid://shopify/Product/${numericProductId}`, variantId: variantGid }]
+            : []),
+        ]);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
-        if (sendResult?.sent === false) return sendResult;
-        await incrementUsage(shop.id, 1);
-
-        await logLinkSent({
-          shopId: shop.id,
-          messageId: message.id,
-          productId: `gid://shopify/Product/${numericProductId}`,
-          variantId: variantGid,
-          url: checkoutUrl,
-          linkId,
-          replyText,
-        });
-        if (productPageUrl && pdpLinkId) {
-          await logLinkSent({
-            shopId: shop.id,
-            messageId: message.id,
-            productId: `gid://shopify/Product/${numericProductId}`,
-            variantId: variantGid,
-            url: productPageUrl,
-            linkId: pdpLinkId,
-            replyText,
-          });
+        if (sendResult?.sent === false) {
+          await rollbackReplyLinks(shop.id, insertedLinkIds);
+          return sendResult;
         }
+        await incrementUsage(shop.id, 1);
 
         logger.debug(`[automation] ✅ Product-matched DM reply sent for message ${message.id} (product: ${productName})`);
         return { sent: true };
@@ -1379,40 +1375,30 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       console.warn("[automation] Missing comment ID for private reply");
       return { sent: false, reason: "Missing comment ID for private reply" };
     }
+    // 9b. Persist checkout + (when present) PDP rows BEFORE the send so each
+    // /{linkId} redirect resolves for Instagram's instant preview fetch.
+    const insertedLinkIds = await persistReplyLinks(shop, message.id, replyText, [
+      { linkId, url: checkoutUrl, productId: productMapping.product_id, variantId: productMapping.variant_id },
+      ...(productPageUrl && pdpLinkId
+        ? [{ linkId: pdpLinkId, url: productPageUrl, productId: productMapping.product_id, variantId: productMapping.variant_id }]
+        : []),
+    ]);
+
     const fromUserId = message.from_user_id ?? message.fromUserId;
-    if (commentExternalId.startsWith("test_comment_") && fromUserId) {
-      await sendInstagramDm(shop.id, fromUserId, replyText);
-      logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} for comment ${message.id}`);
-    } else {
-      await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+    try {
+      if (commentExternalId.startsWith("test_comment_") && fromUserId) {
+        await sendInstagramDm(shop.id, fromUserId, replyText);
+        logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} for comment ${message.id}`);
+      } else {
+        await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+      }
+    } catch (sendError) {
+      await rollbackReplyLinks(shop.id, insertedLinkIds);
+      throw sendError;
     }
 
     // 10. Increment usage count
     await incrementUsage(shop.id, 1);
-
-    // 11. Log the sent link(s). Checkout + PDP get their own links_sent rows
-    // so the srai.link redirect resolves each correctly and click tracking
-    // stays attributed to the right destination.
-    await logLinkSent({
-      shopId: shop.id,
-      messageId: message.id,
-      productId: productMapping.product_id,
-      variantId: productMapping.variant_id,
-      url: checkoutUrl,
-      linkId,
-      replyText,
-    });
-    if (productPageUrl && pdpLinkId) {
-      await logLinkSent({
-        shopId: shop.id,
-        messageId: message.id,
-        productId: productMapping.product_id,
-        variantId: productMapping.variant_id,
-        url: productPageUrl,
-        linkId: pdpLinkId,
-        replyText,
-      });
-    }
 
     logger.debug(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
