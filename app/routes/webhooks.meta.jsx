@@ -411,13 +411,19 @@ export const action = async ({ request }) => {
                 if (outboundCustomerId && hasMessagePayload) {
                   try {
                     const echoText = message.message?.text || null;
+                    // Meta stamps echoes with the app_id of the API app that
+                    // sent the message (absent for manual Instagram-inbox
+                    // replies). Logged at info level so we can tell whether a
+                    // "manual" takeover is really the merchant typing or a
+                    // competing automation tool (e.g. ManyChat) on the account.
+                    const echoAppId = message.message?.app_id ?? message.app_id ?? null;
                     const isBotEcho = echoText
                       ? await isRecentOutboundReply(shopId, echoText, 30 * 60 * 1000)
                       : false;
                     if (!isBotEcho) {
                       await recordHumanTakeover(shopId, outboundCustomerId);
-                      logger.debug(
-                        `[webhook] Manual owner reply detected → automation paused for user ${outboundCustomerId}`
+                      logger.info(
+                        `[webhook] Non-bot outbound reply detected → automation paused for user ${outboundCustomerId} (echo app_id=${echoAppId ?? "none/manual"})`
                       );
                     }
                   } catch (error) {

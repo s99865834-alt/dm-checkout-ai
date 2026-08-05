@@ -4,28 +4,23 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 export default function SupportPage() {
     return (
       <s-page heading="Support">
-        <s-section heading="We're Here to Help">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              We're committed to providing you with the best experience using SocialRepl.ai. Whether you have a question about features, need help with setup, or want to share feedback — we're here for you.
-            </s-paragraph>
-          </s-stack>
-        </s-section>
-
-        <s-section heading="Get in Touch">
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              If you have any questions or need support, please reach out:
-            </s-paragraph>
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-link href="mailto:support@socialrepl.ai" variant="primary">
-                support@socialrepl.ai
-              </s-link>
-            </s-box>
-            <s-paragraph tone="subdued">
-              We typically respond within 24 hours during business days. For urgent matters, please mark your email as urgent and we'll prioritize your request.
-            </s-paragraph>
-          </s-stack>
+        <s-section heading="We're here to help">
+          <div className="srVStack">
+            <span className="srCardDesc">
+              Whether you have a question about features, need help with setup, or want to share
+              feedback, we&apos;re here for you.
+            </span>
+            <div className="srHStackTight">
+              <s-button href="mailto:support@socialrepl.ai" variant="primary">
+                Email support
+              </s-button>
+              <s-link href="mailto:support@socialrepl.ai">support@socialrepl.ai</s-link>
+            </div>
+            <span className="srTextSubdued">
+              We typically respond within 24 hours on business days. For urgent matters, mark your
+              email as urgent and we&apos;ll prioritize it.
+            </span>
+          </div>
         </s-section>
 
         <s-section heading="Common Questions">
