@@ -21,6 +21,16 @@ function looksLikeBrowser(request) {
   return BROWSER_UA_PATTERNS.some((p) => ua.includes(p));
 }
 
+async function fetchLinkUrl(linkId) {
+  const { data: row, error } = await supabase
+    .from("links_sent")
+    .select("url")
+    .eq("link_id", linkId)
+    .maybeSingle();
+  if (error) return null;
+  return row?.url || null;
+}
+
 /**
  * Resolve a link_id to its destination URL, logging the click when
  * appropriate. Returns the URL string, or null when the link doesn't exist.
@@ -28,13 +38,16 @@ function looksLikeBrowser(request) {
 export async function resolveTrackedLink(linkId, request) {
   if (!linkId) return null;
 
-  const { data: row, error } = await supabase
-    .from("links_sent")
-    .select("url")
-    .eq("link_id", linkId)
-    .maybeSingle();
-
-  if (error || !row?.url) return null;
+  let url = await fetchLinkUrl(linkId);
+  if (!url) {
+    // Race guard: Instagram fetches the link preview the instant a DM is
+    // delivered, which can arrive before the links_sent insert commits.
+    // Links are now persisted before sending, but one brief retry keeps
+    // queued sends and any remaining ordering edge from 404ing the preview.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    url = await fetchLinkUrl(linkId);
+  }
+  if (!url) return null;
 
   const isInfoLink = linkId.startsWith("info_");
   if (!isInfoLink && looksLikeBrowser(request)) {
@@ -48,5 +61,5 @@ export async function resolveTrackedLink(linkId, request) {
     }
   }
 
-  return row.url;
+  return url;
 }

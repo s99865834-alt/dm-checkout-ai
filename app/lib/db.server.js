@@ -648,6 +648,23 @@ export async function logLinkSent(params) {
 }
 
 /**
+ * Remove a links_sent row. Used to roll back links that were persisted
+ * BEFORE a reply send (so Instagram's instant preview fetch can resolve
+ * them) when the send itself then fails.
+ */
+export async function deleteLinkSent(shopId, linkId) {
+  if (!shopId || !linkId) return;
+  const { error } = await supabase
+    .from("links_sent")
+    .delete()
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId);
+  if (error) {
+    console.warn("[db] deleteLinkSent error:", error.message);
+  }
+}
+
+/**
  * Fetch recent inbound messages and related outbound replies/links for a specific IG user.
  * Used to provide light "thread context" for conversation replies (e.g. after follow-ups).
  */
