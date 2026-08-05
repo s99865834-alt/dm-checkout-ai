@@ -10,12 +10,7 @@ export default function SupportPage() {
               Whether you have a question about features, need help with setup, or want to share
               feedback, we&apos;re here for you.
             </span>
-            <div className="srHStackTight">
-              <s-button href="mailto:support@socialrepl.ai" variant="primary">
-                Email support
-              </s-button>
-              <s-link href="mailto:support@socialrepl.ai">support@socialrepl.ai</s-link>
-            </div>
+            <s-link href="mailto:support@socialrepl.ai">support@socialrepl.ai</s-link>
             <span className="srTextSubdued">
               We typically respond within 24 hours on business days. For urgent matters, mark your
               email as urgent and we&apos;ll prioritize it.
