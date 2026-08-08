@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import supabase from "../lib/supabase.server";
@@ -26,6 +26,23 @@ import logger from "../lib/logger.server";
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
 const META_INSTAGRAM_APP_SECRET = process.env.META_INSTAGRAM_APP_SECRET;
+
+// Echo app_id taxonomy for outbound-message classification:
+//  - OUR_ECHO_APP_IDS  → our own bot replies echoing back (never a takeover).
+//  - COMPETING_BOT_APP_IDS (env, comma-separated) → confirmed third-party
+//    automation tools (ManyChat etc.). Their canned blasts must NOT pause our
+//    automation — we yield to humans, not to competitor bots.
+//  - anything else (unknown app_id, or none = manual Instagram-inbox reply)
+//    → treated as human, pauses automation. Conservative default: a
+//    misidentified tool just keeps today's behavior, while a misidentified
+//    human would make us talk over the merchant.
+const OUR_ECHO_APP_IDS = [process.env.META_APP_ID, process.env.META_INSTAGRAM_APP_ID]
+  .filter(Boolean)
+  .map(String);
+const COMPETING_BOT_APP_IDS = (process.env.COMPETING_BOT_APP_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 /**
  * In-process semaphore: caps concurrent background automation chains so a burst
@@ -413,18 +430,34 @@ export const action = async ({ request }) => {
                     const echoText = message.message?.text || null;
                     // Meta stamps echoes with the app_id of the API app that
                     // sent the message (absent for manual Instagram-inbox
-                    // replies). Logged at info level so we can tell whether a
-                    // "manual" takeover is really the merchant typing or a
-                    // competing automation tool (e.g. ManyChat) on the account.
+                    // replies). Our own app_id (or the recent-reply text
+                    // match, for payloads without app_id) means it's just our
+                    // reply echoing back.
                     const echoAppId = message.message?.app_id ?? message.app_id ?? null;
-                    const isBotEcho = echoText
-                      ? await isRecentOutboundReply(shopId, echoText, 30 * 60 * 1000)
-                      : false;
-                    if (!isBotEcho) {
-                      await recordHumanTakeover(shopId, outboundCustomerId);
-                      logger.info(
-                        `[webhook] Non-bot outbound reply detected → automation paused for user ${outboundCustomerId} (echo app_id=${echoAppId ?? "none/manual"})`
-                      );
+                    const isOurEcho =
+                      (echoAppId && OUR_ECHO_APP_IDS.includes(String(echoAppId))) ||
+                      (echoText
+                        ? await isRecentOutboundReply(shopId, echoText, 30 * 60 * 1000)
+                        : false);
+                    if (!isOurEcho) {
+                      // Any foreign app_id = another tool operating this
+                      // account. Record it (feeds the home page banner and the
+                      // admin contested-inbox flag) whether or not we pause.
+                      if (echoAppId) {
+                        await recordToolDetection(shopId, echoAppId, outboundCustomerId);
+                      }
+                      const isKnownBot =
+                        echoAppId && COMPETING_BOT_APP_IDS.includes(String(echoAppId));
+                      if (isKnownBot) {
+                        logger.info(
+                          `[webhook] Competing automation reply (app_id=${echoAppId}) → not pausing for user ${outboundCustomerId}`
+                        );
+                      } else {
+                        await recordHumanTakeover(shopId, outboundCustomerId, echoAppId);
+                        logger.info(
+                          `[webhook] Non-bot outbound reply detected → automation paused for user ${outboundCustomerId} (echo app_id=${echoAppId ?? "none/manual"})`
+                        );
+                      }
                     }
                   } catch (error) {
                     console.error(`[webhook] Takeover detection error:`, error);
