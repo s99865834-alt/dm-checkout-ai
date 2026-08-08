@@ -480,19 +480,111 @@ export async function isRecentOutboundReply(shopId, text, windowMs = 5 * 60 * 10
 const HUMAN_TAKEOVER_PAUSE_MS =
   (parseFloat(process.env.HUMAN_TAKEOVER_PAUSE_HOURS || "6") || 6) * 60 * 60 * 1000;
 
-export async function recordHumanTakeover(shopId, igUserId) {
+export async function recordHumanTakeover(shopId, igUserId, appId = null) {
   if (!shopId || !igUserId) return;
   const { error } = await supabase.from("human_takeovers").upsert(
     {
       shop_id: shopId,
       ig_user_id: String(igUserId),
       last_human_at: new Date().toISOString(),
+      // Echo app_id (null for manual Instagram-inbox replies). Kept for
+      // auditing which takeovers were really humans vs unidentified tools.
+      app_id: appId ? String(appId) : null,
     },
     { onConflict: "shop_id,ig_user_id" }
   );
   if (error) {
     console.error("[db] recordHumanTakeover error:", error.message);
   }
+}
+
+/**
+ * Third-party automation tools detected on the merchant's Instagram account.
+ * Any outbound echo carrying an app_id that isn't ours gets upserted here,
+ * one row per (shop, app, customer), so "how many conversations has this
+ * tool touched recently" is a cheap count. Powers the home page banner and
+ * the admin contested-inbox flag.
+ */
+export async function recordToolDetection(shopId, appId, igUserId) {
+  if (!shopId || !appId || !igUserId) return;
+  const { error } = await supabase.from("tool_detections").upsert(
+    {
+      shop_id: shopId,
+      app_id: String(appId),
+      ig_user_id: String(igUserId),
+      last_seen_at: new Date().toISOString(),
+    },
+    { onConflict: "shop_id,app_id,ig_user_id" }
+  );
+  if (error) {
+    console.warn("[db] recordToolDetection error:", error.message);
+  }
+}
+
+/**
+ * Competing-tool status for one shop: detected when the same non-SocialRepl
+ * app_id touched >= 3 distinct conversations in the last 7 days (threshold
+ * keeps a one-off Business-Suite manual reply from tripping the banner).
+ * Fails closed ({detected:false}) — banner is informational only.
+ */
+export async function getCompetingToolStatus(shopId) {
+  const empty = { detected: false, appId: null, conversations: 0 };
+  if (!shopId) return empty;
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("tool_detections")
+    .select("app_id, ig_user_id")
+    .eq("shop_id", shopId)
+    .gte("last_seen_at", since);
+  if (error) {
+    console.warn("[db] getCompetingToolStatus error:", error.message);
+    return empty;
+  }
+  const byApp = new Map();
+  for (const row of data || []) {
+    if (!byApp.has(row.app_id)) byApp.set(row.app_id, new Set());
+    byApp.get(row.app_id).add(row.ig_user_id);
+  }
+  let top = empty;
+  for (const [appId, users] of byApp) {
+    if (users.size >= 3 && users.size > top.conversations) {
+      top = { detected: true, appId, conversations: users.size };
+    }
+  }
+  return top;
+}
+
+/**
+ * Shop IDs with a competing tool detected in the last 7 days (>= 3 distinct
+ * conversations per app), for the admin dashboard. Returns a Map of
+ * shop_id -> { appId, conversations }.
+ */
+export async function getShopsWithToolDetections() {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("tool_detections")
+    .select("shop_id, app_id, ig_user_id")
+    .gte("last_seen_at", since);
+  if (error) {
+    console.warn("[db] getShopsWithToolDetections error:", error.message);
+    return new Map();
+  }
+  const byShopApp = new Map();
+  for (const row of data || []) {
+    const key = `${row.shop_id}|${row.app_id}`;
+    if (!byShopApp.has(key)) byShopApp.set(key, new Set());
+    byShopApp.get(key).add(row.ig_user_id);
+  }
+  const result = new Map();
+  for (const [key, users] of byShopApp) {
+    if (users.size < 3) continue;
+    const [shopId, appId] = key.split("|");
+    const existing = result.get(shopId);
+    if (!existing || users.size > existing.conversations) {
+      result.set(shopId, { appId, conversations: users.size });
+    }
+  }
+  return result;
 }
 
 /**

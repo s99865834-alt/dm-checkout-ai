@@ -3,7 +3,7 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -56,11 +56,12 @@ export const loader = async ({ request }) => {
   let reviewEligible = false;
   let lastInboundMessageAt = null;
   let messageAccess = "unknown";
+  let competingTool = { detected: false, appId: null, conversations: 0 };
 
   if (shop?.id) {
     let attributionCount = 0;
     let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess, competingTool] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -107,6 +108,10 @@ export const loader = async ({ request }) => {
           ).catch(() => "unknown"),
           new Promise((resolve) => setTimeout(() => resolve("pending"), 1500)),
         ]),
+        // Another automation tool detected on this Instagram account (via
+        // outbound echo app_ids). Powers the "avoiding duplicate replies"
+        // banner so a quiet dashboard is explained instead of mysterious.
+        getCompetingToolStatus(shop.id).catch(() => ({ detected: false, appId: null, conversations: 0 })),
       ]);
     reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
   }
@@ -169,7 +174,7 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -456,7 +461,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -776,6 +781,27 @@ export default function Index() {
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {/* Contested inbox: another automation tool is replying on this account.
+          Explain why the dashboard may look quiet and put the choice with the
+          merchant instead of silently losing the race to reply. */}
+      {isConnected && competingTool?.detected && (
+        <s-banner tone="info">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                Another messaging tool appears to be replying on this Instagram account.
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                To keep customers from getting duplicate replies, SocialRepl.ai steps aside in
+                conversations that have already been answered. If you want SocialRepl.ai handling
+                your messages (with product answers, checkout links, and sale attribution), turn off
+                message automation in the other tool. See Support for details.
+              </span>
+            </div>
+            <s-button href="/app/support" variant="secondary" size="slim">Learn more</s-button>
           </div>
         </s-banner>
       )}

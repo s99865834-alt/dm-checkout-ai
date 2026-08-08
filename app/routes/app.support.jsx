@@ -88,6 +88,30 @@ export default function SupportPage() {
               </div>
             </details>
             <details className="srFaqItem">
+              <summary className="srFaqSummary">I use another automation tool (like ManyChat). How do they work together?</summary>
+              <div className="srFaqAnswer">
+                <p>
+                  Running two tools that both answer Instagram messages on the same account causes
+                  problems: customers get two different replies, and whichever tool answers second
+                  looks broken. SocialRepl.ai protects your customers from that automatically. When
+                  it detects that a conversation has already been answered by someone else (you or
+                  another tool), it steps aside in that conversation instead of piling on.
+                </p>
+                <p>
+                  The trade-off: while another tool is answering first, SocialRepl.ai can&apos;t send
+                  product answers or checkout links in those conversations, so you lose the sale
+                  tracking and attribution this app provides. If you want SocialRepl.ai to be your
+                  sales assistant, turn off message automation (DM and comment replies) in the other
+                  tool. You can keep using other tools for things that don&apos;t reply to customers,
+                  like scheduling posts.
+                </p>
+                <p>
+                  When we detect another tool actively replying on your account, we show a notice on
+                  your Home page so you always know why message counts might look lower than expected.
+                </p>
+              </div>
+            </details>
+            <details className="srFaqItem">
               <summary className="srFaqSummary">How do I map products to posts?</summary>
               <p className="srFaqAnswer">On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</p>
             </details>

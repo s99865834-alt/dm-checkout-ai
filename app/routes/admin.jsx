@@ -8,7 +8,7 @@ import {
   isAdminAuthConfigured,
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
-import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems } from "../lib/db.server";
+import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections } from "../lib/db.server";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
 import { cached } from "../lib/loader-cache.server";
@@ -44,7 +44,12 @@ export const loader = async ({ request }) => {
     const url = new URL(request.url);
     const shopId = url.searchParams.get("queue_shop_id") || null;
     const status = url.searchParams.get("queue_status") || null;
-    const stores = await getAdminDashboardStores();
+    const [stores, toolDetections] = await Promise.all([
+      getAdminDashboardStores(),
+      // Contested inboxes: shops where another automation tool has been
+      // replying (detected via outbound echo app_ids in the last 7 days).
+      getShopsWithToolDetections().catch(() => new Map()),
+    ]);
 
     // Self-heal: make sure every Instagram-Login account is subscribed to
     // message/comment webhooks (accounts connected before the subscribe step
@@ -72,7 +77,11 @@ export const loader = async ({ request }) => {
     const storesWithIg = stores.map((s, i) => {
       const result = igLookups[i];
       const info = result.status === "fulfilled" ? result.value : null;
-      return { ...s, instagram_username: info?.username || null };
+      return {
+        ...s,
+        instagram_username: info?.username || null,
+        competing_tool: toolDetections.get(s.shop_id) || null,
+      };
     });
 
     // Total Shopify sales YTD per store (live Admin API, cached 1h, best-effort).
@@ -530,6 +539,14 @@ export default function Admin() {
                     ) : (
                       <span style={styles.igMuted}>Not connected</span>
                     )}
+                    {row.competing_tool && (
+                      <span
+                        style={styles.contestedBadge}
+                        title={`Another automation tool (app_id ${row.competing_tool.appId}) replied in ${row.competing_tool.conversations} conversations in the last 7 days`}
+                      >
+                        Other bot
+                      </span>
+                    )}
                   </td>
                   <td style={styles.td}>
                     <AutomationCell row={row} />
@@ -897,6 +914,16 @@ const styles = {
     backgroundColor: "#78350f",
     borderRadius: "4px",
     color: "#fde68a",
+    whiteSpace: "nowrap",
+  },
+  contestedBadge: {
+    marginLeft: "0.5rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#4c1d95",
+    borderRadius: "4px",
+    color: "#ddd6fe",
     whiteSpace: "nowrap",
   },
 };
