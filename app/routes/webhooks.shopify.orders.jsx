@@ -100,6 +100,12 @@ function inferChannel(utmMedium, utmSource) {
  *   channel, and amount to the attribution table — see
  *   app/lib/db.server.js -> recordAttribution.
  */
+// Webhooks are POST-only. Bots and crawlers GET this URL anyway; without a
+// loader, React Router tries to render the route as a page and logs a noisy
+// "Matched leaf route ... does not have an element" warning. Answer GETs with
+// a plain 405 instead.
+export const loader = () => new Response("Method Not Allowed", { status: 405 });
+
 export const action = async ({ request }) => {
   logger.debug(`[webhook] orders/create webhook received`);
   

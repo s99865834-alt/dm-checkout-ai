@@ -15,6 +15,10 @@ import db from "../db.server";
 import { markShopUninstalled } from "../lib/db.server";
 import logger from "../lib/logger.server";
 
+// Webhooks are POST-only; answer crawler GETs with a 405 instead of letting
+// React Router warn about rendering a component-less route.
+export const loader = () => new Response("Method Not Allowed", { status: 405 });
+
 export const action = async ({ request }) => {
   logger.debug(`[webhook] app/uninstalled webhook received`);
 

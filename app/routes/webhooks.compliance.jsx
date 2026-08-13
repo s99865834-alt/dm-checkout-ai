@@ -34,6 +34,10 @@ import { authenticateWebhookTolerant } from "../lib/webhook-auth.server";
 import supabase from "../lib/supabase.server";
 import logger from "../lib/logger.server";
 
+// Webhooks are POST-only; answer crawler GETs with a 405 instead of letting
+// React Router warn about rendering a component-less route.
+export const loader = () => new Response("Method Not Allowed", { status: 405 });
+
 export const action = async ({ request }) => {
   // Tolerant auth: shop/redact arrives 48 hours AFTER uninstall, when the
   // shop's tokens are already revoked — the library's token-refresh step
