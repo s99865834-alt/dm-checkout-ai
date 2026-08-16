@@ -10,9 +10,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
-import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopByDomain, recordAttribution } from "../lib/db.server";
 import logger from "../lib/logger.server";
 
@@ -204,11 +202,8 @@ export const action = async ({ request }) => {
   }
 };
 
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
-
-export function ErrorBoundary() {
-  return boundary.error(useRouteError());
-}
+// No component/ErrorBoundary exports on purpose: exporting either makes
+// React Router treat this as a page route, so crawler GETs render an empty
+// page and log "Matched leaf route ... does not have an element" warnings.
+// As a pure resource route, the loader's 405 is returned directly instead.
 
