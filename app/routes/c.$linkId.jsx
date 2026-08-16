@@ -52,6 +52,5 @@ export async function loader({ params, request }) {
   return redirect(row.url, 302);
 }
 
-export default function ClickRedirect() {
-  return null;
-}
+// No default component export on purpose: keeps this a resource route so the
+// loader's redirect/404 responses are returned verbatim without page rendering.

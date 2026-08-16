@@ -424,7 +424,8 @@ export default function Admin() {
 
   if (!authenticated) {
     return (
-      <div style={styles.page}>
+      <div style={styles.page} className="adminPage">
+        <ResponsiveStyles />
         <div style={styles.card}>
           <h1 style={styles.title}>Admin Login</h1>
           <p style={styles.subtitle}>socialrepl.ai admin — sign in to continue.</p>
@@ -463,7 +464,8 @@ export default function Admin() {
   };
 
   return (
-    <div style={styles.page}>
+    <div style={styles.page} className="adminPage">
+      <ResponsiveStyles />
       <div style={styles.header}>
         <h1 style={styles.title}>Stores</h1>
         <Form method="post">
@@ -492,8 +494,8 @@ export default function Admin() {
         </div>
       )}
 
-      <div style={styles.tableWrap}>
-        <table style={styles.table}>
+      <div style={styles.tableWrap} className="adminTableWrap">
+        <table style={styles.table} className="adminTable">
           <thead>
             <tr>
               <th style={styles.th}>Store</th>
@@ -575,19 +577,19 @@ export default function Admin() {
 
       <div style={styles.sectionHeader}>
         <h2 style={styles.sectionTitle}>DM Queue</h2>
-        <Form method="get" style={styles.filters}>
-          <label style={styles.filterLabel}>
+        <Form method="get" style={styles.filters} className="adminFilters">
+          <label style={styles.filterLabel} className="adminFilterLabel">
             Shop
-            <select name="queue_shop_id" defaultValue={queueFilters?.shopId || ""} style={styles.select}>
+            <select name="queue_shop_id" defaultValue={queueFilters?.shopId || ""} style={styles.select} className="adminSelect">
               <option value="">All shops</option>
               {stores && stores.length > 0 && stores.map((row) => (
                 <option key={row.shop_id} value={row.shop_id}>{row.shopify_domain}</option>
               ))}
             </select>
           </label>
-          <label style={styles.filterLabel}>
+          <label style={styles.filterLabel} className="adminFilterLabel">
             Status
-            <select name="queue_status" defaultValue={queueFilters?.status || ""} style={styles.select}>
+            <select name="queue_status" defaultValue={queueFilters?.status || ""} style={styles.select} className="adminSelect">
               <option value="">All</option>
               <option value="pending">Pending</option>
               <option value="processing">Processing</option>
@@ -628,8 +630,8 @@ export default function Admin() {
         </div>
       </div>
 
-      <div style={styles.tableWrap}>
-        <table style={styles.table}>
+      <div style={styles.tableWrap} className="adminTableWrap">
+        <table style={styles.table} className="adminTable">
           <thead>
             <tr>
               <th style={styles.th}>Shop</th>
@@ -665,6 +667,34 @@ export default function Admin() {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * Mobile rules for the admin dashboard. The page is styled with inline styles,
+ * which can't express media queries, so responsive overrides live here as a
+ * scoped stylesheet (!important is needed to beat the inline styles).
+ *
+ * The always-on .adminSelect max-width also fixes inputs running off-screen:
+ * a <select>'s intrinsic width grows to fit its longest <option>, and the
+ * shop filter contains full myshopify domains that can exceed 60 characters.
+ */
+function ResponsiveStyles() {
+  return (
+    <style>{`
+      .adminTableWrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+      .adminTable th { white-space: nowrap; }
+      .adminSelect { max-width: 240px; }
+      @media (max-width: 640px) {
+        .adminPage { padding: 1rem !important; }
+        .adminFilters { flex-direction: column !important; align-items: stretch !important; width: 100%; gap: 0.5rem !important; }
+        .adminFilterLabel { width: 100%; }
+        /* 16px font stops iOS Safari from auto-zooming on focus */
+        .adminSelect { width: 100%; max-width: 100%; font-size: 16px !important; padding: 0.5rem !important; }
+        .adminFilters button { width: 100%; padding: 0.6rem !important; font-size: 0.875rem !important; }
+        .adminTable th, .adminTable td { padding: 0.5rem 0.625rem !important; font-size: 0.8125rem !important; }
+      }
+    `}</style>
   );
 }
 
