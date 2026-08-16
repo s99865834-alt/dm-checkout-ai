@@ -67,6 +67,7 @@ export async function action() {
   return new Response("Method Not Allowed", { status: 405 });
 }
 
-export default function ProxyRedirect() {
-  return null;
-}
+// No default component export on purpose: this must stay a resource route.
+// With a component export, React Router SSR-renders the (null) component
+// document instead of returning the loader's HTML redirect page verbatim —
+// customers clicking DM links saw a blank white page on the store domain.

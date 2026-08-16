@@ -75,8 +75,19 @@ async function getAdminClient(shopDomain) {
 
 /** Run a GraphQL query on the shop's offline session and return the parsed body. */
 async function shopGraphql(admin, query, variables = undefined) {
-  const response = await admin.graphql(query, variables ? { variables } : undefined);
-  return response.json();
+  try {
+    const response = await admin.graphql(query, variables ? { variables } : undefined);
+    return response.json();
+  } catch (error) {
+    // The GraphQL client buries the actual errors in error.errors.graphQLErrors,
+    // which console.error renders as "[Array]" (Node truncates nested objects).
+    // Surface them as JSON so production logs are actually diagnosable.
+    const gqlErrors = error?.errors?.graphQLErrors;
+    if (gqlErrors) {
+      console.error("[shopify-data] GraphQL errors:", JSON.stringify(gqlErrors));
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
