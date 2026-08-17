@@ -1,0 +1,27 @@
+name: Production smoke test
+
+# Verifies live customer-facing link paths (redirect page bodies, not just
+# status codes) so a silently-broken deploy is caught in minutes instead of
+# by a merchant. GitHub emails the repo owner when a scheduled run fails.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # On push to main, give Railway time to build and roll the new deploy
+      # before probing it (otherwise we test the previous deployment).
+      - name: Wait for deploy (push only)
+        if: github.event_name == 'push'
+        run: sleep 240
+      - name: Run smoke checks against production
+        run: node scripts/smoke-prod.mjs

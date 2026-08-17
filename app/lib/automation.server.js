@@ -1180,6 +1180,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         }
       );
 
+      // Convert the raw homepage URL into a tracked info_ link on the store's
+      // primary domain. Without this, the reply ships the bare myshopify URL:
+      // off-brand and invisible to click tracking / attribution. Every other
+      // reply path already shortens; this fallback path was the one gap.
+      replyText = await shortenUrlsInReply(shop, message.id, replyText);
+
       const commentExternalId = message.external_id ?? message.externalId;
       const claimed = commentExternalId
         ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
