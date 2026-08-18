@@ -1156,7 +1156,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 
       logger.debug(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
       const brandVoiceData = await getBrandVoice(shop.id);
-      const replyText = await generateReplyMessage(
+      let replyText = await generateReplyMessage(
         brandVoiceData,
         null,
         homepageUrl,

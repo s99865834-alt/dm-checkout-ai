@@ -1,0 +1,22 @@
+name: CI
+
+# Lint + build gate. Exists because a no-const-assign runtime crash (silently
+# breaking comment replies) reached production on Aug 18, 2026 — ESLint catches
+# that class of bug, but nothing was running it automatically.
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
