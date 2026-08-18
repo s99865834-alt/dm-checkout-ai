@@ -295,11 +295,16 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     }
   }
 
-  if (!productIdMatch) {
+  // Accept both gid format (gid://shopify/Product/123) and bare numeric IDs;
+  // callers hold both formats depending on where the ID came from.
+  const productNumericId = productIdMatch
+    ? productIdMatch[1]
+    : /^\d+$/.test(String(productId))
+      ? String(productId)
+      : null;
+  if (!productNumericId) {
     throw new Error("Invalid product ID format");
   }
-
-  const productNumericId = productIdMatch[1];
 
   // Always use the stateless cart permalink. We previously called MCP
   // update_cart here to get a "real" checkout URL back, but that URL is

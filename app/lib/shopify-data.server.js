@@ -540,9 +540,19 @@ export async function getShopPrimaryDomainHost(shopDomain) {
  * @param {string} productId - Shopify product GID
  * @returns {Promise<Object|null>} - Raw product context or null
  */
+// Admin GraphQL ID! variables require gid:// format, but callers hold a mix
+// of gids and bare numeric IDs depending on where the ID was persisted.
+// Normalize at this boundary so no caller format can produce an invalid query.
+function toAdminGid(id, type) {
+  if (!id) return id;
+  const s = String(id);
+  return /^\d+$/.test(s) ? `gid://shopify/${type}/${s}` : s;
+}
+
 export async function getShopifyProductContextForReply(shopDomain, productId) {
   try {
     if (!shopDomain || !productId) return null;
+    productId = toAdminGid(productId, "Product");
 
     const admin = await getAdminClient(shopDomain);
     if (!admin) {
@@ -797,6 +807,8 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
     if (!shopDomain || !productId) {
       return { productName: null, productPrice: null };
     }
+    productId = toAdminGid(productId, "Product");
+    variantId = toAdminGid(variantId, "ProductVariant");
 
     const admin = await getAdminClient(shopDomain);
     if (!admin) {
