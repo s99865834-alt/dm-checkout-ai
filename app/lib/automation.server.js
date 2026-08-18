@@ -1120,22 +1120,17 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
             const firstVariant = best.variants?.nodes?.[0];
             const variantGid = firstVariant?.id || null;
             if (variantGid) {
-              const numericProductId = best.id.replace(
-                "gid://shopify/Product/",
-                ""
-              );
-              const numericVariantId = variantGid.replace(
-                "gid://shopify/ProductVariant/",
-                ""
-              );
               logger.debug(
                 `[automation] MCP catalog search matched "${best.title}" for unmapped media ${mediaId}; using as product mapping`
               );
               // Synthesize a productMapping shape and fall through to the
               // existing mapped-product flow below by reassigning.
+              // IDs stay in full gid format: the Admin GraphQL API and
+              // buildCheckoutLink both reject bare numeric IDs (this stripped
+              // them before, which crashed every reply on this path).
               productMapping = {
-                product_id: numericProductId,
-                variant_id: numericVariantId,
+                product_id: best.id,
+                variant_id: variantGid,
                 product_handle: best.handle || null,
                 product_options: null,
                 ig_media_id: mediaId,
