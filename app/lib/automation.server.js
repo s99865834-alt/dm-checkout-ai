@@ -1404,6 +1404,18 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     logger.debug(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
   } catch (error) {
+    // Instagram allows exactly one private reply per comment, ever. Subcode
+    // 2534023 means a reply already exists: the merchant replied manually,
+    // another tool on the account won the race, or a prior send succeeded but
+    // looked failed to us. Either way the commenter got an answer, and the
+    // claim row written before the send already prevents retries — so this is
+    // expected platform behaviour, not an error worth logging as one.
+    if (error?.meta?.error_subcode === 2534023) {
+      logger.debug(
+        `[automation] Comment ${message.external_id ?? message.id} already has a private reply on Instagram; treating as handled`
+      );
+      return { sent: false, reason: "Comment already has a private reply on Instagram" };
+    }
     console.error(`[automation] Error processing comment ${message.id}:`, error);
     return { sent: false, reason: error.message || "Unknown error" };
   }
