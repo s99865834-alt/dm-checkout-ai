@@ -12,6 +12,7 @@ if (typeof global.crypto === "undefined") {
 
 import { authenticate } from "../shopify.server";
 import { getShopByDomain, recordAttribution } from "../lib/db.server";
+import { extractLinkIdFromNoteAttributes } from "../lib/links.server";
 import logger from "../lib/logger.server";
 
 /**
@@ -140,9 +141,22 @@ export const action = async ({ request }) => {
       referring_site: referringSite,
     });
 
-    // Try to extract attribution from landing_site first, then referring_site
+    // Attribution sources, most reliable first: cart attributes survive
+    // cross-session purchases, landing_site/referring_site only cover
+    // same-session ones.
     let attributionData = null;
-    if (landingSite) {
+    const noteAttrLinkId = extractLinkIdFromNoteAttributes(payload.note_attributes);
+    if (noteAttrLinkId) {
+      attributionData = {
+        linkId: noteAttrLinkId,
+        utmSource: "instagram",
+        utmMedium: "ig_dm",
+        utmCampaign: "dm_to_buy",
+      };
+      logger.debug(`[webhook] Attribution from cart attributes: link_${noteAttrLinkId}`);
+    }
+
+    if (!attributionData?.linkId && landingSite) {
       attributionData = parseAttributionUrl(landingSite);
       logger.debug(`[webhook] Parsed landing_site:`, attributionData);
     }

@@ -322,8 +322,14 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   }
 
   // Attribution params — append to whichever URL we ended up with.
+  // `attributes[ref]` is a Shopify cart attribute: it persists ON THE CART
+  // and arrives in the order's note_attributes, so attribution survives even
+  // when the customer leaves and completes the purchase in a later session.
+  // The plain `ref` param only reaches us via the order's landing_site, which
+  // covers same-session purchases; together they cover both cases.
   const params = new URLSearchParams({
     ref: `link_${linkId}`,
+    "attributes[ref]": `link_${linkId}`,
     utm_source: "instagram",
     utm_medium: "ig_dm",
     utm_campaign: "dm_to_buy",
@@ -336,4 +342,20 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     url: finalUrl,
     linkId: linkId,
   };
+}
+
+/**
+ * Extract the link_id from an order's note_attributes (cart attributes).
+ * Checkout links set `attributes[ref]=link_{id}` on the cart permalink; the
+ * attribute persists on the cart and lands in the order payload, so this
+ * works even when the customer completes the purchase in a LATER session
+ * (where landing_site no longer carries the ref param).
+ * @param {Array<{name: string, value: string}>|undefined} noteAttributes
+ * @returns {string|null}
+ */
+export function extractLinkIdFromNoteAttributes(noteAttributes) {
+  if (!Array.isArray(noteAttributes)) return null;
+  const refAttr = noteAttributes.find((a) => a?.name === "ref");
+  const value = refAttr?.value || "";
+  return value.startsWith("link_") ? value.replace("link_", "") : null;
 }
