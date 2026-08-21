@@ -283,9 +283,24 @@ async function refreshInstagramLoginToken(shopId, auth) {
   return await getMetaAuth(shopId);
 }
 
+// Meta flags retryable server-side failures with is_transient; codes 1 and 2
+// are its documented "unknown error / service temporarily unavailable" pair.
+// These say "retry me" — without a retry, a one-off Meta hiccup permanently
+// drops the reply (the claim row written before the send blocks reprocessing).
+const TRANSIENT_RETRY_DELAYS_MS = [1000, 3000];
+
+function isTransientMetaError(error) {
+  return error?.is_transient === true || error?.code === 1 || error?.code === 2;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Make authenticated request to Instagram Graph API (graph.instagram.com).
  * Per Meta docs (Instagram API with Instagram Login): use Bearer token and /v24.0/ in path.
+ * Transient Meta errors are retried up to 2 times before throwing.
  * @see https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/
  */
 export async function metaGraphAPIInstagram(endpoint, accessToken, options = {}) {
@@ -309,20 +324,30 @@ export async function metaGraphAPIInstagram(endpoint, accessToken, options = {})
     Authorization: `Bearer ${accessToken}`,
     ...options.headers,
   };
-  const res = await fetch(fullUrl, {
-    method: options.method || "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  const data = await res.json();
-  if (data.error) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(fullUrl, {
+      method: options.method || "GET",
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const data = await res.json();
+    if (!data.error) return data;
+
+    if (isTransientMetaError(data.error) && attempt < TRANSIENT_RETRY_DELAYS_MS.length) {
+      const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `[meta] Transient Instagram API error (code ${data.error.code}), retrying in ${delay}ms (attempt ${attempt + 1}/${TRANSIENT_RETRY_DELAYS_MS.length}): ${data.error.message}`
+      );
+      await sleep(delay);
+      continue;
+    }
+
     const err = new Error(`Instagram API error: ${data.error.message} (Code: ${data.error.code})`);
     // Preserve the raw Graph error so callers can classify by code/subcode
     // (e.g. detecting the "account owner has disabled access" error).
     err.meta = data.error;
     throw err;
   }
-  return data;
 }
 
 /**
@@ -918,24 +943,35 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
   const fullUrl = `${url}?${params.toString()}`;
   logger.debug(`[meta] Making API request to: ${fullUrl.replace(accessToken, '***TOKEN***')}`);
 
-  const response = await fetch(fullUrl, {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(fullUrl, {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (data.error) {
+    if (!data.error) return data;
+
+    if (isTransientMetaError(data.error) && attempt < TRANSIENT_RETRY_DELAYS_MS.length) {
+      const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `[meta] Transient Graph API error (code ${data.error.code}), retrying in ${delay}ms (attempt ${attempt + 1}/${TRANSIENT_RETRY_DELAYS_MS.length}): ${data.error.message}`
+      );
+      await sleep(delay);
+      continue;
+    }
+
     console.error("[meta] Graph API error:", data.error);
     console.error("[meta] Request URL was:", fullUrl.replace(accessToken, '***TOKEN***'));
-    throw new Error(`Meta API error: ${data.error.message} (Code: ${data.error.code})`);
+    const err = new Error(`Meta API error: ${data.error.message} (Code: ${data.error.code})`);
+    err.meta = data.error;
+    throw err;
   }
-
-  return data;
 }
 
 /**
