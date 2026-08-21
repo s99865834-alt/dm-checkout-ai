@@ -112,16 +112,20 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     invalidateCached(`shopplan:${shopifyDomain}`);
     return data;
   } else {
-    // Shop doesn't exist - do an INSERT
+    // Shop doesn't exist - create it. Upsert, not insert: on a fresh install
+    // the browser fires multiple auth requests at once, and each one sees "no
+    // shop" and tries to create the row. With a plain insert the losers hit
+    // the shopify_domain unique constraint (23505); upsert makes the race
+    // harmless since all racers carry identical install defaults.
     logger.debug(`Creating new shop ${shopifyDomain} with active=${shopData.active}, usage_count=${shopData.usage_count}`);
     const { data, error } = await supabase
       .from("shops")
-      .insert(shopData)
+      .upsert(shopData, { onConflict: "shopify_domain" })
       .select("*")
       .single();
 
     if (error) {
-      console.error("createOrUpdateShop insert error", error);
+      console.error("createOrUpdateShop upsert error", error);
       throw error;
     }
 
