@@ -17,6 +17,9 @@ import logger from "./logger.server";
 import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 import { getShopifyProductContextForReply, getShopPrimaryDomainHost } from "./shopify-data.server";
+import { isCheckoutLinkId } from "./checkout-link-id";
+
+export { isCheckoutLinkId };
 
 /** Base62 alphabet for URL-safe short IDs (62^8 ≈ 218T combinations) */
 const ID_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

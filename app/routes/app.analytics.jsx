@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings, getMissedOpportunityComments } from "../lib/db.server";
+import { isCheckoutLinkId } from "../lib/checkout-link-id";
 import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
 import { cached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
@@ -79,7 +80,7 @@ export const loader = async ({ request }) => {
         .eq("shop_id", shop.id)
         .eq("product_id", postProductId);
       postFilterMessageIds = [...new Set((scopedLinks || []).map(l => l.message_id).filter(Boolean))];
-      postFilterLinkIds = [...new Set((scopedLinks || []).map(l => l.link_id).filter(Boolean))];
+      postFilterLinkIds = [...new Set((scopedLinks || []).map(l => l.link_id).filter(isCheckoutLinkId))];
     }
   }
 
@@ -509,7 +510,7 @@ export default function AnalyticsPage() {
                       </s-box>
                       <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
                         <div className="srCardPad srVStackTight">
-                          <span className="srTextSubdued">Links Sent</span>
+                          <span className="srTextSubdued">Checkout Links Sent</span>
                           <span className="srHeadingLg">{analytics.linksSent || 0}</span>
                         </div>
                       </s-box>
