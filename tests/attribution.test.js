@@ -22,6 +22,7 @@ vi.mock("../app/lib/shopify-data.server", () => ({
 }));
 
 import { buildCheckoutLink, extractLinkIdFromNoteAttributes } from "../app/lib/links.server";
+import { isCheckoutLinkId } from "../app/lib/checkout-link-id";
 
 const shop = { id: "shop-1", shopify_domain: "test-store.myshopify.com" };
 
@@ -54,5 +55,21 @@ describe("extractLinkIdFromNoteAttributes", () => {
     expect(extractLinkIdFromNoteAttributes([])).toBeNull();
     expect(extractLinkIdFromNoteAttributes(undefined)).toBeNull();
     expect(extractLinkIdFromNoteAttributes([{ name: "ref", value: "not-ours" }])).toBeNull();
+  });
+});
+
+describe("isCheckoutLinkId", () => {
+  it("accepts bare 8-char checkout ids", () => {
+    expect(isCheckoutLinkId("TeuHqkwt")).toBe(true);
+    expect(isCheckoutLinkId("mEs7Sicv")).toBe(true);
+  });
+
+  it("rejects bookkeeping and non-checkout prefixes", () => {
+    expect(isCheckoutLinkId("dm_reply_comment_123")).toBe(false);
+    expect(isCheckoutLinkId("info_a2f4882e9481")).toBe(false);
+    expect(isCheckoutLinkId("pdp_lengS5Ka")).toBe(false);
+    expect(isCheckoutLinkId("followup_abc")).toBe(false);
+    expect(isCheckoutLinkId("size_q_xyz")).toBe(false);
+    expect(isCheckoutLinkId(null)).toBe(false);
   });
 });

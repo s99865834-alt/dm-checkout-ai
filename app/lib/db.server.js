@@ -3,6 +3,7 @@ import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
+import { isCheckoutLinkId } from "./checkout-link-id";
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -1661,10 +1662,10 @@ export async function getAnalytics(shopId, planName, options = {}) {
       linksQuery = linksQuery.eq("product_id", productId);
     }
     if (startDate) {
-      linksQuery = linksQuery.gte("created_at", startDate);
+      linksQuery = linksQuery.gte("sent_at", startDate);
     }
     if (endDate) {
-      linksQuery = linksQuery.lte("created_at", endDate);
+      linksQuery = linksQuery.lte("sent_at", endDate);
     }
 
     const { data: linksSent, error: linksError } = await linksQuery;
@@ -1713,20 +1714,10 @@ export async function getAnalytics(shopId, planName, options = {}) {
       console.error("[analytics] Error fetching links sent:", linksError);
     }
 
-    // Checkout link_ids are plain 8-char base62 strings. Non-checkout entries
-    // (claim slots, size questions, info/policy short links, PDP links,
-    // follow-up check-ins) use prefixed IDs and should not inflate click/CTR
-    // metrics.
-    const isCheckoutLinkId = (id) =>
-      !!id &&
-      !id.startsWith("dm_reply_") &&
-      !id.startsWith("size_q_") &&
-      !id.startsWith("info_") &&
-      !id.startsWith("pdp_") &&
-      !id.startsWith("followup_");
-
-    // Count only checkout links sent (used for CTR denominator)
-    analytics.linksSent = (linksSent || []).filter(l => isCheckoutLinkId(l.link_id)).length;
+    // Only checkout / add-to-cart links count. Homepage, PDP, claim-slot,
+    // size-question, and follow-up rows cannot attribute an order.
+    const checkoutLinks = (linksSent || []).filter((l) => isCheckoutLinkId(l.link_id));
+    analytics.linksSent = new Set(checkoutLinks.map((l) => l.link_id)).size;
 
     // Create map of message_id -> link_id, keeping the most recent link per message.
     // messageToLink uses ALL entries (so response-rate counts every replied message),
@@ -1885,8 +1876,8 @@ export async function getProAnalytics(shopId, options = {}) {
     let postFilterMessageIds = null;
     if (productId) {
       let pfLinksQ = supabase.from("links_sent").select("message_id").eq("shop_id", shopId).eq("product_id", productId);
-      if (startDate) pfLinksQ = pfLinksQ.gte("created_at", startDate);
-      if (endDate) pfLinksQ = pfLinksQ.lte("created_at", endDate);
+      if (startDate) pfLinksQ = pfLinksQ.gte("sent_at", startDate);
+      if (endDate) pfLinksQ = pfLinksQ.lte("sent_at", endDate);
       const { data: pfLinks } = await pfLinksQ;
       postFilterMessageIds = [...new Set((pfLinks || []).map(l => l.message_id).filter(Boolean))];
     }
@@ -1998,13 +1989,6 @@ export async function getProAnalytics(shopId, options = {}) {
       .in("message_id", messageIds.length > 0 ? messageIds : [null]);
 
     if (!linksError && linksSent) {
-      const isCheckoutLinkId = (id) =>
-        !!id &&
-        !id.startsWith("dm_reply_") &&
-        !id.startsWith("size_q_") &&
-        !id.startsWith("info_") &&
-        !id.startsWith("pdp_") &&
-        !id.startsWith("followup_");
       const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
       const messageToLink = {};
       linksSent.forEach(link => {
