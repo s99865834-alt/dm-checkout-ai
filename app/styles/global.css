@@ -1904,6 +1904,12 @@ s-page .srBtnCompact {
   border: 1px solid var(--sr-line);
   border-radius: 999px;
 }
+.srMarketingLanding .srPlanCompare {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--sr-ink-muted);
+}
 .srMarketingLanding .srPlanFeatures {
   list-style: none;
   padding: 0;

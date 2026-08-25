@@ -280,6 +280,16 @@ Create 5–8 screenshots that tell the story in this order. Add short captions o
 
 Ensure the pricing section in the App Store and any in-app billing screens clearly differentiate what each tier includes so merchants know before installing.
 
+**Anchor-defusing line (added to the website pricing cards, Aug 2026):** merchants who
+comparison-shop notice Growth/Pro land on the same numbers as well-known chat-marketing
+tools. The website pricing cards (`app/routes/_index/route.jsx`) now name ManyChat
+directly under each price — that's fine on our own site, where we already run the
+head-to-head blog post and comparison table. **Do not port that exact wording into the
+Shopify App Store listing** — competitor names are not allowed there (§1 note above). If
+you want the same reframe in the listing's pricing copy, use a generic version instead,
+e.g.: *"Priced like other chat-marketing tools — built like a Shopify app: no flows to
+configure, it already knows your catalog."*
+
 ---
 
 ## 7. Interactive demo (if available)
