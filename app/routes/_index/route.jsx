@@ -556,6 +556,10 @@ export default function LandingPage() {
               <span className="srPlanAmount">$39</span>
               <span className="srPlanPer">/month</span>
             </div>
+            <p className="srPlanCompare">
+              Same price as ManyChat&apos;s Pro plan — but it already knows your Shopify
+              catalog, with zero flows to build.
+            </p>
             <ul className="srPlanFeatures">
               <li>500 messages / month</li>
               <li>DMs + Comment-to-DM</li>
@@ -580,6 +584,9 @@ export default function LandingPage() {
               <span className="srPlanPer">/month</span>
             </div>
             <div className="srPlanTrial">30-day free trial</div>
+            <p className="srPlanCompare">
+              Same price as ManyChat&apos;s Business plan — one job, set up in minutes.
+            </p>
             <ul className="srPlanFeatures">
               <li>10,000 messages / month</li>
               <li>Everything in Growth</li>
