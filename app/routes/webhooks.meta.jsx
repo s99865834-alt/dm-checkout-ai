@@ -624,6 +624,16 @@ export const action = async ({ request }) => {
                   console.warn(`[webhook] Failed to parse comment event, skipping`);
                   continue;
                 }
+                // Merchants' own comments and replies on their own posts arrive
+                // here too (moderating spam, answering a customer themselves).
+                // Never log or classify those: it spends a model call to learn
+                // nothing and risks the bot replying to the owner.
+                if (igBusinessId && parsed.igUserId && String(parsed.igUserId) === String(igBusinessId)) {
+                  logger.debug(
+                    `[webhook] Skip: comment ${parsed.commentId} is from the merchant's own account`
+                  );
+                  continue;
+                }
                 if (processedCommentExternalIds.has(parsed.commentId)) {
                   logger.debug(`[webhook] Skip: duplicate comment id ${parsed.commentId}`);
                   continue;
