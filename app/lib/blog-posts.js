@@ -37,6 +37,22 @@ export const BLOG_POSTS = [
     datePublished: "2026-06-10",
     dateModified: "2026-06-10",
   },
+  {
+    slug: "instagram-24-hour-messaging-rule-shopify",
+    title: "Instagram's 24-Hour Messaging Rule: What It Means for Your Shopify Store",
+    description:
+      "What Meta's 24-hour messaging window is, why it limits how long you have to reply to Instagram DMs and comments, and how Shopify merchants stay inside it every time.",
+    datePublished: "2026-08-25",
+    dateModified: "2026-08-25",
+  },
+  {
+    slug: "track-instagram-revenue-attribution-shopify",
+    title: "How to Track Revenue from Instagram DMs and Comments on Shopify",
+    description:
+      "A practical guide to attributing Shopify orders back to the Instagram DMs and comments that drove them — what to track, how checkout-link attribution works, and how to read the numbers.",
+    datePublished: "2026-08-25",
+    dateModified: "2026-08-25",
+  },
 ];
 
 export function getPost(slug) {
