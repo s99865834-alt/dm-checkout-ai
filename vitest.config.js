@@ -10,6 +10,9 @@ export default defineConfig({
     env: {
       OPENAI_API_KEY: "test-key",
       SHORT_LINK_DOMAIN: "https://short.test",
+      // crypto.server requires a 32-byte key at import time. Not base64, so it
+      // falls through to the utf8 branch and lands on exactly 32 bytes.
+      ENCRYPTION_KEY_32B: "a".repeat(32),
     },
   },
 });
