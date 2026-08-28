@@ -16,7 +16,7 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection, hasEverSentAutomatedReply } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
 import supabase from "../lib/supabase.server";
@@ -451,6 +451,14 @@ export const action = async ({ request }) => {
                       if (isKnownBot) {
                         logger.info(
                           `[webhook] Competing automation reply (app_id=${echoAppId}) → not pausing for user ${outboundCustomerId}`
+                        );
+                      } else if (!(await hasEverSentAutomatedReply(shopId))) {
+                        // Onboarding: the merchant is almost certainly testing
+                        // by messaging their own account and answering by hand.
+                        // Arming the pause here means their next test message
+                        // gets no reply and they conclude the app is broken.
+                        logger.info(
+                          `[webhook] Manual reply during onboarding (shop has never auto-replied) → not pausing for user ${outboundCustomerId}`
                         );
                       } else {
                         await recordHumanTakeover(shopId, outboundCustomerId, echoAppId);

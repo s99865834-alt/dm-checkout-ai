@@ -485,6 +485,44 @@ export async function isRecentOutboundReply(shopId, text, windowMs = 5 * 60 * 10
 const HUMAN_TAKEOVER_PAUSE_MS =
   (parseFloat(process.env.HUMAN_TAKEOVER_PAUSE_HOURS || "6") || 6) * 60 * 60 * 1000;
 
+/**
+ * Has automation ever successfully replied for this shop?
+ *
+ * Gates the human-takeover pause during onboarding. Merchants test the app by
+ * DMing their own account and answering by hand; that manual answer used to
+ * arm a 6-hour pause, so the very next test message got no reply and the
+ * merchant concluded the app was broken. Until we have produced one real reply
+ * there is nothing for a human to talk over, so a manual reply cannot be a
+ * takeover.
+ *
+ * The answer only ever flips false -> true, so cache the true case for the
+ * life of the process. Shops still in onboarding re-query, which is cheap
+ * because they are by definition low volume.
+ */
+const shopsWithAutomatedReply = new Set();
+
+export async function hasEverSentAutomatedReply(shopId) {
+  if (!shopId) return false;
+  if (shopsWithAutomatedReply.has(shopId)) return true;
+  const { data, error } = await supabase
+    .from("links_sent")
+    .select("id")
+    .eq("shop_id", shopId)
+    .not("reply_text", "is", null)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    // Fail closed: assume the shop is established so takeover still works.
+    console.warn("[db] hasEverSentAutomatedReply error:", error.message);
+    return true;
+  }
+  if (data) {
+    shopsWithAutomatedReply.add(shopId);
+    return true;
+  }
+  return false;
+}
+
 export async function recordHumanTakeover(shopId, igUserId, appId = null) {
   if (!shopId || !igUserId) return;
   const { error } = await supabase.from("human_takeovers").upsert(
