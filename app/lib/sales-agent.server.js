@@ -278,7 +278,17 @@ export async function generateAgentReply({
         const results = formatSearchResults(products);
         return results.length
           ? { results }
-          : { results: [], note: "No products matched. Try different search terms, or tell the customer you couldn't find it and suggest what the store does carry (get_store_info lists top products)." };
+          : {
+              results: [],
+              // An empty result usually means the search terms were never a
+              // product: the classifier pulled a person's name, an event, or
+              // plain enthusiasm out of a casual message. Telling the model to
+              // "say you couldn't find it" here produced replies like
+              // "I couldn't find a product called \"peel\"" to the message
+              // "ughhhh I love a good peel !!!", so this note must never ask
+              // for the lookup to be narrated back to the customer.
+              note: "No catalog match. Most often this means the search terms were not a product name at all (a person, an event, or general enthusiasm). Do NOT tell the customer that a search failed, do NOT repeat the terms you searched for, and do NOT apologise for not finding a product. Answer what they actually said instead. If they were genuinely asking for something the store may not carry, offer the closest thing it does have (get_store_info lists top products) or follow the OWNER HANDOFF rule.",
+            };
       }
       case "get_product_details": {
         const gid = toProductGid(args.product_id);
@@ -466,6 +476,31 @@ export async function generateAgentReply({
     }
   }
 
+  // A reply that exposes an empty catalog lookup reads as a broken app to the
+  // merchant watching their own inbox, so never send one: correct it once, and
+  // if the model still narrates, let the legacy pipeline answer instead.
+  if (text && narratesFailedLookup(text)) {
+    logger.warn(
+      `[sales-agent] Reply narrates a failed lookup for message ${message.id}; running corrective pass`
+    );
+    messages.push({ role: "assistant", content: text });
+    messages.push({
+      role: "user",
+      content:
+        "Your reply tells the customer you could not find a product, or repeats the words you searched for. Never do either: your lookups are internal. Rewrite the reply so it answers what the customer actually said. If they were not really asking about a specific product, respond to the substance of their message. If they were, offer the closest thing the store does carry. Do not mention searching, and do not mention this correction.",
+    });
+    const retryText = await runToolLoop(2);
+    const retry = retryText ? sanitizeReplyText(retryText, allowedUrls) : null;
+    if (retry?.text && !narratesFailedLookup(retry.text)) {
+      text = retry.text;
+    } else {
+      logger.warn(
+        `[sales-agent] Reply still narrates a failed lookup after correction for message ${message.id}; declining`
+      );
+      return null;
+    }
+  }
+
   if (!text) {
     logger.warn(`[sales-agent] Reply empty after URL sanitization for message ${message.id}`);
     return null;
@@ -560,6 +595,7 @@ HARD RULES:
 - NEVER make commitments on the store's behalf that aren't in tool data: no discounts, promo codes, refunds, free items, price matching, or delivery-date guarantees. If asked, share the relevant policy from get_store_info or the contact email.
 - Stay in your lane: you only discuss THIS store, its products, and its policies. No opinions on other brands or competitors, no medical/health/legal claims (a product "helps with" something only if the product description itself says so), no advice unrelated to shopping here. For off-topic asks, say in a friendly way that you can only help with questions about the store and its products — do NOT offer the contact email for non-store topics.
 - Never write placeholders like [email] or [link]. If you want to mention the contact email, call get_store_info first and use the real address; if you can't get it, leave it out.
+- NEVER narrate your own lookups. Your tool calls are internal. The customer must never read that you searched for something, that a search returned nothing, or that you "couldn't find" a product, and you must never quote back the terms you searched for. If a lookup comes up empty, answer their message from what you do know and keep the conversation moving. "We don't carry that, but here's what we do have" is fine; "I couldn't find a product called X" is not.
 - ${languageRule}
 - ${styleRule}
 - Instagram DMs are plain text: no markdown, no [text](url) links — write a short lead-in then the bare URL.
@@ -590,8 +626,12 @@ function buildUserMessage({ message, intent, threadContext }) {
 
   const entityProduct = message.ai_entities?.product_name;
   if (entityProduct) {
+    // Stated as a guess, not a fact. Asserting "They named a product: X" made
+    // the agent trust the classifier over the message itself, and the
+    // classifier routinely extracts people ("Khadine"), events ("TFCon"), and
+    // ordinary words ("peel") from casual messages.
     parts.push(
-      `They named a product: "${entityProduct}". Find it with search_products and make sure the title matches what they said before linking or quoting a price.`
+      `The classifier guessed they may be referring to a product called "${entityProduct}", but it is frequently wrong: it pulls out people's names, event names, and ordinary words from casual messages. Judge it against what they actually wrote. If it reads like a product, confirm it with search_products before quoting a price or linking. If it does not, ignore it entirely and never mention it to the customer.`
     );
   }
   if (intent) {
@@ -616,6 +656,45 @@ function promisesLinkWithoutUrl(text) {
   // A reply ending in ":" is always a broken lead-in to something missing.
   if (/[:：]$/.test(t)) return true;
   return /\b(?:here'?s\s+(?:the|a|your)\s+link|here\s+is\s+(?:the|a|your)\s+link|the\s+link\s+(?:below|here)|(?:via|using|through)\s+this\s+link|link\s*:)/i.test(t);
+}
+
+const CANNOT = /(?:couldn['’]?t|could\s+not|cannot|can['’]?t|don['’]?t|do\s+not|didn['’]?t|did\s+not|unable\s+to)/
+  .source;
+
+/**
+ * Our catalog lookups are internal plumbing. When a search comes back empty
+ * the model used to report that verbatim, producing replies observed live in
+ * production:
+ *
+ *   "ughhhh I love a good peel !!!"  -> "I couldn't find a product called "peel""
+ *   "Did Khadine do yours"           -> "I couldn't find any products by "Khadine""
+ *   "can you do one of a p4 Rover?"  -> "I couldn't find a product titled "p4 Rover""
+ *
+ * To a merchant reading their own inbox that reads as a broken app, so it is
+ * worth one corrective pass and, failing that, handing off to the legacy
+ * pipeline. Matching is deliberately scoped to first-person inability to find
+ * a product-ish thing: honest availability answers ("we don't carry that") and
+ * anything addressed to the customer ("let me know if you can't find it") must
+ * not trigger.
+ */
+const FAILED_LOOKUP_PATTERNS = [
+  new RegExp(
+    `\\b(?:i|we)\\b[^.!?\\n]{0,30}\\b${CANNOT}\\b[^.!?\\n]{0,25}\\b(?:find|see|locate)\\b[^.!?\\n]{0,40}\\b(?:product|products|item|items|listing|listings|anything)\\b`,
+    "i"
+  ),
+  // Narrating a search only matters when paired with an empty outcome.
+  // Mentioning a lookup that succeeded is useful ("I looked up the shipping
+  // cost for you, it's $8"), so the failure term is required here.
+  new RegExp(
+    `\\b(?:i|we)\\s+(?:just\\s+)?(?:searched|looked|checked)\\b[^.!?\\n]{0,50}\\b(?:nothing|no\\s+(?:products?|items?|results?|matches?)|came\\s+up\\s+empty|no\\s+luck|${CANNOT}\\s+find)`,
+    "i"
+  ),
+  /\bno\s+(?:products?|items?)\s+(?:match|found|call|nam|titl|by)/i,
+];
+
+export function narratesFailedLookup(text) {
+  if (!text) return false;
+  return FAILED_LOOKUP_PATTERNS.some((re) => re.test(text));
 }
 
 /**
