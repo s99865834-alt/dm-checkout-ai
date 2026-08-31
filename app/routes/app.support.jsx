@@ -62,7 +62,7 @@ export default function SupportPage() {
                 <p>Work through these in order:</p>
                 <ol>
                   <li><strong>Message access:</strong> confirm &ldquo;Allow access to messages&rdquo; is on in Instagram (see above). This is the most common cause.</li>
-                  <li><strong>Automation toggles:</strong> on the Home page, check that DM automation (and comment automation on paid plans) is switched on and you clicked &ldquo;Save settings.&rdquo;</li>
+                  <li><strong>Automation toggles:</strong> on the Home page, check that DM automation (and comment automation, if your plan includes it) is switched on and you clicked &ldquo;Save settings.&rdquo;</li>
                   <li><strong>Monthly limit:</strong> check the usage bar in Plan &amp; Instagram — once you hit your plan&apos;s message cap, replies pause until next month.</li>
                   <li><strong>Per-post toggles:</strong> if only certain posts get no replies, check that automation is enabled on those posts in &ldquo;Your Instagram Posts.&rdquo;</li>
                   <li><strong>Account type:</strong> your Instagram must be a professional account (Business or Creator) — personal accounts don&apos;t support message automation.</li>
@@ -114,6 +114,38 @@ export default function SupportPage() {
             <details className="srFaqItem">
               <summary className="srFaqSummary">How do I map products to posts?</summary>
               <p className="srFaqAnswer">On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</p>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">Why did comment automation stop working?</summary>
+              <div className="srFaqAnswer">
+                <p>
+                  On the Free plan, comment-to-DM automation runs free for 14 days after you connect
+                  Instagram. That window exists so you can watch it answer your real customers, and
+                  see any sales it drives in Analytics, before deciding whether it&apos;s worth paying
+                  for. When the window ends, comment automation switches off and your DM automation
+                  keeps running as normal.
+                </p>
+                <p>
+                  Your Home page shows how many comments with buying interest came in after the window
+                  closed, and Analytics lists the actual comments so you can see exactly what went
+                  unanswered. Comment automation continues on Growth ($39/mo).
+                </p>
+              </div>
+            </details>
+            <details className="srFaqItem">
+              <summary className="srFaqSummary">Does the app reply to Instagram story replies?</summary>
+              <div className="srFaqAnswer">
+                <p>
+                  Story replies and story mentions are answered on the Pro plan. Someone who watches
+                  your story and then responds to it is about as warm as an Instagram lead gets, so
+                  these are worth answering quickly.
+                </p>
+                <p>
+                  If you&apos;re on Free or Growth, story replies are still recorded, and your Home
+                  page will tell you how many arrived this month so you can judge whether Pro is
+                  worth it for your account rather than guessing.
+                </p>
+              </div>
             </details>
             <details className="srFaqItem">
               <summary className="srFaqSummary">How do I change my plan?</summary>

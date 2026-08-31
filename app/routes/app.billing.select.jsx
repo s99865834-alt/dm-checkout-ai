@@ -131,10 +131,11 @@ export default function BillingSelect() {
       price: "$0",
       period: "month",
       config: PLANS.FREE,
-      description: "Perfect for getting started",
+      description: "See it work on real customers",
       features: [
         "100 messages/month",
         "DM automation with AI",
+        "Comment-to-DM free for 14 days",
         "Store question answering",
         "Multi-language replies",
         "Checkout links",
@@ -146,12 +147,13 @@ export default function BillingSelect() {
       price: "$39",
       period: "month",
       config: PLANS.GROWTH,
-      description: "Scale your Instagram sales",
+      description: "Where most stores land",
       badge: "Popular",
       features: [
-        "500 messages/month",
-        "DMs + Comment-to-DM",
+        "1,000 messages/month",
+        "Comment-to-DM, always on",
         "Brand voice customization",
+        "Multi-turn conversations",
         "Custom reply language",
         "Order attribution + full analytics",
       ],
@@ -161,15 +163,16 @@ export default function BillingSelect() {
       price: "$99",
       period: "month",
       config: PLANS.PRO,
-      description: "Maximum growth & insights",
+      description: "Sell from stories and follow up",
       badge: "30-day free trial",
       trialNote: "First 30 days free — billing starts after your trial",
       features: [
-        "10,000 messages/month",
         "Everything in Growth",
+        "Story replies answered automatically",
+        "Story mentions when you're tagged",
         "Follow-up messages",
-        "Multi-turn conversations",
         "Per-post analytics",
+        "10,000 messages/month",
         "Priority support",
       ],
     },
@@ -321,7 +324,7 @@ export default function BillingSelect() {
               <tr>
                 <td><span className="srTextStrong">Monthly Messages</span></td>
                 <td className="srTextCenter">100</td>
-                <td className="srTextCenter">500</td>
+                <td className="srTextCenter">1,000</td>
                 <td className="srTextCenter">10,000</td>
               </tr>
               <tr>
@@ -356,7 +359,7 @@ export default function BillingSelect() {
               </tr>
               <tr>
                 <td><span className="srTextStrong">Comment-to-DM Automation</span></td>
-                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">First 14 days</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
@@ -379,13 +382,27 @@ export default function BillingSelect() {
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td><span className="srTextStrong">Follow-up Messages</span></td>
+                {/* Matches PLANS.GROWTH.converse, which has been true all
+                    along. The table was under-selling Growth. */}
+                <td><span className="srTextStrong">Multi-turn Conversations</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Story Replies</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
-                <td><span className="srTextStrong">Multi-turn Conversations</span></td>
+                <td><span className="srTextStrong">Story Mentions</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Follow-up Messages</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>

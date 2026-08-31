@@ -259,10 +259,19 @@ export async function getShopPlanAndUsage(shopId) {
   // the UI resolve identical capabilities from the same rules.
   const planConfig = effectivePlan(baseConfig, data);
 
+  // The plan config is the source of truth for the cap, not the stored
+  // monthly_cap. That column is only ever written from the same config, but it
+  // is written at upgrade time, so raising a cap in plans.js would otherwise
+  // leave existing subscribers on the old number while the UI (which reads
+  // plan.cap directly) advertised the new one. A stored cap that is higher
+  // still wins, so nothing is ever taken away from a shop mid-month.
+  const storedCap = Number(data.monthly_cap) || 0;
+  const cap = Math.max(planConfig.cap, storedCap);
+
   return {
     plan: planConfig,
     usage: data.usage_count,
-    cap: isBetaActive ? planConfig.cap : data.monthly_cap,
+    cap,
   };
 }
 
@@ -1347,6 +1356,38 @@ export async function getMissedOpportunityComments(shopId, { limit = 10 } = {}) 
 export async function getMissedCommentCount(shopId) {
   const rows = await getMissedOpportunityComments(shopId, { limit: 500 });
   return rows.length;
+}
+
+/**
+ * Story replies and mentions received this calendar month.
+ *
+ * Story automation is Pro-only, and a gate nobody can see is how one merchant
+ * sat through 326 unanswered comments and concluded the app was broken. So a
+ * shop without story access needs this number in front of them: it turns
+ * silence into a visible, quantified reason to upgrade.
+ *
+ * Failure-safe (zero): a banner is never worth breaking the page for.
+ *
+ * @param {string} shopId
+ * @returns {Promise<number>}
+ */
+export async function getStoryMessageCount(shopId) {
+  if (!shopId) return 0;
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .in("content_type", ["story_reply", "story_mention"])
+    .gte("created_at", monthStart);
+
+  if (error) {
+    console.warn("[db] getStoryMessageCount error:", error.message);
+    return 0;
+  }
+  return count || 0;
 }
 
 /**

@@ -314,7 +314,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Growth plan ($39/mo) includes 500 messages, order attribution, and full analytics.
+                    Growth plan ($39/mo) includes 1,000 messages, comment automation, order attribution, and full analytics.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">View plans</s-button>
@@ -340,7 +340,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">Message limit reached — automation is paused.</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Upgrade to Pro for 10,000 messages/mo, follow-ups, and per-post analytics.
+                    Upgrade to Pro for story replies, follow-ups, per-post analytics, and 10,000 messages/mo.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
@@ -353,7 +353,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Pro plan ($99/mo) includes 10,000 messages, per-post analytics, and multi-turn conversations.
+                    Pro plan ($99/mo) includes story replies, follow-ups, per-post analytics, and 10,000 messages.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>
