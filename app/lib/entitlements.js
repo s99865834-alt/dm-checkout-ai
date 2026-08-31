@@ -20,6 +20,17 @@ import { getPlanConfig } from "./plans";
 
 export const COMMENT_TRIAL_DAYS = 14;
 
+/**
+ * Message allowance while the window is open.
+ *
+ * Free's standing cap of 100 is a single budget shared by DMs and comments, and
+ * the stores this window exists for run far past it: one takes 274 comments and
+ * 138 DMs a month. Left at 100 the window would end on volume inside a week,
+ * so "free for 14 days" would be false for exactly the merchants who most need
+ * to see it work. Reverts to 100 the moment the window closes.
+ */
+export const COMMENT_TRIAL_CAP = 500;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -69,6 +80,8 @@ export function effectivePlan(plan, shop) {
   return {
     ...base,
     comments: base.comments || trialGrantsComments,
+    // Never lower an existing cap, only raise it for the window.
+    cap: trialGrantsComments ? Math.max(base.cap, COMMENT_TRIAL_CAP) : base.cap,
     commentTrial: {
       ...trial,
       // True only while the window is what's providing access, so the UI can

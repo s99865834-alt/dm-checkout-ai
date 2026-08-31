@@ -109,8 +109,8 @@ export default function DmAutomationGuide() {
         first 14 days), Growth ($39/month, 1,000 messages, comment-to-DM always
         on, brand voice customization, multi-turn conversations, order
         attribution), and Pro ($99/month with a 30-day free trial — story
-        replies and story mentions, follow-up messages, per-post analytics,
-        10,000 messages, priority support). Flow-builder tools typically price by contact count, which
+        replies, follow-up messages, per-post analytics, 10,000 messages,
+        priority support). Flow-builder tools typically price by contact count, which
         grows over time even if your message volume does not. Whichever model
         you choose, measure cost against attributed revenue — that is the
         only comparison that matters.

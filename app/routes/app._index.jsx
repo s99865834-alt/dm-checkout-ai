@@ -761,8 +761,9 @@ export default function Index() {
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 Every comment with buying interest gets a DM with a checkout link, and any resulting
-                sale shows up in Analytics. Map products to your posts now so you can see what it
-                earns before the window closes. Keeping it costs $39/mo on Growth.
+                sale shows up in Analytics. Your allowance is raised to {plan.cap} messages for the
+                window so comment volume doesn&apos;t cut it short. Map products to your posts now so
+                you can see what it earns. Keeping it costs $39/mo on Growth.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See plans</s-button>
@@ -801,8 +802,7 @@ export default function Index() {
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 Story replies are some of the warmest messages you get: someone watched your story
-                and reacted. Pro ($99/mo) answers them automatically with a product link, and handles
-                story mentions when someone tags you.
+                and reacted. Pro ($99/mo) answers them automatically with a product link.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Pro</s-button>

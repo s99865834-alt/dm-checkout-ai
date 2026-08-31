@@ -136,9 +136,9 @@ export default function SupportPage() {
               <summary className="srFaqSummary">Does the app reply to Instagram story replies?</summary>
               <div className="srFaqAnswer">
                 <p>
-                  Story replies and story mentions are answered on the Pro plan. Someone who watches
-                  your story and then responds to it is about as warm as an Instagram lead gets, so
-                  these are worth answering quickly.
+                  Story replies are answered on the Pro plan. Someone who watches your story and then
+                  responds to it is about as warm as an Instagram lead gets, so these are worth
+                  answering quickly.
                 </p>
                 <p>
                   If you&apos;re on Free or Growth, story replies are still recorded, and your Home

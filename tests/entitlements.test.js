@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { effectivePlan, commentTrialStatus, COMMENT_TRIAL_DAYS } from "../app/lib/entitlements";
+import {
+  effectivePlan,
+  commentTrialStatus,
+  COMMENT_TRIAL_DAYS,
+  COMMENT_TRIAL_CAP,
+} from "../app/lib/entitlements";
 import { getPlanConfig, PLANS } from "../app/lib/plans";
 
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
@@ -57,6 +62,29 @@ describe("effectivePlan", () => {
       expect(plan.commentTrial.granting).toBe(false);
       expect(plan.commentTrial.expired).toBe(false);
     }
+  });
+
+  // A 100-message cap shared between DMs and comments would end the window on
+  // volume in about a week for a store taking 274 comments a month, making the
+  // 14-day promise false for the merchants it targets.
+  it("lifts the Free cap while the window is open", () => {
+    const plan = effectivePlan(getPlanConfig("FREE"), { comment_trial_started_at: daysAgo(1) });
+    expect(plan.cap).toBe(COMMENT_TRIAL_CAP);
+    expect(COMMENT_TRIAL_CAP).toBeGreaterThan(PLANS.FREE.cap);
+  });
+
+  it("drops the Free cap back to normal once the window closes", () => {
+    const plan = effectivePlan(getPlanConfig("FREE"), { comment_trial_started_at: daysAgo(99) });
+    expect(plan.cap).toBe(PLANS.FREE.cap);
+  });
+
+  it("leaves the Free cap alone when Instagram was never connected", () => {
+    expect(effectivePlan(getPlanConfig("FREE"), {}).cap).toBe(PLANS.FREE.cap);
+  });
+
+  it("never lowers a paid cap toward the window allowance", () => {
+    const plan = effectivePlan(getPlanConfig("GROWTH"), { comment_trial_started_at: daysAgo(1) });
+    expect(plan.cap).toBe(PLANS.GROWTH.cap);
   });
 
   it("preserves every capability flag from the base plan", () => {

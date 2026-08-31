@@ -169,7 +169,6 @@ export default function BillingSelect() {
       features: [
         "Everything in Growth",
         "Story replies answered automatically",
-        "Story mentions when you're tagged",
         "Follow-up messages",
         "Per-post analytics",
         "10,000 messages/month",
@@ -391,12 +390,6 @@ export default function BillingSelect() {
               </tr>
               <tr>
                 <td><span className="srTextStrong">Story Replies</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Story Mentions</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
