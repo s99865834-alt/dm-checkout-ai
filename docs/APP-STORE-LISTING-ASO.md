@@ -92,10 +92,13 @@ Two compliance notes specific to these changes:
   Do not put "free for 14 days" in the introduction, details, features, or
   screenshots. App Details should describe comment-to-DM as functionality; the
   Pricing section states which plan includes it and for how long.
-- **Do not claim story mentions.** Story *replies* are answered on Pro. Story
-  *mentions* run on the `messaging_referrals` webhook field, which the app only
-  began requesting on Aug 31 and has never received an event on. Add the claim
-  once one is observed in `messages.content_type = 'story_mention'`, not before.
+- **Do not claim story mentions.** Story *replies* are answered on Pro and are
+  confirmed arriving in production. Story *mentions* have never been observed.
+  They can reach us two ways: as a `story_mention` attachment on the `messages`
+  field, which has been subscribed all along and is already parsed, or via
+  `messaging_referral`, which was misspelled as the plural and rejected until
+  Aug 31. So the missing subscription was probably not the blocker. Add the
+  claim once one is observed in `messages.content_type = 'story_mention'`.
 
 Message caps are enforced in our own database, not by Shopify Managed Pricing,
 so raising Growth to 1,000 needs no billing change — only the plan description
