@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
-import { Form, useLoaderData, useActionData } from "react-router";
+import { data, Form, useLoaderData, useActionData } from "react-router";
 import {
   getAdminSession,
   verifyAdminPassword,
   setAdminSessionCookie,
+  adminSessionCookieHeader,
   clearAdminSessionCookie,
   isAdminAuthConfigured,
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
+import { COMMENT_TRIAL_DAYS } from "../lib/entitlements";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections } from "../lib/db.server";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
@@ -39,6 +41,12 @@ export const loader = async ({ request }) => {
   if (!getAdminSession(request)) {
     return { authenticated: false, stores: null };
   }
+
+  // Slide the session forward on every authenticated load, so the dashboard
+  // stays logged in as long as it's being used rather than expiring a fixed
+  // interval after the last password entry.
+  const renewal = adminSessionCookieHeader();
+  const sessionHeaders = renewal ? { "Set-Cookie": renewal } : undefined;
 
   try {
     const url = new URL(request.url);
@@ -131,10 +139,16 @@ export const loader = async ({ request }) => {
 
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
-    return { authenticated: true, stores: storesFinal, queueOverview, queueItems, queueFilters: { shopId, status } };
+    return data(
+      { authenticated: true, stores: storesFinal, queueOverview, queueItems, queueFilters: { shopId, status } },
+      { headers: sessionHeaders },
+    );
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
-    return { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) };
+    return data(
+      { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) },
+      { headers: sessionHeaders },
+    );
   }
 };
 
@@ -370,6 +384,59 @@ function formatStoreRevenue(value, currencyCode, capped) {
   return capped ? `${formatted}+` : formatted;
 }
 
+// Stores are identified by name rather than domain: Shopify hands out opaque
+// domains like 4y0iib-ek.myshopify.com, which say nothing about who the
+// merchant is. The domain stays reachable as the link target and tooltip.
+function StoreCell({ row }) {
+  return (
+    <>
+      <a
+        href={`https://${row.shopify_domain}`}
+        target="_blank"
+        rel="noreferrer"
+        title={row.shopify_domain}
+        style={styles.storeLink}
+      >
+        {row.store_name || row.shopify_domain}
+      </a>
+      {!row.active && <span style={styles.badge}>inactive</span>}
+    </>
+  );
+}
+
+// Where a Free store sits in its 14-day comment-to-DM window. Only Free plans
+// have a window at all: on paid plans comment replies are permanent, so a
+// countdown there would imply the feature is about to be taken away.
+function CommentWindowBadge({ row }) {
+  if ((row.plan || "FREE").toUpperCase() !== "FREE") return null;
+
+  const trial = row.comment_trial;
+  if (!trial?.started) return null;
+
+  const endsAt = trial.endsAt ? new Date(trial.endsAt).toLocaleDateString() : null;
+
+  if (!trial.active) {
+    return (
+      <span
+        style={styles.commentWindowEnded}
+        title={`Free comment-to-DM window closed${endsAt ? ` on ${endsAt}` : ""}. Comments are no longer being answered.`}
+      >
+        Comments ended
+      </span>
+    );
+  }
+
+  const day = Math.min(COMMENT_TRIAL_DAYS, Math.max(1, COMMENT_TRIAL_DAYS - trial.daysLeft + 1));
+  return (
+    <span
+      style={styles.commentWindowBadge}
+      title={`Day ${day} of the ${COMMENT_TRIAL_DAYS}-day free comment-to-DM window · ${trial.daysLeft}d left${endsAt ? ` · ends ${endsAt}` : ""}`}
+    >
+      Comments d{day}/{COMMENT_TRIAL_DAYS}
+    </span>
+  );
+}
+
 export default function Admin() {
   const { authenticated, stores, queueOverview, queueItems, queueFilters, error: loaderError } = useLoaderData() ?? {};
   const actionData = useActionData();
@@ -410,6 +477,16 @@ export default function Admin() {
       return sort.dir === "asc" ? av - bv : bv - av;
     });
   }, [stores, sort]);
+
+  // The queue rows only carry a domain, so names are resolved from the stores
+  // table rather than re-queried alongside every queue item.
+  const storeNameById = useMemo(() => {
+    const map = new Map();
+    (stores || []).forEach((s) => {
+      if (s.store_name) map.set(s.shop_id, s.store_name);
+    });
+    return map;
+  }, [stores]);
 
   const planCounts = useMemo(() => {
     const counts = { FREE: 0, GROWTH: 0, PRO: 0, trialing: 0 };
@@ -514,11 +591,11 @@ export default function Admin() {
               sortedStores.map((row) => (
                 <tr key={row.shop_id}>
                   <td style={styles.td}>
-                    <span style={styles.domain}>{row.shopify_domain}</span>
-                    {!row.active && <span style={styles.badge}>inactive</span>}
+                    <StoreCell row={row} />
                   </td>
                   <td style={styles.td}>
                     <span style={planBadgeStyle(row.plan)}>{formatPlan(row.plan)}</span>
+                    <CommentWindowBadge row={row} />
                     {row.trial && (
                       <span
                         style={styles.trialBadge}
@@ -583,7 +660,7 @@ export default function Admin() {
             <select name="queue_shop_id" defaultValue={queueFilters?.shopId || ""} style={styles.select} className="adminSelect">
               <option value="">All shops</option>
               {stores && stores.length > 0 && stores.map((row) => (
-                <option key={row.shop_id} value={row.shop_id}>{row.shopify_domain}</option>
+                <option key={row.shop_id} value={row.shop_id}>{row.store_name || row.shopify_domain}</option>
               ))}
             </select>
           </label>
@@ -647,7 +724,9 @@ export default function Admin() {
               queueItems.map((row) => (
                 <tr key={row.id}>
                   <td style={styles.td}>
-                    <span style={styles.domain}>{row.shops?.shopify_domain || row.shop_id}</span>
+                    <span style={styles.domain} title={row.shops?.shopify_domain || ""}>
+                      {storeNameById.get(row.shop_id) || row.shops?.shopify_domain || row.shop_id}
+                    </span>
                   </td>
                   <td style={styles.td}>{statusLabel(row.status)}</td>
                   <td style={styles.td}>{row.attempts}</td>
@@ -912,6 +991,34 @@ const styles = {
   },
   domain: {
     fontWeight: 500,
+  },
+  storeLink: {
+    fontWeight: 500,
+    color: "#e2e8f0",
+    textDecoration: "none",
+    borderBottom: "1px dotted #475569",
+  },
+  commentWindowBadge: {
+    display: "inline-block",
+    marginLeft: "0.5rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#155e75",
+    borderRadius: "4px",
+    color: "#a5f3fc",
+    whiteSpace: "nowrap",
+  },
+  commentWindowEnded: {
+    display: "inline-block",
+    marginLeft: "0.5rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#7f1d1d",
+    borderRadius: "4px",
+    color: "#fecaca",
+    whiteSpace: "nowrap",
   },
   igHandle: {
     fontFamily:
