@@ -1021,10 +1021,15 @@ async function hasCommentBeenReplied(commentId, shopId) {
  */
 export async function handleIncomingComment(message, mediaId, shop, plan, ctx = {}) {
   try {
-    // 1. Only for Growth/Pro plans
-    if (plan.name === "FREE") {
-      logger.debug(`[automation] Comment-to-DM automation only available for Growth/Pro plans`);
-      return { sent: false, reason: "Feature not available on FREE plan" };
+    // 1. Capability check, not a plan-name check: Free shops inside their
+    //    one-time comment window have plan.comments === true (see
+    //    entitlements.js). Reading the name here would silently ignore the
+    //    trial and reproduce the invisible paywall this window exists to fix.
+    if (!plan.comments) {
+      logger.debug(
+        `[automation] Comment-to-DM not available for plan ${plan.name} (comment window inactive)`
+      );
+      return { sent: false, reason: "Comment automation not available on this plan" };
     }
 
     // 2. Check publish mode: comment_automation_enabled must be true

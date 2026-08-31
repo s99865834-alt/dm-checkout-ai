@@ -240,31 +240,100 @@ function parseCommentEvent(comment) {
  *   }
  * }
  */
+/**
+ * Instagram delivers plenty of DMs that carry no text: a shared post, a heart,
+ * a photo, an emoji reply to a story. This parser used to read `text` only, so
+ * every one of those was logged with a null body and then abandoned by the
+ * `parsed.messageText` gate below — 76 real customer messages across live
+ * stores, including 41% of one merchant's entire DM volume.
+ *
+ * `contentType` classifies the payload so those can be routed, and `storyId`
+ * makes story replies detectable (they are otherwise indistinguishable from
+ * ordinary DMs, which is why they were being answered on every plan).
+ *
+ * The story CDN url is deliberately not returned: it expires within 24 hours,
+ * so persisting it would only store a dead link.
+ */
+function deriveAttachmentContentType(attachments) {
+  const types = (attachments || []).map((a) => String(a?.type || "").toLowerCase());
+  if (!types.length) return null;
+  // A shared post is the highest-intent non-text payload there is: the
+  // customer forwarded a product into the DM thread.
+  if (types.includes("share")) return "share";
+  if (types.includes("story_mention")) return "story_mention";
+  // Hearts arrive as stickers or like_heart depending on how they were sent;
+  // both are the same warm signal as a compliment comment.
+  if (types.some((t) => t === "like_heart" || t === "sticker")) return "heart";
+  for (const t of ["image", "video", "audio", "file"]) {
+    if (types.includes(t)) return t;
+  }
+  return "unsupported";
+}
+
+/**
+ * Best-effort Instagram media id for a shared post. Share payload urls are
+ * lookaside CDN links that usually carry the media as `asset_id`, but Meta
+ * does not guarantee it, so callers must handle null.
+ */
+function extractSharedMediaId(attachments) {
+  for (const a of attachments || []) {
+    if (String(a?.type || "").toLowerCase() !== "share") continue;
+    const url = a?.payload?.url;
+    if (!url) continue;
+    const match = /[?&]asset_id=(\d+)/.exec(String(url));
+    if (match) return match[1];
+  }
+  return null;
+}
+
 function parseMessageEvent(message) {
   try {
     // Instagram messaging events structure; message_edit has mid, text, num_edit
     const sender = message.sender || message.from;
     const messageData = message.message || message;
     const messageEdit = message.message_edit;
-    
+    const referral = message.referral || messageData?.referral || null;
+    const reaction = message.reaction || null;
+
     // Extract message ID - message_edit.mid or message.mid
     const messageId = messageEdit?.mid || messageData?.mid || messageData?.id || message.id || message.message_id || message.mid;
-    
+
     // Extract message text (message_edit can include edited text)
     const messageText = messageEdit?.text || messageData?.text || messageData?.body || message.text || message.body || null;
-    
+
     // Extract sender ID
     const igUserId = sender?.id || message.from?.id || message.sender_id || null;
-    
+
     // Extract timestamp (can be in seconds or milliseconds)
     let timestamp = messageData?.timestamp || message.timestamp || new Date().toISOString();
     if (typeof timestamp === 'number') {
       // Convert to ISO string (timestamp might be in seconds, not milliseconds)
-      timestamp = timestamp < 10000000000 
-        ? new Date(timestamp * 1000).toISOString() 
+      timestamp = timestamp < 10000000000
+        ? new Date(timestamp * 1000).toISOString()
         : new Date(timestamp).toISOString();
     }
-    
+
+    const attachments = Array.isArray(messageData?.attachments) ? messageData.attachments : [];
+    const storyReply = messageData?.reply_to?.story || null;
+    const referralStory = referral?.source === "STORY_MENTION" ? referral.story : null;
+
+    // Order matters: story context outranks the payload kind, since a story
+    // reply can arrive as text, a heart, or media and must gate the same way.
+    let contentType = null;
+    if (referralStory) {
+      contentType = "story_mention";
+    } else if (storyReply) {
+      contentType = "story_reply";
+    } else if (reaction) {
+      contentType = "reaction";
+    } else if (messageText) {
+      // Plain text keeps contentType null so nothing about the existing text
+      // path changes.
+      contentType = null;
+    } else {
+      contentType = deriveAttachmentContentType(attachments) || "unsupported";
+    }
+
     const igUsername = sender?.username || message.from?.username || null;
     return {
       messageId,
@@ -272,6 +341,11 @@ function parseMessageEvent(message) {
       igUserId,
       igUsername,
       timestamp,
+      contentType,
+      storyId: referralStory?.id || storyReply?.id || null,
+      sharedMediaId: extractSharedMediaId(attachments),
+      attachmentTypes: attachments.map((a) => a?.type).filter(Boolean),
+      isStoryEvent: !!(referralStory || storyReply),
     };
   } catch (error) {
     console.error(`[webhook] Error parsing message event:`, error);
@@ -539,13 +613,36 @@ export const action = async ({ request }) => {
                   aiConfidence: null,
                   sentiment: null,
                   lastUserMessageAt: parsed.timestamp,
+                  contentType: parsed.contentType,
+                  storyId: parsed.storyId,
+                  attachmentMeta: parsed.attachmentTypes?.length || parsed.sharedMediaId
+                    ? { types: parsed.attachmentTypes, shared_media_id: parsed.sharedMediaId }
+                    : null,
                 });
-                logger.debug(`[webhook] DM logged db_id=${result?.id}`);
-                
+                logger.debug(
+                  `[webhook] DM logged db_id=${result?.id} content_type=${parsed.contentType ?? "text"}`
+                );
+
                 if (result?.id && (await alreadyRepliedToMessage(result.id))) {
                   logger.debug(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
                 } else if (result?.id && parsed.messageText) {
                   withAutomationLimit(async () => {
+                    // Plan is resolved BEFORE classification so a gated event
+                    // costs no model call. Story replies are a Pro feature, and
+                    // they are indistinguishable from ordinary DMs without the
+                    // reply_to.story marker the parser now surfaces.
+                    const usageData = await getShopPlanAndUsage(shopId);
+                    if (!usageData) return;
+                    const plan = usageData.plan;
+
+                    if (parsed.isStoryEvent && !plan.stories) {
+                      incCounter("story_events_gated");
+                      logger.debug(
+                        `[webhook] Story event gated for message ${result.id}: plan ${plan.name} has no story automation`
+                      );
+                      return;
+                    }
+
                     const classification = await classifyMessage(parsed.messageText, { shopId });
                     if (classification.intent === null || classification.error) return;
 
@@ -567,9 +664,6 @@ export const action = async ({ request }) => {
                     // Attach entities from classification (not stored in DB)
                     updatedMessage.ai_entities = classification.entities || null;
 
-                    const usageData = await getShopPlanAndUsage(shopId);
-                    if (!usageData) return;
-
                     const { data: shopData } = await supabase
                       .from("shops")
                       .select("*")
@@ -578,11 +672,6 @@ export const action = async ({ request }) => {
 
                     if (!shopData) return;
 
-                    // Use the beta-aware plan that getShopPlanAndUsage already
-                    // resolved (raw shopData.plan ignores active beta trials,
-                    // which would incorrectly gate PRO features like clarifying
-                    // questions for merchants on the beta).
-                    const plan = usageData.plan;
                     const automationResult = await handleIncomingDm(updatedMessage, shopData, plan, { settings, usageData, alreadyRepliedChecked: true });
                     if (automationResult.sent) {
                       incCounter("automations_sent");
