@@ -3,6 +3,15 @@ import crypto from "crypto";
 const COOKIE_NAME = "admin_session";
 const PAYLOAD = "ok";
 
+/**
+ * 30 days, re-issued on every authenticated page load (see
+ * adminSessionCookieHeader). The previous 24h fixed lifetime meant the session
+ * died a day after login no matter how recently it had been used, which reads
+ * as "mobile keeps logging me out" simply because the phone is picked up less
+ * often than the desktop that gets used daily.
+ */
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
 function getSecret() {
   const secret = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET;
   if (!secret || secret.length < 16) {
@@ -36,7 +45,15 @@ export function getAdminSession(request) {
   if (payload !== PAYLOAD || !signature) return false;
 
   const expected = sign(payload);
-  return crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"));
+  // timingSafeEqual throws on a length mismatch, which a truncated or
+  // hand-edited cookie will produce. That would surface as a 500 on every
+  // request until the cookie is cleared, so a bad signature has to fail
+  // closed as "not logged in" instead.
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -53,7 +70,22 @@ export function verifyAdminPassword(password) {
 
 function cookieOptions(includeSecure = true) {
   const secure = includeSecure && process.env.NODE_ENV === "production";
-  return `Path=/; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`;
+  // Lax, not Strict. Strict withholds the cookie on any cross-site entry
+  // navigation, so opening /admin from a phone home-screen shortcut, a
+  // messaging app, or a search result arrives logged out even though the
+  // session is still valid. Lax still withholds it on cross-site POSTs, which
+  // is the CSRF protection that actually matters here.
+  return `Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+/**
+ * The Set-Cookie value for a fresh admin session.
+ * Exposed so authenticated page loads can slide the expiry forward.
+ */
+export function adminSessionCookieHeader() {
+  const signature = sign(PAYLOAD);
+  if (!signature) return null;
+  return `${COOKIE_NAME}=${PAYLOAD}.${signature}; ${cookieOptions()}; Max-Age=${SESSION_MAX_AGE_SECONDS}`;
 }
 
 /**
@@ -61,14 +93,10 @@ function cookieOptions(includeSecure = true) {
  * Call this after successful login.
  */
 export function setAdminSessionCookie(response) {
-  const signature = sign(PAYLOAD);
-  if (!signature) return response;
+  const header = adminSessionCookieHeader();
+  if (!header) return response;
 
-  const value = `${PAYLOAD}.${signature}`;
-  response.headers.append(
-    "Set-Cookie",
-    `${COOKIE_NAME}=${value}; ${cookieOptions()}; Max-Age=86400`
-  );
+  response.headers.append("Set-Cookie", header);
   return response;
 }
 

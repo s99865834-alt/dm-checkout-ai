@@ -1,7 +1,7 @@
 import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
-import { effectivePlan } from "./entitlements";
+import { commentTrialStatus, effectivePlan } from "./entitlements";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
@@ -2237,7 +2237,7 @@ export async function getProAnalytics(shopId, options = {}) {
 export async function getAdminDashboardStores() {
   const { data: shops, error: shopsError } = await supabase
     .from("shops")
-    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
+    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
     .eq("active", true)
     .order("id", { ascending: true });
 
@@ -2353,6 +2353,27 @@ async function buildAdminStoresResult(shops) {
     metaAuthByShop.set(row.shop_id, row);
   });
 
+  // Human-readable store names, so the dashboard doesn't identify merchants by
+  // opaque domains like 4y0iib-ek.myshopify.com. Pulled from the cached store
+  // context rather than the Admin API: it's already populated for every shop
+  // and costs no extra call. The JSON key is selected on its own because the
+  // full context column carries the entire product catalog.
+  const { data: nameRows, error: nameError } = shopIds.length
+    ? await supabase
+        .from("shops")
+        .select("id, store_name:store_context_json->>name")
+        .in("id", shopIds)
+    : { data: [], error: null };
+
+  if (nameError) {
+    console.error("getAdminDashboardStores store name error", nameError);
+  }
+
+  const storeNameByShop = new Map();
+  (nameRows || []).forEach((row) => {
+    if (row.store_name) storeNameByShop.set(row.id, row.store_name);
+  });
+
   // Automation setup per shop: toggles + disabled posts (settings) and mapped
   // posts (post_product_map). Both best-effort — a failure here should degrade
   // the new column, not break the whole dashboard.
@@ -2447,10 +2468,14 @@ async function buildAdminStoresResult(shops) {
     return {
       shop_id: s.id,
       shopify_domain: s.shopify_domain,
+      store_name: storeNameByShop.get(s.id) || null,
       created_at: s.created_at,
       active: s.active,
       plan: s.plan || "FREE",
       beta_trial: betaTrial,
+      // Free comment-to-DM window. Computed here, like beta_trial above, so
+      // the dashboard renders it without repeating the date arithmetic.
+      comment_trial: commentTrialStatus(s),
       messages_sent: messagesByShop.get(s.id) || 0,
       revenue: revenueByShop.get(s.id) || 0,
       instagram_connected: !!metaAuth,
