@@ -1083,18 +1083,25 @@ export default function Index() {
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">Comment automation</span>
+                      {/* Keyed off plan.comments, not the plan name: during the
+                          free window this is genuinely running, and a disabled
+                          toggle reading "upgrade to unlock" while the AI is
+                          actively answering comments is the kind of mixed signal
+                          that makes a merchant distrust the whole dashboard. */}
                       <span className="srCardDesc">
-                        {hasAccess("GROWTH")
-                          ? "Auto-reply to comments with private DMs"
-                          : "Upgrade to Growth to unlock comment automation"}
+                        {plan?.commentTrial?.granting
+                          ? `Auto-reply to comments with private DMs. Free for ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
+                          : plan?.comments
+                            ? "Auto-reply to comments with private DMs"
+                            : "Upgrade to Growth to unlock comment automation"}
                       </span>
                     </div>
                     <label className="srToggle" aria-label="Comment automation">
                       <input
                         type="checkbox"
-                        checked={hasAccess("GROWTH") ? commentAutomationEnabled : false}
+                        checked={plan?.comments ? commentAutomationEnabled : false}
                         onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
-                        disabled={!hasAccess("GROWTH")}
+                        disabled={!plan?.comments}
                       />
                       <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                     </label>
@@ -1198,13 +1205,17 @@ export default function Index() {
       </s-section>
 
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
-      {/* Hidden on FREE: post-by-post mapping and per-post automation toggles
-          are part of the paid DM/comment automation experience. FREE merchants
-          see the upgrade banners above instead.
+      {/* Normally hidden on FREE, since post-by-post mapping and per-post
+          toggles are part of the paid automation experience. It must be visible
+          during the free comment window though: comment-to-DM sends the
+          checkout link for the product mapped to that post, so a merchant who
+          cannot map products cannot see the feature do the thing it is being
+          judged on. The banner above tells them to map their posts, and that
+          instruction has to be followable.
           Media + products stream in via the deferred loader promise; the
           fixed-size skeleton keeps first paint fast (LCP) with no layout
           shift when the real grid arrives (CLS). */}
-      {isConnected && !isFree && (
+      {isConnected && (!isFree || plan?.comments) && (
         <s-section heading="Your Instagram Posts">
           <Suspense fallback={<PostsSectionSkeleton />}>
             <Await
