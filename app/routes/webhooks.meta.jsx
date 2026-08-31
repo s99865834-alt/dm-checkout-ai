@@ -18,7 +18,7 @@ if (typeof global.crypto === "undefined") {
 
 import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection, hasEverSentAutomatedReply } from "../lib/db.server";
 import { classifyMessage } from "../lib/ai.server";
-import { handleIncomingDm, handleIncomingComment } from "../lib/automation.server";
+import { handleIncomingDm, handleIncomingComment, handleNonTextDm } from "../lib/automation.server";
 import supabase from "../lib/supabase.server";
 import { incCounter, recordTiming } from "../lib/metrics.server";
 import logger from "../lib/logger.server";
@@ -625,6 +625,55 @@ export const action = async ({ request }) => {
 
                 if (result?.id && (await alreadyRepliedToMessage(result.id))) {
                   logger.debug(`[webhook] Already replied to message ${result.id}, skipping classification and automation`);
+                } else if (result?.id && !parsed.messageText && parsed.contentType) {
+                  // No text to classify, so this skips the intent model entirely
+                  // and routes on the payload kind instead. Shares and hearts
+                  // get answered; everything else is recorded only.
+                  withAutomationLimit(async () => {
+                    const usageData = await getShopPlanAndUsage(shopId);
+                    if (!usageData) return;
+                    const plan = usageData.plan;
+
+                    if (parsed.isStoryEvent && !plan.stories) {
+                      incCounter("story_events_gated");
+                      logger.debug(
+                        `[webhook] Story event gated for message ${result.id}: plan ${plan.name} has no story automation`
+                      );
+                      return;
+                    }
+
+                    const { data: shopData } = await supabase
+                      .from("shops")
+                      .select("*")
+                      .eq("id", shopId)
+                      .single();
+                    if (!shopData) return;
+
+                    const { data: storedMessage } = await supabase
+                      .from("messages")
+                      .select("*")
+                      .eq("id", result.id)
+                      .single();
+                    if (!storedMessage) return;
+
+                    const nonTextResult = await handleNonTextDm(storedMessage, shopData, plan, {
+                      settings,
+                      usageData,
+                      alreadyRepliedChecked: true,
+                    });
+                    if (nonTextResult.sent) {
+                      incCounter("automations_sent");
+                      logger.debug(`[webhook] ✅ Non-text DM reply sent for message ${result.id}`);
+                    } else {
+                      incCounter("automations_skipped");
+                      logger.debug(
+                        `[webhook] Non-text DM (${parsed.contentType}) not answered for ${result.id}: ${nonTextResult.reason}`
+                      );
+                    }
+                  }).catch((error) => {
+                    console.error(`[webhook] Error in non-text DM chain:`, error);
+                    hadProcessingError = true;
+                  });
                 } else if (result?.id && parsed.messageText) {
                   withAutomationLimit(async () => {
                     // Plan is resolved BEFORE classification so a gated event
