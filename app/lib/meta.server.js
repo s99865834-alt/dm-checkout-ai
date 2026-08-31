@@ -445,13 +445,16 @@ export async function ensureInstagramWebhookSubscription(shopId) {
   if (!auth || auth.auth_type !== "instagram" || !auth.page_access_token) {
     return null;
   }
-  // messaging_referrals carries story mentions, which is how someone tagging
-  // you in their story reaches us at all. Tried first but never allowed to
-  // break the subscription: if Meta rejects the field (it depends on app-level
-  // webhook config, not just the token) the whole call fails, and this call is
-  // the self-heal for "connected but 0 messages" shops. So fall back to the
-  // fields we know are accepted rather than leaving an account unsubscribed.
-  const fieldSets = ["messages,comments,messaging_referrals", "messages,comments"];
+  // messaging_referral (singular: the plural spelling is rejected with code 100)
+  // carries story mentions that arrive as a referral rather than as a
+  // story_mention attachment on a normal message.
+  //
+  // Tried first but never allowed to break the subscription: if Meta rejects
+  // the field (it depends on app-level webhook config, not just the token) the
+  // whole call fails, and this call is the self-heal for "connected but 0
+  // messages" shops. So fall back to the fields we know are accepted rather
+  // than leaving an account unsubscribed.
+  const fieldSets = ["messages,comments,messaging_referral", "messages,comments"];
 
   for (const [index, subscribed_fields] of fieldSets.entries()) {
     try {
