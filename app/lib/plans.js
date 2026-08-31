@@ -9,8 +9,8 @@ export const PLANS = {
     cap: 100,
     dm: true,
     // Comments are off on Free, but a one-time trial window can switch them on
-    // (see entitlements.server.js). Merchants who never see comment-to-DM work
-    // have no reason to believe it does.
+    // (see entitlements.js). Merchants who never see comment-to-DM work have no
+    // reason to believe it does.
     comments: false,
     converse: false,
     brandVoice: false,

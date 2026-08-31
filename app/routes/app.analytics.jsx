@@ -116,10 +116,12 @@ export const loader = async ({ request }) => {
     }),
     plan?.name ? getAnalytics(shop.id, plan.name, analyticsDateRange) : Promise.resolve(null),
     plan?.name === "PRO" ? getProAnalytics(shop.id, analyticsDateRange) : Promise.resolve(null),
-    // FREE only: real purchase-intent comments that got no automated reply
-    // this month (comment automation is Growth+). Shown dimmed below so the
-    // merchant sees the specific conversations they're missing.
-    plan?.name === "FREE"
+    // Only when the shop cannot answer comments at all. Keyed off the
+    // capability rather than the plan name, because a Free shop inside its
+    // comment window IS answering them, and telling it these went unanswered
+    // "because comment replies aren't included in the Free plan" would flatly
+    // contradict the countdown banner on the home page.
+    !plan?.comments
       ? getMissedOpportunityComments(shop.id, { limit: 10 }).catch(() => [])
       : Promise.resolve([]),
   ]);
@@ -686,7 +688,7 @@ export default function AnalyticsPage() {
               Specific real conversations beat an abstract feature pitch —
               and every row here is genuinely a comment the AI would have
               answered on Growth. */}
-          {isFree && missedOpportunities?.length > 0 && (
+          {!plan?.comments && missedOpportunities?.length > 0 && (
             <s-section heading="Missed opportunities">
               <div className="srVStack">
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
