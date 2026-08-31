@@ -8,7 +8,7 @@
  */
 
 import { redirect } from "react-router";
-import { getShopByDomain, findActiveShopWithSameInstagram } from "../lib/db.server";
+import { getShopByDomain, findActiveShopWithSameInstagram, markCommentTrialStarted } from "../lib/db.server";
 import {
   saveMetaAuthForInstagram,
   ensureInstagramWebhookSubscription,
@@ -150,6 +150,12 @@ export async function loader({ request }) {
     }
 
     await saveMetaAuthForInstagram(shopData.id, igBusinessId, longLivedToken, tokenExpiresAt);
+
+    // Start the free comment window now that they can actually receive
+    // comments. Anchored here rather than at install because merchants often
+    // install days before connecting, which would burn the window on nothing.
+    // No-ops on reconnect.
+    await markCommentTrialStarted(shopData.id);
 
     // Drop caches computed before this connect: the message-access probe may
     // have cached "unknown" (no auth yet), and any IG info/media belongs to a

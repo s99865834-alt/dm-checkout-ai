@@ -1,6 +1,7 @@
 import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
+import { effectivePlan } from "./entitlements";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
@@ -242,7 +243,7 @@ export async function incrementUsage(shopId, delta) {
 export async function getShopPlanAndUsage(shopId) {
   const { data, error } = await supabase
     .from("shops")
-    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at")
+    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at, comment_trial_started_at")
     .eq("id", shopId)
     .single();
 
@@ -253,13 +254,59 @@ export async function getShopPlanAndUsage(shopId) {
 
   const isBetaActive = data.beta_trial_expires_at &&
     new Date(data.beta_trial_expires_at) > new Date();
-  const planConfig = isBetaActive ? getPlanConfig("PRO") : getPlanConfig(data.plan);
+  const baseConfig = isBetaActive ? getPlanConfig("PRO") : getPlanConfig(data.plan);
+  // Applied here rather than at the call sites so the automation pipeline and
+  // the UI resolve identical capabilities from the same rules.
+  const planConfig = effectivePlan(baseConfig, data);
+
+  // The plan config is the source of truth for the cap, not the stored
+  // monthly_cap. That column is only ever written from the same config, but it
+  // is written at upgrade time, so raising a cap in plans.js would otherwise
+  // leave existing subscribers on the old number while the UI (which reads
+  // plan.cap directly) advertised the new one. A stored cap that is higher
+  // still wins, so nothing is ever taken away from a shop mid-month.
+  const storedCap = Number(data.monthly_cap) || 0;
+  const cap = Math.max(planConfig.cap, storedCap);
 
   return {
     plan: planConfig,
     usage: data.usage_count,
-    cap: isBetaActive ? planConfig.cap : data.monthly_cap,
+    cap,
   };
+}
+
+/**
+ * Start the free comment window the first time a shop connects Instagram.
+ *
+ * Write-once by design: the `is null` guard means disconnecting and
+ * reconnecting cannot restart the window. That matters because
+ * deleteMetaAuth() removes the meta_auth row outright, so anything anchored to
+ * that row's created_at would be trivially resettable.
+ *
+ * Best-effort. Failing to start a trial must never break the connect flow.
+ */
+export async function markCommentTrialStarted(shopId) {
+  if (!shopId) return false;
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ comment_trial_started_at: new Date().toISOString() })
+    .eq("id", shopId)
+    .is("comment_trial_started_at", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[db] markCommentTrialStarted error:", error.message);
+    return false;
+  }
+  if (data) {
+    // Plan capabilities just changed; drop cached shop rows so the merchant
+    // does not land on a page still saying comments are unavailable.
+    invalidateCached("shopplan:");
+    logger.debug(`[db] Comment trial started for shop ${shopId}`);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -364,6 +411,9 @@ export async function logMessage(params) {
     aiConfidence,
     sentiment,
     lastUserMessageAt,
+    contentType,
+    storyId,
+    attachmentMeta,
   } = params;
 
   const { data, error } = await supabase
@@ -379,6 +429,9 @@ export async function logMessage(params) {
       ai_confidence: aiConfidence ?? null,
       sentiment: sentiment || null,
       last_user_message_at: lastUserMessageAt || null,
+      content_type: contentType || null,
+      story_id: storyId || null,
+      attachment_meta: attachmentMeta || null,
     })
     .select("*")
     .single();
@@ -1303,6 +1356,38 @@ export async function getMissedOpportunityComments(shopId, { limit = 10 } = {}) 
 export async function getMissedCommentCount(shopId) {
   const rows = await getMissedOpportunityComments(shopId, { limit: 500 });
   return rows.length;
+}
+
+/**
+ * Story replies and mentions received this calendar month.
+ *
+ * Story automation is Pro-only, and a gate nobody can see is how one merchant
+ * sat through 326 unanswered comments and concluded the app was broken. So a
+ * shop without story access needs this number in front of them: it turns
+ * silence into a visible, quantified reason to upgrade.
+ *
+ * Failure-safe (zero): a banner is never worth breaking the page for.
+ *
+ * @param {string} shopId
+ * @returns {Promise<number>}
+ */
+export async function getStoryMessageCount(shopId) {
+  if (!shopId) return 0;
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .in("content_type", ["story_reply", "story_mention"])
+    .gte("created_at", monthStart);
+
+  if (error) {
+    console.warn("[db] getStoryMessageCount error:", error.message);
+    return 0;
+  }
+  return count || 0;
 }
 
 /**

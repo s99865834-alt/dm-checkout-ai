@@ -140,9 +140,16 @@ import {
   searchProductsByDomain,
 } from "../app/lib/shopify-data.server";
 import { canSendForShop, sendDmNow } from "../app/lib/queue.server";
+import { getPlanConfig } from "../app/lib/plans";
+import { effectivePlan } from "../app/lib/entitlements";
 
 const shop = { id: "00000000-0000-0000-0000-000000000001", shopify_domain: "test-store.myshopify.com" };
-const growthPlan = { name: "GROWTH", cap: 500 };
+
+// Real plan configs, not hand-rolled fixtures. A literal like
+// `{ name: "GROWTH", cap: 500 }` silently drifts from production the moment a
+// capability flag is added, and then passes while the real gate rejects.
+const growthPlan = getPlanConfig("GROWTH");
+const freePlan = getPlanConfig("FREE");
 
 let commentSeq = 0;
 function comment(text, overrides = {}) {
@@ -247,12 +254,38 @@ describe("comment reply paths", () => {
     expect(sentReplyText()).toContain("https://short.test/");
   });
 
-  it("FREE plan: comment automation does not reply", async () => {
-    const res = await handleIncomingComment(comment("how much?"), "media-1", shop, { name: "FREE", cap: 50 });
+  it("FREE plan outside the comment window: does not reply", async () => {
+    const res = await handleIncomingComment(comment("how much?"), "media-1", shop, freePlan);
 
     expect(res.sent).toBe(false);
     expect(sendInstagramPrivateReply).not.toHaveBeenCalled();
     expect(sendInstagramDm).not.toHaveBeenCalled();
+  });
+
+  // The whole point of the window: a Free merchant must see comment-to-DM work
+  // on a real customer, or they have no reason to believe it does.
+  it("FREE plan inside the comment window: replies", async () => {
+    const inWindow = effectivePlan(freePlan, {
+      comment_trial_started_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(inWindow.comments).toBe(true);
+
+    const res = await handleIncomingComment(comment("how much?"), "media-1", shop, inWindow);
+
+    expect(res.sent).toBe(true);
+    expect(sendInstagramPrivateReply).toHaveBeenCalled();
+  });
+
+  it("FREE plan with an expired comment window: does not reply", async () => {
+    const expired = effectivePlan(freePlan, {
+      comment_trial_started_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(expired.comments).toBe(false);
+    expect(expired.commentTrial.expired).toBe(true);
+
+    const res = await handleIncomingComment(comment("how much?"), "media-1", shop, expired);
+
+    expect(res.sent).toBe(false);
   });
 
   it("human takeover active: stays out of the conversation", async () => {

@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
 import { getPlanConfig } from "./plans";
+import { effectivePlan } from "./entitlements";
 import { getShopifyStoreInfo } from "./shopify-data.server";
 import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
@@ -102,7 +103,10 @@ export async function getShopWithPlan(request) {
 
   const isBetaActive = shop.beta_trial_expires_at &&
     new Date(shop.beta_trial_expires_at) > new Date();
-  const plan = isBetaActive ? getPlanConfig("PRO") : getPlanConfig(shop.plan);
+  const plan = effectivePlan(
+    isBetaActive ? getPlanConfig("PRO") : getPlanConfig(shop.plan),
+    shop
+  );
 
   // Keep store context fresh so DM automation can answer store_question DMs without
   // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.

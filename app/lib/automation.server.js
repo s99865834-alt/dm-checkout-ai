@@ -1016,15 +1016,184 @@ async function hasCommentBeenReplied(commentId, shopId) {
  * @param {Object} message - Comment message object from database
  * @param {string} mediaId - Instagram media ID the comment is on
  * @param {Object} shop - Shop object
+ * DMs that carry no text: a forwarded post, a heart, a photo.
+ *
+ * These were logged with a null body and then dropped, because the pipeline
+ * keys off message text throughout. That silently discarded 76 real customer
+ * messages across live stores, 41% of one merchant's DM volume, including the
+ * highest-intent signal Instagram sends: a customer forwarding a product into
+ * the thread.
+ *
+ * Only shares and hearts are answered. Photos and videos are recorded but left
+ * alone: we cannot see what is in them, and a confidently wrong reply to a
+ * customer's photo is worse for the merchant than no reply.
+ *
+ * @param {Object} message - messages row (needs content_type, attachment_meta)
+ * @param {Object} shop - Shop object
+ * @param {Object} plan - Effective plan (see entitlements.js)
+ * @returns {Promise<{sent: boolean, reason?: string}>}
+ */
+const REPLYABLE_NON_TEXT = new Set(["share", "heart"]);
+
+// Hearts get a fixed reply rather than a generated one. There is nothing to
+// reason about in a heart, and the templates carry no link, so this cannot
+// produce a broken URL, a wrong product, or an unprompted sales pitch. It also
+// costs no model call.
+const HEART_REPLIES = {
+  friendly: "Thank you! 🙏 That means a lot.",
+  casual: "Ahh thank you! 🙌",
+  professional: "Thank you, we appreciate it.",
+  expert: "Thank you, we appreciate the support.",
+  luxury: "Thank you, that's very kind.",
+};
+
+export async function handleNonTextDm(message, shop, plan, ctx = {}) {
+  try {
+    const kind = message.content_type;
+    if (!REPLYABLE_NON_TEXT.has(kind)) {
+      return { sent: false, reason: `Content type "${kind}" is not answered` };
+    }
+
+    const settings = ctx.settings ?? (await getSettings(shop.id));
+    if (settings?.dm_automation_enabled === false) {
+      return { sent: false, reason: "DM automation disabled" };
+    }
+
+    const fromUserId = message.from_user_id ?? message.fromUserId;
+    if (!fromUserId) return { sent: false, reason: "No sender id" };
+
+    if (await isHumanTakeoverActive(shop.id, fromUserId)) {
+      return { sent: false, reason: "Owner replied manually — automation paused for this conversation" };
+    }
+
+    const usageData = ctx.usageData ?? (await getShopPlanAndUsage(shop.id));
+    if (usageData.usage >= plan.cap) {
+      return { sent: false, reason: "Usage cap exceeded" };
+    }
+
+    if (!ctx.alreadyRepliedChecked && (await alreadyRepliedToMessage(message.id))) {
+      return { sent: false, reason: "Already replied to this message" };
+    }
+
+    const brandVoiceData = await getBrandVoice(shop.id);
+
+    if (kind === "heart") {
+      const tone = brandVoiceData?.tone || "friendly";
+      const replyText = HEART_REPLIES[tone] || HEART_REPLIES.friendly;
+
+      if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
+        return { sent: false, reason: "Already replied to this message" };
+      }
+      const sendResult = await sendDmReply(shop.id, fromUserId, replyText);
+      if (sendResult?.sent === false) return sendResult;
+      await incrementUsage(shop.id, 1);
+      logger.debug(`[automation] ✅ Warm reply sent for heart DM ${message.id}`);
+      return { sent: true };
+    }
+
+    // Shared post. Resolve the product from the shared media, then fall back to
+    // the merchant's featured product. If neither resolves we stay silent:
+    // guessing produced the wrong-product replies that eroded trust before.
+    const sharedMediaId = message.attachment_meta?.shared_media_id || null;
+    let productId = null;
+    let variantId = null;
+    let source = null;
+
+    if (sharedMediaId) {
+      const mappings = await getProductMappings(shop.id).catch(() => []);
+      const mapping = mappings.find((m) => m.ig_media_id === sharedMediaId);
+      if (mapping) {
+        productId = mapping.product_id;
+        variantId = mapping.variant_id;
+        source = "post mapping";
+      }
+    }
+    if (!productId && settings?.featured_product_id) {
+      productId = settings.featured_product_id;
+      variantId = settings.featured_variant_id || null;
+      source = "featured product";
+    }
+    if (!productId) {
+      logger.debug(
+        `[automation] Shared post DM ${message.id}: no product resolved (shared_media_id=${sharedMediaId || "none"}), staying silent`
+      );
+      return { sent: false, reason: "Could not resolve a product for the shared post" };
+    }
+
+    const [checkoutLink, productInfo] = await Promise.all([
+      buildCheckoutLink(shop, productId, variantId, 1),
+      shop.shopify_domain
+        ? getShopifyProductInfo(shop.shopify_domain, productId, variantId).catch(() => ({
+            productName: null,
+            productPrice: null,
+          }))
+        : Promise.resolve({ productName: null, productPrice: null }),
+    ]);
+
+    if (!checkoutLink?.url || !checkoutLink?.linkId) {
+      return { sent: false, reason: "Could not build a checkout link" };
+    }
+
+    const checkoutUrlForMessage =
+      (await getTrackedLinkUrl(shop, checkoutLink.linkId)) || checkoutLink.url;
+
+    const replyText = await generateReplyMessage(
+      brandVoiceData,
+      productInfo.productName,
+      checkoutUrlForMessage,
+      "purchase",
+      productInfo.productPrice,
+      null,
+      // No text to quote. Describing the share instead keeps the model from
+      // inventing words the customer never said.
+      null,
+      null,
+      {
+        originChannel: "dm",
+        inboundChannel: "dm",
+        triggerChannel: "dm",
+        sharedPost: true,
+      }
+    );
+
+    if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
+      return { sent: false, reason: "Already replied to this message" };
+    }
+    const insertedLinkIds = await persistReplyLinks(shop, message.id, replyText, [
+      { linkId: checkoutLink.linkId, url: checkoutLink.url, productId, variantId },
+    ]);
+    const sendResult = await sendDmReply(shop.id, fromUserId, replyText);
+    if (sendResult?.sent === false) {
+      await rollbackReplyLinks(shop.id, insertedLinkIds);
+      return sendResult;
+    }
+    await incrementUsage(shop.id, 1);
+
+    logger.debug(
+      `[automation] ✅ Shared-post DM reply sent for message ${message.id} (product via ${source})`
+    );
+    return { sent: true };
+  } catch (error) {
+    console.error(`[automation] Error handling non-text DM ${message?.id}:`, error);
+    return { sent: false, reason: `Error: ${error.message}` };
+  }
+}
+
+/**
  * @param {Object} plan - Plan object
  * @returns {Promise<{sent: boolean, reason?: string}>} - Whether DM was sent and reason
  */
 export async function handleIncomingComment(message, mediaId, shop, plan, ctx = {}) {
   try {
-    // 1. Only for Growth/Pro plans
-    if (plan.name === "FREE") {
-      logger.debug(`[automation] Comment-to-DM automation only available for Growth/Pro plans`);
-      return { sent: false, reason: "Feature not available on FREE plan" };
+    // 1. Capability check, not a plan-name check: Free shops inside their
+    //    one-time comment window have plan.comments === true (see
+    //    entitlements.js). Reading the name here would silently ignore the
+    //    trial and reproduce the invisible paywall this window exists to fix.
+    if (!plan.comments) {
+      logger.debug(
+        `[automation] Comment-to-DM not available for plan ${plan.name} (comment window inactive)`
+      );
+      return { sent: false, reason: "Comment automation not available on this plan" };
     }
 
     // 2. Check publish mode: comment_automation_enabled must be true
@@ -1834,6 +2003,7 @@ ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannel
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
 ${safeChannelContext?.sizeConfirmation ? `- The customer was asked what size they want and replied with: "${safeChannelContext.sizeConfirmation}". Confirm their size choice and send the checkout link. Keep it brief.` : ""}
+${safeChannelContext?.sharedPost ? `- SHARED POST, NO TEXT: The customer forwarded one of your Instagram posts into this DM thread and wrote nothing at all. Acknowledge that they shared the post and treat it as interest in that product, then give the link. Never quote them or refer to anything they "said" or "asked" — they sent no words, and inventing some is an obvious tell. Keep it to two short sentences.` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${warmthFirst ? `COMPLIMENT COMMENT — WARMTH FIRST: This person left a compliment on an Instagram post ("${originalMessage}"), they did NOT ask to buy anything. Your reply is a DM landing in their inbox, so it must read like the store owner personally saying thanks:
 - Open with a genuine, specific thank-you that matches their energy (react to what they actually said — don't use a generic "thanks for your interest").

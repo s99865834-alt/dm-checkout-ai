@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { getShopByDomain, findActiveShopWithSameInstagram } from "../lib/db.server";
+import { getShopByDomain, findActiveShopWithSameInstagram, markCommentTrialStarted } from "../lib/db.server";
 import { saveMetaAuth, metaGraphAPI, subscribeToWebhooks } from "../lib/meta.server";
 import logger from "../lib/logger.server";
 
@@ -329,6 +329,10 @@ export async function loader({ request }) {
       );
       logger.debug(`[oauth] ✅ Meta auth data saved successfully!`);
       logger.debug(`[oauth] Saved record ID: ${savedData?.id || 'unknown'}`);
+
+      // Start the free comment window on first connect (no-ops on reconnect).
+      await markCommentTrialStarted(shopData.id);
+
       
       // Subscribe to webhooks after successful connection
       try {

@@ -3,7 +3,7 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus } from "../lib/db.server";
+import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -57,17 +57,20 @@ export const loader = async ({ request }) => {
   let lastInboundMessageAt = null;
   let messageAccess = "unknown";
   let competingTool = { detected: false, appId: null, conversations: 0 };
+  let storyMessages = 0;
 
   if (shop?.id) {
     let attributionCount = 0;
     let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess, competingTool] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess, competingTool, storyMessages] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
         getBrandVoice(shop.id),
         getProductMappings(shop.id).catch(() => []),
-        plan?.name === "FREE" ? getMissedCommentCount(shop.id) : Promise.resolve(0),
+        // Only meaningful once comment access has actually lapsed: during the
+        // window comments are being answered, so nothing is being missed.
+        plan?.name === "FREE" && !plan?.comments ? getMissedCommentCount(shop.id) : Promise.resolve(0),
         // This month's attributed revenue, for the honest ROI banner
         // ("drove $X — Growth costs $39"). Only shown when it's in the
         // merchant's favor, so fetching for FREE/GROWTH is enough.
@@ -112,6 +115,10 @@ export const loader = async ({ request }) => {
         // outbound echo app_ids). Powers the "avoiding duplicate replies"
         // banner so a quiet dashboard is explained instead of mysterious.
         getCompetingToolStatus(shop.id).catch(() => ({ detected: false, appId: null, conversations: 0 })),
+        // Story replies and mentions received this month. Only fetched when
+        // the shop can't act on them, since the number exists to explain the
+        // silence and quantify what upgrading would unlock.
+        plan?.stories ? Promise.resolve(0) : getStoryMessageCount(shop.id).catch(() => 0),
       ]);
     reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
   }
@@ -174,7 +181,7 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -461,7 +468,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -695,7 +702,7 @@ export default function Index() {
               <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 New DMs won't receive automated responses until next month.
-                Upgrade to Growth for 500 messages/mo plus comment automation and brand voice.
+                Upgrade to Growth for 1,000 messages/mo plus comment automation and brand voice.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
@@ -725,7 +732,7 @@ export default function Index() {
                 SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month.
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Growth costs $39/mo and adds comment automation, brand voice, and 500 messages — it would already be paying for itself.
+                Growth costs $39/mo and adds comment automation, brand voice, and 1,000 messages — it would already be paying for itself.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
@@ -742,19 +749,63 @@ export default function Index() {
           </span>
         </s-banner>
       )}
+      {/* Comment window is open: show what's running and how long is left, so
+          the day it stops is expected rather than mistaken for a fault. */}
+      {plan?.commentTrial?.granting && (
+        <s-banner tone={plan.commentTrial.daysLeft <= 3 ? "warning" : "success"}>
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                Comment automation is on for {plan.commentTrial.daysLeft} more{" "}
+                {plan.commentTrial.daysLeft === 1 ? "day" : "days"}
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Every comment with buying interest gets a DM with a checkout link, and any resulting
+                sale shows up in Analytics. Your allowance is raised to {plan.cap} messages for the
+                window so comment volume doesn&apos;t cut it short. Map products to your posts now so
+                you can see what it earns. Keeping it costs $39/mo on Growth.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="secondary" size="slim">See plans</s-button>
+          </div>
+        </s-banner>
+      )}
+      {/* Window has closed. They have seen it work, so this is the moment the
+          number carries weight. */}
       {plan && plan.name === "FREE" && missedComments > 0 && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                {missedComments} comment{missedComments === 1 ? "" : "s"} with buying interest went unanswered this month
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                {plan.commentTrial?.expired
+                  ? "Your free comment window has ended, so these went without a reply. "
+                  : "Comment replies aren't included on Free. "}
+                On Growth ($39/mo) each of these customers would have received a DM with an answer
+                and a checkout link. The actual comments are listed in Analytics.
+              </span>
+            </div>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+          </div>
+        </s-banner>
+      )}
+      {/* Story replies are Pro-only. Without this the merchant just sees an
+          inbox the app ignored, which is how the comment paywall lost a store. */}
+      {plan && !plan.stories && storyMessages > 0 && (
         <s-banner tone="info">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">
-                {missedComments} comment{missedComments === 1 ? "" : "s"} with purchase interest went unanswered this month — comment replies aren&apos;t included in the Free plan.
+                {storyMessages} story {storyMessages === 1 ? "reply" : "replies"} came in this month and weren&apos;t answered
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Upgrade to Growth ($39/mo) and the AI will automatically DM each of these customers
-                an answer with a checkout link. You can see the actual comments in Analytics.
+                Story replies are some of the warmest messages you get: someone watched your story
+                and reacted. Pro ($99/mo) answers them automatically with a product link.
               </span>
             </div>
-            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Pro</s-button>
           </div>
         </s-banner>
       )}
@@ -764,7 +815,7 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Automation is paused until next month. Upgrade to Pro for 10,000 messages/mo, follow-ups, and per-post analytics.
+                Automation is paused until next month. Upgrade to Pro for story replies, follow-ups, per-post analytics, and 10,000 messages/mo.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
@@ -777,7 +828,7 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Upgrade to Pro for 10,000 messages/mo plus follow-up messages and multi-turn conversations.
+                Upgrade to Pro for story replies, follow-up messages, and 10,000 messages/mo.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
@@ -811,8 +862,9 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">Welcome to SocialRepl.ai!</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram account, map products to posts, and DM automation will handle the rest.
-                Ready for more? Growth adds comment automation, brand voice, and 500 messages/mo.
+                You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram and comment
+                automation switches on free for 14 days, so you can see it answer real customers before
+                you decide anything. Map products to your posts to get the most out of it.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
@@ -1031,18 +1083,25 @@ export default function Index() {
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">Comment automation</span>
+                      {/* Keyed off plan.comments, not the plan name: during the
+                          free window this is genuinely running, and a disabled
+                          toggle reading "upgrade to unlock" while the AI is
+                          actively answering comments is the kind of mixed signal
+                          that makes a merchant distrust the whole dashboard. */}
                       <span className="srCardDesc">
-                        {hasAccess("GROWTH")
-                          ? "Auto-reply to comments with private DMs"
-                          : "Upgrade to Growth to unlock comment automation"}
+                        {plan?.commentTrial?.granting
+                          ? `Auto-reply to comments with private DMs. Free for ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
+                          : plan?.comments
+                            ? "Auto-reply to comments with private DMs"
+                            : "Upgrade to Growth to unlock comment automation"}
                       </span>
                     </div>
                     <label className="srToggle" aria-label="Comment automation">
                       <input
                         type="checkbox"
-                        checked={hasAccess("GROWTH") ? commentAutomationEnabled : false}
+                        checked={plan?.comments ? commentAutomationEnabled : false}
                         onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
-                        disabled={!hasAccess("GROWTH")}
+                        disabled={!plan?.comments}
                       />
                       <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                     </label>
@@ -1146,13 +1205,17 @@ export default function Index() {
       </s-section>
 
       {/* ── Your Instagram Posts ───────────────────────────────────────── */}
-      {/* Hidden on FREE: post-by-post mapping and per-post automation toggles
-          are part of the paid DM/comment automation experience. FREE merchants
-          see the upgrade banners above instead.
+      {/* Normally hidden on FREE, since post-by-post mapping and per-post
+          toggles are part of the paid automation experience. It must be visible
+          during the free comment window though: comment-to-DM sends the
+          checkout link for the product mapped to that post, so a merchant who
+          cannot map products cannot see the feature do the thing it is being
+          judged on. The banner above tells them to map their posts, and that
+          instruction has to be followable.
           Media + products stream in via the deferred loader promise; the
           fixed-size skeleton keeps first paint fast (LCP) with no layout
           shift when the real grid arrives (CLS). */}
-      {isConnected && !isFree && (
+      {isConnected && (!isFree || plan?.comments) && (
         <s-section heading="Your Instagram Posts">
           <Suspense fallback={<PostsSectionSkeleton />}>
             <Await

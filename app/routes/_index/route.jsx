@@ -31,7 +31,7 @@ const JSON_LD = {
       name: "Free",
       price: "0",
       priceCurrency: "USD",
-      description: "100 messages/mo · DM automation with AI · Store question answering · Multi-language replies · Checkout links · Basic analytics",
+      description: "100 messages/mo · DM automation with AI · Comment-to-DM free for 14 days · Store question answering · Multi-language replies · Checkout links · Basic analytics",
     },
     {
       "@type": "Offer",
@@ -40,7 +40,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "500 messages/mo · DMs + Comment-to-DM · Brand voice customization · Custom reply language · Order attribution + full analytics",
+        "1,000 messages/mo · Comment-to-DM always on · Brand voice customization · Multi-turn conversations · Custom reply language · Order attribution + full analytics",
     },
     {
       "@type": "Offer",
@@ -49,7 +49,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "30-day free trial · 10,000 messages/mo · Follow-up messages · Multi-turn conversations · Per-post analytics · Priority support",
+        "30-day free trial · Story replies answered automatically · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
     },
   ],
   creator: {
@@ -79,6 +79,14 @@ const FAQS = [
   {
     q: "How do I turn Instagram comments into sales?",
     a: "With comment-to-DM automation: when someone comments on one of your posts, SocialReplAI automatically sends them a private DM with an AI-written message and a checkout link for the product featured in that post — links in public comments aren't clickable, but DM links are.",
+  },
+  {
+    q: "Is comment-to-DM automation included in the free plan?",
+    a: "For your first 14 days after connecting Instagram, yes. We'd rather you watch it answer your real customers and see the tracked sales in your dashboard than take our word for it. After 14 days, comment automation continues on Growth ($39/mo). DM automation stays free permanently, up to 100 messages a month.",
+  },
+  {
+    q: "Can SocialReplAI reply to Instagram story replies?",
+    a: "Yes, on the Pro plan. When someone replies to your story, the AI answers with a product link. Story viewers are typically your warmest audience: they chose to watch and then chose to respond. Pro also handles multi-touch follow-ups for customers who click a link but don't check out.",
   },
   {
     q: "What does SocialRepl.ai actually do?",
@@ -534,6 +542,7 @@ export default function LandingPage() {
             <ul className="srPlanFeatures">
               <li>100 messages / month</li>
               <li>DM automation with AI</li>
+              <li>Comment-to-DM free for 14 days</li>
               <li>Store question answering</li>
               <li>Multi-language replies</li>
               <li>Checkout links</li>
@@ -561,9 +570,10 @@ export default function LandingPage() {
               catalog, with zero flows to build.
             </p>
             <ul className="srPlanFeatures">
-              <li>500 messages / month</li>
-              <li>DMs + Comment-to-DM</li>
+              <li>1,000 messages / month</li>
+              <li>Comment-to-DM, always on</li>
               <li>Brand voice customization</li>
+              <li>Multi-turn conversations</li>
               <li>Custom reply language</li>
               <li>Order attribution + full analytics</li>
             </ul>
@@ -585,14 +595,15 @@ export default function LandingPage() {
             </div>
             <div className="srPlanTrial">30-day free trial</div>
             <p className="srPlanCompare">
-              Same price as ManyChat&apos;s Business plan — one job, set up in minutes.
+              For stores that post stories daily. Story viewers are your warmest audience,
+              and Pro is the only plan that sells to them.
             </p>
             <ul className="srPlanFeatures">
-              <li>10,000 messages / month</li>
               <li>Everything in Growth</li>
+              <li>Story replies answered automatically</li>
               <li>Follow-up messages</li>
-              <li>Multi-turn conversations</li>
               <li>Per-post analytics</li>
+              <li>10,000 messages / month</li>
               <li>Priority support</li>
             </ul>
             <a

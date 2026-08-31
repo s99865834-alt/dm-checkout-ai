@@ -445,25 +445,37 @@ export async function ensureInstagramWebhookSubscription(shopId) {
   if (!auth || auth.auth_type !== "instagram" || !auth.page_access_token) {
     return null;
   }
-  try {
-    const result = await metaGraphAPIInstagram("/me/subscribed_apps", auth.page_access_token, {
-      method: "POST",
-      params: { subscribed_fields: "messages,comments" },
-    });
-    // console.log (not logger.debug) so the subscription self-heal is visible
-    // in production logs — it's the fix for "connected but 0 messages" shops.
-    console.log(
-      `[meta] Instagram webhook subscription ensured for shop ${shopId}:`,
-      JSON.stringify(result),
-    );
-    return result;
-  } catch (error) {
-    console.error(
-      `[meta] Failed to subscribe shop ${shopId} to Instagram webhooks:`,
-      error?.message || error,
-    );
-    return null;
+  // messaging_referrals carries story mentions, which is how someone tagging
+  // you in their story reaches us at all. Tried first but never allowed to
+  // break the subscription: if Meta rejects the field (it depends on app-level
+  // webhook config, not just the token) the whole call fails, and this call is
+  // the self-heal for "connected but 0 messages" shops. So fall back to the
+  // fields we know are accepted rather than leaving an account unsubscribed.
+  const fieldSets = ["messages,comments,messaging_referrals", "messages,comments"];
+
+  for (const [index, subscribed_fields] of fieldSets.entries()) {
+    try {
+      const result = await metaGraphAPIInstagram("/me/subscribed_apps", auth.page_access_token, {
+        method: "POST",
+        params: { subscribed_fields },
+      });
+      // console.log (not logger.debug) so the subscription self-heal is visible
+      // in production logs — it's the fix for "connected but 0 messages" shops.
+      console.log(
+        `[meta] Instagram webhook subscription ensured for shop ${shopId} (fields=${subscribed_fields}):`,
+        JSON.stringify(result),
+      );
+      return result;
+    } catch (error) {
+      const isLast = index === fieldSets.length - 1;
+      console[isLast ? "error" : "warn"](
+        `[meta] Subscribe failed for shop ${shopId} with fields=${subscribed_fields}:`,
+        error?.message || error,
+      );
+      if (isLast) return null;
+    }
   }
+  return null;
 }
 
 /**
