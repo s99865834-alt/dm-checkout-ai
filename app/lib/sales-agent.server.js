@@ -434,19 +434,23 @@ export async function generateAgentReply({
     return null;
   }
 
-  let { text, strippedUrl } = sanitizeReplyText(finalText, allowedUrls);
+  let { text, strippedUrl, strippedPlaceholder } = sanitizeReplyText(finalText, allowedUrls);
 
-  // The model occasionally constructs a URL itself (e.g. from a product title)
-  // instead of calling a link tool; the allowlist strips it, which would leave
-  // a reply that promises a link but has none ("check it out here: "). Give it
-  // one corrective pass so it can mint a real tracked link.
-  if (strippedUrl) {
-    logger.debug(`[sales-agent] Stripped non-tool URL for message ${message.id}; running corrective pass`);
+  // Two ways the model reaches for a link without calling a link tool: it
+  // invents a URL from a product title (the allowlist strips it), or it writes
+  // a bracketed placeholder. Either leaves a reply that promises a link but has
+  // none ("check it out here: "), so both get one corrective pass to mint a
+  // real tracked link.
+  if (strippedUrl || strippedPlaceholder) {
+    logger.debug(
+      `[sales-agent] Stripped ${strippedPlaceholder ? "link placeholder" : "non-tool URL"} for message ${message.id}; running corrective pass`
+    );
     messages.push({ role: "assistant", content: finalText });
     messages.push({
       role: "user",
-      content:
-        "Your reply contained a URL that did not come from a tool result, so it was removed. Rewrite the reply. If you want to include a link, call get_product_page_link, get_checkout_link, or use a URL from get_store_info — otherwise write the reply without a link. Do not mention this correction.",
+      content: strippedPlaceholder
+        ? "Your reply contained a placeholder where a link should be, but you never called a link tool. Rewrite the reply. To include a link, call get_product_page_link or get_checkout_link, or use a URL from get_store_info, and write the resulting URL out in full. Never write a placeholder in place of a URL. Do not mention this correction."
+        : "Your reply contained a URL that did not come from a tool result, so it was removed. Rewrite the reply. If you want to include a link, call get_product_page_link, get_checkout_link, or use a URL from get_store_info. Otherwise write the reply without a link. Do not mention this correction.",
     });
     const retryText = await runToolLoop(2);
     if (retryText) {
@@ -581,7 +585,7 @@ HOW TO SELL:
 - When they name a product, search for it and check the title actually matches their words. Never assume they mean a product from earlier in the conversation when they've named a different one.
 - If the exact thing they want isn't available, search for the closest alternative and offer it — don't just say no.
 - When they show buying intent, create a checkout link and include it naturally.
-- When they ask for a link to a product, call get_product_page_link (or get_checkout_link if they're buying) for that product — never promise a link without calling a link tool.
+- When they ask for a link to a product, call get_product_page_link (or get_checkout_link if they're buying) for that product. Never promise a link without calling a link tool, and never write a placeholder such as [link] or [store's all-products link] where a URL belongs: call the tool and paste the real URL, or leave the link out entirely.
 - If they want to browse, ask about "the collection", or you can't pinpoint one product (e.g. "what's your most popular item?"), share the browse-all-products link found in get_store_info.
 - If a product comes in multiple sizes/colors and they want to buy but haven't chosen, ask which one they want (list the options) rather than sending a generic link.
 ${vagueRule}
@@ -698,15 +702,39 @@ export function narratesFailedLookup(text) {
 }
 
 /**
- * Strip markdown link syntax and any URL that didn't come from a tool result.
- * Returns the cleaned text plus whether any URL was stripped, so the caller
- * can give the model a corrective pass instead of sending a linkless promise.
+ * A bracketed stand-in written in place of a real URL. Observed live on Sep 1:
+ * "here's the full collection: [store's all-products link]" reached a customer
+ * verbatim, because nothing was stripped (so the URL pass had no work to do)
+ * and the phrasing dodged promisesLinkWithoutUrl, which keys off a trailing
+ * colon or the literal words "here's the link".
+ *
+ * Scoped to brackets that actually name a link so ordinary bracketed copy
+ * ("[SOLD OUT]", "[Limited Edition]") survives untouched. Real markdown links
+ * are expanded to "text url" before this runs, so [text](url) never matches.
  */
-function sanitizeReplyText(text, allowedUrls) {
+const LINK_PLACEHOLDER = /\[[^\]\n]*\b(?:link|url|insert|checkout|product\s+page|website)\b[^\]\n]*\]/gi;
+
+/**
+ * Strip markdown link syntax, bracketed link placeholders, and any URL that
+ * didn't come from a tool result. Returns the cleaned text plus what was
+ * removed, so the caller can give the model a corrective pass instead of
+ * sending a linkless promise.
+ */
+export function sanitizeReplyText(text, allowedUrls) {
   // Em dashes read as AI-written; the prompt bans them but the model can
   // slip, so strip deterministically (comma reads naturally in DMs).
   let result = text.replace(/\s*—\s*/g, ", ");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2");
+
+  // Deliberately not followed by the orphaned-carrier cleanup below: leaving
+  // the lead-in ("...the full collection:") intact means promisesLinkWithoutUrl
+  // catches the trailing colon and the link guarantee appends a real URL,
+  // which is what the model was reaching for in the first place.
+  let strippedPlaceholder = false;
+  result = result.replace(LINK_PLACEHOLDER, () => {
+    strippedPlaceholder = true;
+    return "";
+  });
 
   let strippedUrl = false;
   const urlRegex = /https?:\/\/[^\s)]+/g;
@@ -735,5 +763,5 @@ function sanitizeReplyText(text, allowedUrls) {
     .replace(/([.!?,;])\1+/g, "$1")
     .trim();
 
-  return { text: cleaned, strippedUrl };
+  return { text: cleaned, strippedUrl, strippedPlaceholder };
 }
