@@ -1159,7 +1159,7 @@ export default function Index() {
             </s-box>
 
             {/* Right: brand voice */}
-            <PlanGate requiredPlan="GROWTH" feature="Brand Voice">
+            <PlanGate capability="brandVoice" feature="Brand Voice">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <div className="srToggleStack">
                   <div className="srToggleRow">

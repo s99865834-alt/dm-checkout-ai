@@ -126,6 +126,7 @@ import { getPlanConfig } from "../app/lib/plans";
 const shop = { id: "00000000-0000-0000-0000-000000000001", shopify_domain: "test-store.myshopify.com" };
 const growthPlan = getPlanConfig("GROWTH");
 const proPlan = getPlanConfig("PRO");
+const freePlan = getPlanConfig("FREE");
 
 const WITH_DEFAULT_PRODUCT = {
   dm_automation_enabled: true,
@@ -324,6 +325,19 @@ describe("heart DMs", () => {
     getBrandVoice.mockResolvedValue({ tone: "professional" });
     await handleNonTextDm(nonTextDm("heart"), shop, growthPlan);
     expect(sentText()).toMatch(/appreciate/i);
+  });
+
+  // Brand voice is a paid capability, but for a long time only the UI enforced
+  // that. A shop that customised its voice on Growth and then dropped to Free
+  // kept the paid behaviour, because every reply path fetched the row without
+  // consulting the plan.
+  it("ignores a stored brand voice on a plan without brandVoice", async () => {
+    getBrandVoice.mockResolvedValue({ tone: "professional" });
+
+    await handleNonTextDm(nonTextDm("heart"), shop, freePlan);
+
+    expect(getBrandVoice).not.toHaveBeenCalled();
+    expect(sentText()).not.toMatch(/appreciate/i);
   });
 
   it("falls back to a friendly reply for an unrecognised tone", async () => {
