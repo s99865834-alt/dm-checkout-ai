@@ -527,6 +527,9 @@ export default function Index() {
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
   const defaultProductFetcher = useFetcher(); // Default product picker (PRO)
+
+  // Which half of the Instagram section is showing (Pro only; see showStories).
+  const [igTab, setIgTab] = useState("posts");
   const reviewReportFetcher = useFetcher(); // Fire-and-forget review-prompt logging
   // Ref so the review effect can submit without adding the fetcher (whose
   // identity changes on every state transition) to its dependency array.
@@ -647,6 +650,63 @@ export default function Index() {
       navigate("/app?disconnected=true");
     }
   }, [connectFetcher.data, navigate]);
+
+  // Post mapping is normally hidden on FREE, since per-post mapping and toggles
+  // are part of the paid experience. It has to be visible during the free
+  // comment window though: comment-to-DM sends the checkout link for the
+  // product mapped to that post, so a merchant who cannot map products cannot
+  // watch the feature do the thing it is being judged on.
+  const showPosts = isConnected && (!isFree || plan?.comments);
+  // Stories are Pro. Non-Pro shops get the story-replies banner further up
+  // instead, which is the honest place to make that argument.
+  const showStories = isConnected && plan?.defaultProduct;
+
+  // Both panels await the same deferred promise, so mounting both costs one
+  // fetch. The skeleton is fixed-size to keep first paint fast (LCP) with no
+  // layout shift when the real grid arrives (CLS).
+  const postsPanel = (
+    <Suspense fallback={<PostsSectionSkeleton />}>
+      <Await
+        resolve={deferred}
+        errorElement={
+          <span className="srCardDesc">
+            Couldn&apos;t load your Instagram posts. Reload the page to try again.
+          </span>
+        }
+      >
+        {(resolved) => (
+          <PostsSection
+            mediaData={resolved?.mediaData}
+            shopifyProducts={resolved?.shopifyProducts || []}
+            productMappings={productMappings}
+            disabledPostIds={settings?.disabled_post_ids || []}
+            postFetcher={postFetcher}
+          />
+        )}
+      </Await>
+    </Suspense>
+  );
+
+  const storiesPanel = (
+    <Suspense fallback={<span className="srCardDesc">Loading your products…</span>}>
+      <Await
+        resolve={deferred}
+        errorElement={
+          <span className="srCardDesc">
+            Couldn&apos;t load your products. Reload the page to try again.
+          </span>
+        }
+      >
+        {(resolved) => (
+          <DefaultProductSection
+            settings={settings}
+            shopifyProducts={resolved?.shopifyProducts || []}
+            fetcher={defaultProductFetcher}
+          />
+        )}
+      </Await>
+    </Suspense>
+  );
 
   return (
     <s-page heading="SocialRepl.ai">
@@ -1231,69 +1291,56 @@ export default function Index() {
         </automationFetcher.Form>
       </s-section>
 
-      {/* ── Your Instagram Posts ───────────────────────────────────────── */}
-      {/* Normally hidden on FREE, since post-by-post mapping and per-post
-          toggles are part of the paid automation experience. It must be visible
-          during the free comment window though: comment-to-DM sends the
-          checkout link for the product mapped to that post, so a merchant who
-          cannot map products cannot see the feature do the thing it is being
-          judged on. The banner above tells them to map their posts, and that
-          instruction has to be followable.
-          Media + products stream in via the deferred loader promise; the
-          fixed-size skeleton keeps first paint fast (LCP) with no layout
-          shift when the real grid arrives (CLS). */}
-      {isConnected && (!isFree || plan?.comments) && (
-        <s-section heading="Your Instagram Posts">
-          <Suspense fallback={<PostsSectionSkeleton />}>
-            <Await
-              resolve={deferred}
-              errorElement={
-                <span className="srCardDesc">
-                  Couldn&apos;t load your Instagram posts. Reload the page to try again.
-                </span>
-              }
+      {/* ── Your Instagram: posts, and stories on Pro ──────────────────── */}
+      {showStories ? (
+        /* Pro: posts and stories are two halves of "which product does this
+           message mean", so they share one section. Both panels mount and one
+           is hidden rather than swapped out, so switching tabs keeps an open
+           product picker and costs no refetch (they await the same promise). */
+        <s-section heading="Your Instagram">
+          <div className="srTabs" role="tablist" aria-label="Instagram automation">
+            <button
+              type="button"
+              role="tab"
+              id="sr-tab-posts"
+              aria-controls="sr-panel-posts"
+              aria-selected={igTab === "posts"}
+              className="srTab"
+              onClick={() => setIgTab("posts")}
             >
-              {(resolved) => (
-                <PostsSection
-                  mediaData={resolved?.mediaData}
-                  shopifyProducts={resolved?.shopifyProducts || []}
-                  productMappings={productMappings}
-                  disabledPostIds={settings?.disabled_post_ids || []}
-                  postFetcher={postFetcher}
-                />
-              )}
-            </Await>
-          </Suspense>
-        </s-section>
-      )}
-
-      {/* ── Default product (PRO) ──────────────────────────────────────── */}
-      {/* Sits after post mapping because it answers the question mapping
-          leaves open: what to offer when there is no post to map. Stories are
-          the main case, so it appears alongside story automation on Pro.
-          Non-Pro shops get the story-replies banner above instead, which is
-          the honest place to make this argument. */}
-      {isConnected && plan?.defaultProduct && (
-        <s-section heading="Default product">
-          <Suspense fallback={<span className="srCardDesc">Loading your products…</span>}>
-            <Await
-              resolve={deferred}
-              errorElement={
-                <span className="srCardDesc">
-                  Couldn&apos;t load your products. Reload the page to try again.
-                </span>
-              }
+              Posts
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="sr-tab-stories"
+              aria-controls="sr-panel-stories"
+              aria-selected={igTab === "stories"}
+              className="srTab"
+              onClick={() => setIgTab("stories")}
             >
-              {(resolved) => (
-                <DefaultProductSection
-                  settings={settings}
-                  shopifyProducts={resolved?.shopifyProducts || []}
-                  fetcher={defaultProductFetcher}
-                />
-              )}
-            </Await>
-          </Suspense>
+              Stories
+            </button>
+          </div>
+          <div
+            role="tabpanel"
+            id="sr-panel-posts"
+            aria-labelledby="sr-tab-posts"
+            hidden={igTab !== "posts"}
+          >
+            {postsPanel}
+          </div>
+          <div
+            role="tabpanel"
+            id="sr-panel-stories"
+            aria-labelledby="sr-tab-stories"
+            hidden={igTab !== "stories"}
+          >
+            {storiesPanel}
+          </div>
         </s-section>
+      ) : (
+        showPosts && <s-section heading="Your Instagram Posts">{postsPanel}</s-section>
       )}
 
     </s-page>

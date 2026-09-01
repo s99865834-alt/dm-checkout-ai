@@ -55,10 +55,12 @@ export function DefaultProductSection({ settings, shopifyProducts, fetcher }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <span className="srCardDesc">
-        When someone replies to your story, tags you in one, or shares a post you
-        haven&apos;t mapped, there&apos;s no post to look up a product from. This is
-        what gets offered instead, so those messages still get a real product link
-        rather than your homepage.
+        Story replies and story mentions are answered automatically on your plan.
+        Unlike a feed post, a story can&apos;t be mapped to a product: it expires in
+        a day, and most replies are a reaction rather than a product name. Pick the
+        product your stories are usually about and those messages get a real
+        checkout link for it instead of your homepage. It covers shared posts you
+        haven&apos;t mapped yet too.
       </span>
 
       {savedProductId ? (
