@@ -277,6 +277,72 @@ s-page s-box.srCardCompact {
   background: #d72c0d;
 }
 
+/* Segmented tabs (Posts / Stories on the home page).
+   Tabs are flex-sized rather than fixed so two of them fill the row on a
+   phone without the labels squashing, and the row scrolls rather than
+   shrinking if a third is ever added. */
+.srTabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: #f1f2f4;
+  border-radius: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.srTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.srTab {
+  flex: 1 1 0;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  /* 36px keeps the hit target thumb-friendly on mobile */
+  min-height: 36px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #616161;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.srTab:hover {
+  color: #1a1a1a;
+}
+
+.srTab[aria-selected="true"] {
+  background: #fff;
+  color: #1a1a1a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.srTab:focus-visible {
+  outline: 2px solid #005bd3;
+  outline-offset: -2px;
+}
+
+@media (max-width: 480px) {
+  .srTab {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .srTab {
+    transition: none;
+  }
+}
+
 /* Instagram feed layout */
 .srMediaGrid {
   display: grid;
