@@ -3,7 +3,7 @@
  *   /{linkId}            — short-link domain (srai.link legacy, socialrepl.ai)
  *   /proxy/go/{linkId}   — Shopify app proxy ({store-domain}/a/go/{linkId})
  * Looks up the destination in links_sent and logs the click (browser-like
- * requests only, and never for info_ housekeeping links).
+ * requests only, so crawlers and link previews don't count).
  */
 
 import supabase from "./supabase.server";
@@ -49,8 +49,13 @@ export async function resolveTrackedLink(linkId, request) {
   }
   if (!url) return null;
 
-  const isInfoLink = linkId.startsWith("info_");
-  if (!isInfoLink && looksLikeBrowser(request)) {
+  // Every link type is logged, info_ included. The analytics KPIs filter to
+  // checkout links via isCheckoutLinkId before counting, so this moves no
+  // number a merchant sees; it just stops browse links being the one thing we
+  // send in volume and know nothing about. An unmapped post can only answer
+  // with an info_ link, so "does anyone click those?" decides how much the
+  // product-mapping gap actually costs.
+  if (looksLikeBrowser(request)) {
     const userAgent = request.headers.get("user-agent") || null;
     const forwarded = request.headers.get("x-forwarded-for");
     const ip = forwarded ? forwarded.split(",")[0].trim() : null;
