@@ -2,20 +2,28 @@ import { useOutletContext } from "react-router";
 
 /**
  * PlanGate component - Shows upgrade prompt for locked features
- * 
+ *
+ * Prefer `capability`, which reads the flag on the effective plan, over
+ * `requiredPlan`, which compares plan names. The two disagree whenever a trial
+ * grants a capability the merchant's plan name doesn't include: the free
+ * comment window turns on `comments` for a FREE shop, and a name comparison
+ * locks the UI anyway. That exact mismatch already shipped once, telling
+ * merchants to upgrade for a feature that was running for them at the time.
+ *
  * Usage:
  * ```jsx
- * <PlanGate requiredPlan="GROWTH" feature="Comments Automation">
+ * <PlanGate capability="brandVoice" feature="Brand Voice">
  *   <YourFeatureComponent />
  * </PlanGate>
  * ```
- * 
+ *
  * @param {Object} props
- * @param {string} props.requiredPlan - Required plan: "GROWTH" or "PRO"
+ * @param {string} [props.capability] - Key on the plan config, e.g. "brandVoice"
+ * @param {string} [props.requiredPlan] - Fallback: "GROWTH" or "PRO"
  * @param {string} props.feature - Name of the feature (for the upgrade message)
  * @param {React.ReactNode} props.children - Content to show if plan allows
  */
-export function PlanGate({ requiredPlan, feature, children }) {
+export function PlanGate({ capability, requiredPlan, feature, children }) {
   const { plan } = useOutletContext() || { plan: null };
 
   if (!plan) {
@@ -27,10 +35,11 @@ export function PlanGate({ requiredPlan, feature, children }) {
   }
 
   const planHierarchy = { FREE: 0, GROWTH: 1, PRO: 2 };
-  const currentPlanLevel = planHierarchy[plan.name] || 0;
-  const requiredPlanLevel = planHierarchy[requiredPlan] || 0;
+  const allowed = capability
+    ? plan[capability] === true
+    : (planHierarchy[plan.name] || 0) >= (planHierarchy[requiredPlan] || 0);
 
-  if (currentPlanLevel >= requiredPlanLevel) {
+  if (allowed) {
     return <>{children}</>;
   }
 

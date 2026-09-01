@@ -144,6 +144,20 @@ async function rollbackReplyLinks(shopId, linkIds) {
  * @param {Object} plan - Plan object
  * @returns {Promise<{sent: boolean, reason?: string}>} - Whether message was sent and reason
  */
+/**
+ * Brand voice for a reply, or null when the plan doesn't include it.
+ *
+ * The UI has always gated who can *set* a brand voice, but nothing gated who
+ * gets it *applied*, so a shop that customised its voice on Growth and then
+ * dropped to Free kept the paid behaviour indefinitely. Returning null falls
+ * the generators back to their neutral "friendly" default, which is what Free
+ * is supposed to sound like.
+ */
+async function brandVoiceFor(shopId, plan) {
+  if (!plan?.brandVoice) return null;
+  return getBrandVoice(shopId);
+}
+
 export async function handleIncomingDm(message, shop, plan, ctx = {}) {
   try {
     // 0. Meta compliance: only one automated reply per incoming message
@@ -208,10 +222,11 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // 3. Check if this is a follow-up (conversation support for Growth/Pro)
     const isFollowUp = await canSendFollowUp(message, shop, plan);
 
-    // For FREE plan, only allow first reply (no follow-ups)
-    if (plan.name === "FREE" && isFollowUp) {
-      logger.debug(`[automation] Follow-up DMs not available on FREE plan`);
-      return { sent: false, reason: "Follow-up DMs not available on FREE plan" };
+    // Multi-turn conversation is a paid capability. Keyed off plan.converse
+    // rather than the plan name so a trial that grants it is honoured.
+    if (!plan.converse && isFollowUp) {
+      logger.debug(`[automation] Multi-turn conversation not available on ${plan.name}`);
+      return { sent: false, reason: `Follow-up DMs not available on ${plan.name} plan` };
     }
 
     // 4. Determine intent + fetch recent thread context (so replies after follow-ups can be contextual)
@@ -326,7 +341,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // message, opt-out, 24h window, usage cap) have already run above, and
     // claim/send/usage accounting here mirrors the legacy branches exactly.
     try {
-      const brandVoiceData = await getBrandVoice(shop.id);
+      const brandVoiceData = await brandVoiceFor(shop.id, plan);
       const agentResult = await generateAgentReply({
         shop,
         message,
@@ -379,7 +394,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       // nearest-match answers could derail replies (an irrelevant FAQ match
       // once made the AI ignore the product count sitting in this context).
       const [brandVoiceData, storeInfoResult] = await Promise.all([
-        getBrandVoice(shop.id),
+        brandVoiceFor(shop.id, plan),
         getStoredStoreContext(shop.id, 0).catch(() => null),
       ]);
 
@@ -516,7 +531,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
             const [checkoutLink, brandVoiceData, productInfo] = await Promise.all([
               buildCheckoutLink(shop, lastProductLink.product_id, resolvedVariantId, 1),
-              getBrandVoice(shop.id),
+              brandVoiceFor(shop.id, plan),
               shop.shopify_domain
                 ? getShopifyProductInfo(shop.shopify_domain, lastProductLink.product_id, resolvedVariantId)
                 : Promise.resolve({ productName: null, productPrice: null }),
@@ -620,7 +635,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             ? buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productMapping.product_handle)
             : Promise.resolve(null),
           buildCheckoutLink(shop, productMapping.product_id, productMapping.variant_id, 1),
-          getBrandVoice(shop.id),
+          brandVoiceFor(shop.id, plan),
           shop.shopify_domain && productMapping.product_id
             ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
             : Promise.resolve({ productName: null, productPrice: null }),
@@ -776,7 +791,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           if (rawCtx) {
             const sizeInfo = detectSizeOption({ options: rawCtx.options, variants: rawCtx.variants?.nodes || [] });
             if (sizeInfo) {
-              const brandVoiceData = await getBrandVoice(shop.id);
+              const brandVoiceData = await brandVoiceFor(shop.id, plan);
               const sizeQText = await generateSizeQuestion(
                 brandVoiceData,
                 rawCtx.title || matchedProduct.title,
@@ -820,7 +835,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             ? buildProductPageLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, productMapping.product_handle)
             : Promise.resolve(null),
           buildCheckoutLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, 1),
-          getBrandVoice(shop.id),
+          brandVoiceFor(shop.id, plan),
           getShopifyProductInfo(shop.shopify_domain, gid, variantGid),
           needsProductContext
             ? getShopifyProductContextForReply(shop.shopify_domain, gid).catch(() => null)
@@ -900,7 +915,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       if (isExplicitLinkRequest(message.text)) {
         const homepageUrl = getShopHomepageUrl(shop);
         if (homepageUrl) {
-          const brandVoiceData = await getBrandVoice(shop.id);
+          const brandVoiceData = await brandVoiceFor(shop.id, plan);
           let replyText = await generateReplyMessage(
             brandVoiceData,
             null,
@@ -970,7 +985,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           `[automation] No product match found - PRO tier will ask for clarification for intent: ${intent}`
         );
 
-        const brandVoiceData = await getBrandVoice(shop.id);
+        const brandVoiceData = await brandVoiceFor(shop.id, plan);
         const clarifyingReply = await generateClarifyingQuestion(
           brandVoiceData,
           message.text,
@@ -1222,7 +1237,7 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
       return { sent: false, reason: "Already replied to this message" };
     }
 
-    const brandVoiceData = await getBrandVoice(shop.id);
+    const brandVoiceData = await brandVoiceFor(shop.id, plan);
 
     if (kind === "heart") {
       const tone = brandVoiceData?.tone || "friendly";
@@ -1470,7 +1485,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       }
 
       logger.debug(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
-      const brandVoiceData = await getBrandVoice(shop.id);
+      const brandVoiceData = await brandVoiceFor(shop.id, plan);
       let replyText = await generateReplyMessage(
         brandVoiceData,
         null,
@@ -1536,7 +1551,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       const customerSize = message.ai_entities?.size || null;
       if (!customerSize) {
         const [brandVoiceData, productInfo] = await Promise.all([
-          getBrandVoice(shop.id),
+          brandVoiceFor(shop.id, plan),
           shop.shopify_domain && productMapping.product_id
             ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
             : Promise.resolve({ productName: null, productPrice: null }),
@@ -1623,7 +1638,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         ? getShopifyProductContextForReply(shop.shopify_domain, productMapping.product_id)
         : Promise.resolve(null),
       buildCheckoutLink(shop, productMapping.product_id, productMapping.variant_id, 1),
-      getBrandVoice(shop.id),
+      brandVoiceFor(shop.id, plan),
       shop.shopify_domain && productMapping.product_id
         ? getShopifyProductInfo(shop.shopify_domain, productMapping.product_id, productMapping.variant_id || null)
         : Promise.resolve({ productName: null, productPrice: null }),
@@ -1903,8 +1918,8 @@ Write the response:`;
  * @returns {Promise<boolean>} - True if follow-up is allowed
  */
 async function canSendFollowUp(message, shop, plan) {
-  // FREE plan: no conversation support
-  if (plan.name === "FREE") {
+  // No multi-turn conversation without the capability.
+  if (!plan.converse) {
     return false;
   }
 
