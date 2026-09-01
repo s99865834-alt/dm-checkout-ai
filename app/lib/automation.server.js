@@ -334,6 +334,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         brandVoice: brandVoiceData,
         threadContext,
         allowClarify: plan.followup === true && followupAutomationEnabled,
+        // Story replies reach the agent before the legacy path's default-product
+        // fallback below, and most story replies are reactions with no product
+        // in them, so the agent is where this actually has to work.
+        storyContext: isStorySurface(message)
+          ? {
+              kind: message.content_type,
+              productName: await defaultProductName(shop, settings, plan),
+            }
+          : null,
       });
 
       if (agentResult?.text) {
@@ -739,6 +748,21 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         }
       }
 
+      // Story replies are mostly reactions to something visual ("love this",
+      // "😍", "where"), so the search above usually finds nothing and the reply
+      // degrades to a homepage link. The default product is what the merchant
+      // is telling us their stories are about, so use it as the last resort
+      // before giving up on selling anything.
+      if (!matchedProduct && isStorySurface(message)) {
+        const fallback = defaultProductMatch(settings, plan);
+        if (fallback) {
+          matchedProduct = fallback;
+          logger.debug(
+            `[automation] Story ${message.content_type} for message ${message.id}: no catalog match, using the shop's default product`
+          );
+        }
+      }
+
       if (matchedProduct) {
         const gid = matchedProduct.id;
         const numericProductId = gid.replace("gid://shopify/Product/", "");
@@ -1101,7 +1125,62 @@ async function hasCommentBeenReplied(commentId, shopId) {
  * @param {Object} plan - Effective plan (see entitlements.js)
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
-const REPLYABLE_NON_TEXT = new Set(["share", "heart"]);
+// story_reply and story_mention are here because story context outranks the
+// payload kind in parseMessageEvent: a heart sent in reply to a story arrives
+// as "story_reply", not "heart", so without these entries the warmest
+// text-less message Instagram delivers was being dropped on every plan.
+const REPLYABLE_NON_TEXT = new Set(["share", "heart", "story_reply", "story_mention"]);
+
+const STORY_CONTENT_TYPES = new Set(["story_reply", "story_mention"]);
+
+export function isStorySurface(message) {
+  return STORY_CONTENT_TYPES.has(message?.content_type);
+}
+
+/**
+ * The merchant's default product, shaped like a catalog-search result so it can
+ * flow through the existing product reply path untouched.
+ *
+ * Stories are the reason this exists. A story is not in post_product_map and
+ * cannot be: it expires in a day, and a reply to one is usually a reaction to
+ * something visual rather than a product name. So there is nothing to look up,
+ * and without a default the warmest message Instagram delivers gets answered
+ * with a homepage link or nothing at all.
+ *
+ * @returns {{id: string, variants: {nodes: Array<{id: string}>}}|null}
+ */
+/**
+ * Title of the shop's default product, for prompting the sales agent. The agent
+ * works in product names rather than ids (it confirms them with
+ * search_products), so a name it can search beats an id it can't.
+ */
+async function defaultProductName(shop, settings, plan) {
+  const match = defaultProductMatch(settings, plan);
+  if (!match || !shop?.shopify_domain) return null;
+  try {
+    const info = await getShopifyProductInfo(
+      shop.shopify_domain,
+      match.id,
+      match.variants.nodes[0]?.id || null
+    );
+    return info?.productName || null;
+  } catch {
+    // Prompting without it just means the agent won't offer a fallback
+    // product, which is the pre-existing behaviour.
+    return null;
+  }
+}
+
+export function defaultProductMatch(settings, plan) {
+  if (!plan?.defaultProduct) return null;
+  const productId = settings?.featured_product_id;
+  if (!productId) return null;
+  const variantId = settings?.featured_variant_id || null;
+  return {
+    id: productId,
+    variants: { nodes: variantId ? [{ id: variantId }] : [] },
+  };
+}
 
 // Hearts get a fixed reply rather than a generated one. There is nothing to
 // reason about in a heart, and the templates carry no link, so this cannot
@@ -1159,9 +1238,10 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
       return { sent: true };
     }
 
-    // Shared post. Resolve the product from the shared media, then fall back to
-    // the merchant's featured product. If neither resolves we stay silent:
-    // guessing produced the wrong-product replies that eroded trust before.
+    // Shared post or story. Resolve the product from the shared media, then
+    // fall back to the shop's default product. If neither resolves we stay
+    // silent: guessing produced the wrong-product replies that eroded trust
+    // before.
     const sharedMediaId = message.attachment_meta?.shared_media_id || null;
     let productId = null;
     let variantId = null;
@@ -1176,16 +1256,19 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
         source = "post mapping";
       }
     }
-    if (!productId && settings?.featured_product_id) {
-      productId = settings.featured_product_id;
-      variantId = settings.featured_variant_id || null;
-      source = "featured product";
+    // A story has no shared media id to map and expires in a day, so the
+    // default product is the only thing that can answer it.
+    const fallback = defaultProductMatch(settings, plan);
+    if (!productId && fallback) {
+      productId = fallback.id;
+      variantId = fallback.variants.nodes[0]?.id || null;
+      source = "default product";
     }
     if (!productId) {
       logger.debug(
-        `[automation] Shared post DM ${message.id}: no product resolved (shared_media_id=${sharedMediaId || "none"}), staying silent`
+        `[automation] Non-text DM ${message.id} (${kind}): no product resolved (shared_media_id=${sharedMediaId || "none"}), staying silent`
       );
-      return { sent: false, reason: "Could not resolve a product for the shared post" };
+      return { sent: false, reason: `Could not resolve a product for this ${kind}` };
     }
 
     const [checkoutLink, productInfo] = await Promise.all([
@@ -1220,7 +1303,9 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
         originChannel: "dm",
         inboundChannel: "dm",
         triggerChannel: "dm",
-        sharedPost: true,
+        sharedPost: kind === "share",
+        storyMention: kind === "story_mention",
+        storyReply: kind === "story_reply",
       }
     );
 
@@ -2070,6 +2155,8 @@ ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previou
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
 ${safeChannelContext?.sizeConfirmation ? `- The customer was asked what size they want and replied with: "${safeChannelContext.sizeConfirmation}". Confirm their size choice and send the checkout link. Keep it brief.` : ""}
 ${safeChannelContext?.sharedPost ? `- SHARED POST, NO TEXT: The customer forwarded one of your Instagram posts into this DM thread and wrote nothing at all. Acknowledge that they shared the post and treat it as interest in that product, then give the link. Never quote them or refer to anything they "said" or "asked" — they sent no words, and inventing some is an obvious tell. Keep it to two short sentences.` : ""}
+${safeChannelContext?.storyReply ? `- STORY REACTION, NO TEXT: The customer reacted to your Instagram story without writing anything (a heart, a sticker, an image). Never quote them or refer to anything they "said". They watched your story and responded to it, so acknowledge the reaction warmly, then offer the product with the link as an invitation rather than a pitch. No urgency, no hype. Two short sentences.` : ""}
+${safeChannelContext?.storyMention ? `- STORY MENTION, NO TEXT: The customer tagged this store in their own Instagram story. They wrote nothing to you, so never quote them or refer to anything they "said". This is a favour, not a purchase question: thank them warmly and specifically for the shoutout FIRST, then mention the product is there if they or their friends want it, with the link. It is an invitation, not a pitch: no urgency, no hype, no "don't miss out". Two short sentences.` : ""}
 ${recentThreadText ? `- Recent thread messages (most recent last):\n${recentThreadText}` : ""}
 ${warmthFirst ? `COMPLIMENT COMMENT — WARMTH FIRST: This person left a compliment on an Instagram post ("${originalMessage}"), they did NOT ask to buy anything. Your reply is a DM landing in their inbox, so it must read like the store owner personally saying thanks:
 - Open with a genuine, specific thank-you that matches their energy (react to what they actually said — don't use a generic "thanks for your interest").

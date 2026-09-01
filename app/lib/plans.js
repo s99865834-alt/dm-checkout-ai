@@ -16,6 +16,7 @@ export const PLANS = {
     brandVoice: false,
     followup: false,
     stories: false,
+    defaultProduct: false,
     prioritySupport: false,
   },
   GROWTH: {
@@ -27,6 +28,7 @@ export const PLANS = {
     brandVoice: true,
     followup: false,
     stories: false,
+    defaultProduct: false,
     prioritySupport: false,
   },
   PRO: {
@@ -38,6 +40,10 @@ export const PLANS = {
     brandVoice: true,
     followup: true,
     stories: true,
+    // The product answered with when nothing else identifies one. Pairs with
+    // stories: a story isn't in post_product_map and can't be, so without a
+    // default there is nothing for a story reply to sell.
+    defaultProduct: true,
     prioritySupport: true,
   },
 };

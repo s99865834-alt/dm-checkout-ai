@@ -3,11 +3,12 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
+import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
+import { DefaultProductSection } from "../components/home/DefaultProductSection";
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
@@ -186,7 +187,7 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   try {
-    const { session, shop, admin } = await getShopWithPlan(request);
+    const { session, shop, admin, plan } = await getShopWithPlan(request);
 
     if (!session?.shop) {
       return { error: "Authentication failed. Please try again." };
@@ -358,6 +359,31 @@ export const action = async ({ request }) => {
       }
     }
 
+    // ── Default product (PRO) ──────────────────────────────────────────────
+    // The product answered with when nothing else identifies one: a story
+    // reply, a story mention, or a shared post with no mapping. Gated here as
+    // well as in the UI, so a downgraded shop can't keep setting it.
+    if (actionType === "save-default-product" || actionType === "clear-default-product") {
+      if (!shop?.id) return { error: "Shop not found" };
+      if (!plan?.defaultProduct) return { error: "A default product is a Pro feature." };
+
+      const clearing = actionType === "clear-default-product";
+      const productId = clearing ? null : formData.get("productId");
+      if (!clearing && !productId) return { error: "Choose a product first" };
+
+      try {
+        await updateFeaturedProduct(shop.id, productId, clearing ? null : formData.get("variantId") || null);
+        return {
+          success: true,
+          actionType,
+          message: clearing ? "Default product cleared." : "Default product saved.",
+        };
+      } catch (err) {
+        console.error("[home] Error saving default product:", err);
+        return { error: err.message || "Failed to save the default product" };
+      }
+    }
+
     // ── Load more Instagram posts (cursor pagination) ──────────────────────
     if (actionType === "load-more-media") {
       if (!shop?.id) return { error: "Shop not found" };
@@ -500,6 +526,7 @@ export default function Index() {
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
+  const defaultProductFetcher = useFetcher(); // Default product picker (PRO)
   const reviewReportFetcher = useFetcher(); // Fire-and-forget review-prompt logging
   // Ref so the review effect can submit without adding the fetcher (whose
   // identity changes on every state transition) to its dependency array.
@@ -1233,6 +1260,35 @@ export default function Index() {
                   productMappings={productMappings}
                   disabledPostIds={settings?.disabled_post_ids || []}
                   postFetcher={postFetcher}
+                />
+              )}
+            </Await>
+          </Suspense>
+        </s-section>
+      )}
+
+      {/* ── Default product (PRO) ──────────────────────────────────────── */}
+      {/* Sits after post mapping because it answers the question mapping
+          leaves open: what to offer when there is no post to map. Stories are
+          the main case, so it appears alongside story automation on Pro.
+          Non-Pro shops get the story-replies banner above instead, which is
+          the honest place to make this argument. */}
+      {isConnected && plan?.defaultProduct && (
+        <s-section heading="Default product">
+          <Suspense fallback={<span className="srCardDesc">Loading your products…</span>}>
+            <Await
+              resolve={deferred}
+              errorElement={
+                <span className="srCardDesc">
+                  Couldn&apos;t load your products. Reload the page to try again.
+                </span>
+              }
+            >
+              {(resolved) => (
+                <DefaultProductSection
+                  settings={settings}
+                  shopifyProducts={resolved?.shopifyProducts || []}
+                  fetcher={defaultProductFetcher}
                 />
               )}
             </Await>

@@ -168,7 +168,8 @@ export default function BillingSelect() {
       trialNote: "First 30 days free — billing starts after your trial",
       features: [
         "Everything in Growth",
-        "Story replies answered automatically",
+        "Story replies and mentions answered automatically",
+        "Default product for stories and unmapped posts",
         "Follow-up messages",
         "Per-post analytics",
         "10,000 messages/month",
@@ -390,6 +391,12 @@ export default function BillingSelect() {
               </tr>
               <tr>
                 <td><span className="srTextStrong">Story Replies</span></td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">✓</td>
+              </tr>
+              <tr>
+                <td><span className="srTextStrong">Default Product</span></td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">—</td>
                 <td className="srTextCenter">✓</td>
