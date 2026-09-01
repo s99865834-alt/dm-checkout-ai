@@ -259,6 +259,7 @@ export async function generateAgentReply({
   brandVoice,
   threadContext,
   allowClarify,
+  storyContext = null,
 }) {
   if (!isSalesAgentEnabled()) return null;
   if (!shop?.shopify_domain || !message?.text) return null;
@@ -342,7 +343,7 @@ export async function generateAgentReply({
   };
 
   const systemMessage = buildSystemMessage({ brandVoice, allowClarify });
-  const userMessage = buildUserMessage({ message, intent, threadContext });
+  const userMessage = buildUserMessage({ message, intent, threadContext, storyContext });
 
   const messages = [
     { role: "system", content: systemMessage },
@@ -607,7 +608,7 @@ HARD RULES:
 - Keep it short: 2-4 sentences, like a real DM. No sign-offs, no "feel free to reach out".`;
 }
 
-function buildUserMessage({ message, intent, threadContext }) {
+function buildUserMessage({ message, intent, threadContext, storyContext }) {
   const parts = [];
 
   const recent = (threadContext?.messages || [])
@@ -640,6 +641,23 @@ function buildUserMessage({ message, intent, threadContext }) {
   }
   if (intent) {
     parts.push(`Classifier's intent guess (may be wrong, trust the message itself): ${intent}`);
+  }
+
+  // Stories can't be mapped to a product the way feed posts are: a story is
+  // gone in 24 hours, and a reply to one is usually a reaction with no product
+  // name in it ("love this", "😍", "need"). The merchant's default product is
+  // their answer to "what are my stories usually about", so it's offered as a
+  // last resort rather than letting the reply degrade to a homepage link.
+  if (storyContext) {
+    const surface =
+      storyContext.kind === "story_mention"
+        ? "They tagged this store in their own Instagram story"
+        : "They replied to one of this store's Instagram stories";
+    parts.push(
+      storyContext.productName
+        ? `${surface}, so you cannot see what was in it and there is no post mapping for it. If their message identifies a product, answer about that product as normal. If it does not (a reaction, an emoji, "love this", "how much"), treat it as interest in "${storyContext.productName}", which the merchant set as the product their stories are usually about. Confirm it with search_products, then link it. Do not tell the customer it was a default or a guess.`
+        : `${surface}, so you cannot see what was in it and there is no post mapping for it. Never guess which product the story showed. If their message doesn't identify a product, reply warmly without naming one.`
+    );
   }
 
   parts.push(`Customer's message: "${message.text}"`);

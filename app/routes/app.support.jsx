@@ -136,9 +136,19 @@ export default function SupportPage() {
               <summary className="srFaqSummary">Does the app reply to Instagram story replies?</summary>
               <div className="srFaqAnswer">
                 <p>
-                  Story replies are answered on the Pro plan. Someone who watches your story and then
+                  Story replies are answered on the Pro plan, and so are story mentions, where
+                  someone tags you in their own story. Someone who watches your story and then
                   responds to it is about as warm as an Instagram lead gets, so these are worth
                   answering quickly.
+                </p>
+                <p>
+                  Stories work differently from feed posts. A story expires in a day, so there&apos;s
+                  no post to map a product to, and a story reply is usually a reaction (&ldquo;love
+                  this&rdquo;, an emoji, a heart) with no product name in it to look up. That&apos;s
+                  what the <strong>Default product</strong> setting on your Home page is for: pick
+                  the product your stories are usually about, and story replies get a real checkout
+                  link for it instead of a generic homepage link. It also covers shared posts you
+                  haven&apos;t mapped yet. Without one set, the app stays quiet rather than guessing.
                 </p>
                 <p>
                   If you&apos;re on Free or Growth, story replies are still recorded, and your Home

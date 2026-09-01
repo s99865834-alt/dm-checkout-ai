@@ -1150,6 +1150,38 @@ export async function updateSettings(shopId, settings) {
 }
 
 /**
+ * Set (or clear, with nulls) the shop's default product: the one answered with
+ * on surfaces where nothing identifies a specific product, such as a story
+ * reply or a shared post we can't map. Kept out of updateSettings so toggling
+ * an automation switch can never blank it.
+ *
+ * @param {string} shopId
+ * @param {string|null} productId - Shopify product gid, or null to clear
+ * @param {string|null} variantId - Shopify variant gid, optional
+ */
+export async function updateFeaturedProduct(shopId, productId, variantId = null) {
+  const { data, error } = await supabase
+    .from("settings")
+    .upsert(
+      {
+        shop_id: shopId,
+        featured_product_id: productId || null,
+        featured_variant_id: productId ? variantId || null : null,
+      },
+      { onConflict: "shop_id" }
+    )
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("updateFeaturedProduct error", error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
  * Get messages for a shop with optional filters
  */
 export async function getMessages(shopId, options = {}) {

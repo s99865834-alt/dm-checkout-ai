@@ -125,6 +125,13 @@ import { getPlanConfig } from "../app/lib/plans";
 
 const shop = { id: "00000000-0000-0000-0000-000000000001", shopify_domain: "test-store.myshopify.com" };
 const growthPlan = getPlanConfig("GROWTH");
+const proPlan = getPlanConfig("PRO");
+
+const WITH_DEFAULT_PRODUCT = {
+  dm_automation_enabled: true,
+  featured_product_id: "gid://shopify/Product/999",
+  featured_variant_id: "gid://shopify/ProductVariant/888",
+};
 
 const MAPPING = {
   ig_media_id: "shared-media-1",
@@ -189,12 +196,23 @@ describe("shared post DMs", () => {
     expect(incrementUsage).toHaveBeenCalledWith(shop.id, 1);
   });
 
-  it("falls back to the merchant's featured product when the post is unmapped", async () => {
-    getSettings.mockResolvedValue({
-      dm_automation_enabled: true,
-      featured_product_id: "gid://shopify/Product/999",
-      featured_variant_id: "gid://shopify/ProductVariant/888",
-    });
+  it("falls back to the shop's default product when the post is unmapped", async () => {
+    getSettings.mockResolvedValue(WITH_DEFAULT_PRODUCT);
+
+    const res = await handleNonTextDm(
+      nonTextDm("share", { attachment_meta: { types: ["share"], shared_media_id: "unmapped-media" } }),
+      shop,
+      proPlan
+    );
+
+    expect(res.sent).toBe(true);
+    expect(sentText()).toContain("https://short.test/");
+  });
+
+  // The default product is what Pro charges for. A Growth shop with one set
+  // (from a lapsed trial, say) must not keep getting it.
+  it("ignores the default product on a plan without it", async () => {
+    getSettings.mockResolvedValue(WITH_DEFAULT_PRODUCT);
 
     const res = await handleNonTextDm(
       nonTextDm("share", { attachment_meta: { types: ["share"], shared_media_id: "unmapped-media" } }),
@@ -202,8 +220,8 @@ describe("shared post DMs", () => {
       growthPlan
     );
 
-    expect(res.sent).toBe(true);
-    expect(sentText()).toContain("https://short.test/");
+    expect(res.sent).toBe(false);
+    expect(sendDmNow).not.toHaveBeenCalled();
   });
 
   // Guessing is how the wrong-product replies happened. Silence is the correct
@@ -230,6 +248,56 @@ describe("shared post DMs", () => {
 
     expect(res.sent).toBe(false);
     expect(sendDmNow).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Stories are why the default product exists. A story is not in
+ * post_product_map and can't be (it expires in a day), and a text-less story
+ * event carries nothing to search a catalog with, so the default product is
+ * the only thing that can answer one.
+ *
+ * These arrive with content_type "story_reply"/"story_mention" rather than
+ * "heart" or "share", because parseMessageEvent lets story context outrank the
+ * payload kind. That is exactly why they were being dropped.
+ */
+describe("story DMs", () => {
+  it.each(["story_reply", "story_mention"])(
+    "answers a text-less %s with the default product",
+    async (kind) => {
+      getSettings.mockResolvedValue(WITH_DEFAULT_PRODUCT);
+
+      const res = await handleNonTextDm(nonTextDm(kind), shop, proPlan);
+
+      expect(res.sent).toBe(true);
+      expect(sentText()).toContain("https://short.test/");
+      expect(incrementUsage).toHaveBeenCalledWith(shop.id, 1);
+    }
+  );
+
+  // Story automation is the other half of what Pro charges for. The webhook
+  // gates story events before this is reached, so this pins the second line of
+  // defence rather than the primary one.
+  it.each(["story_reply", "story_mention"])(
+    "does not answer a %s on a plan without stories",
+    async (kind) => {
+      getSettings.mockResolvedValue(WITH_DEFAULT_PRODUCT);
+
+      const res = await handleNonTextDm(nonTextDm(kind), shop, growthPlan);
+
+      expect(res.sent).toBe(false);
+      expect(sendDmNow).not.toHaveBeenCalled();
+    }
+  );
+
+  // Silence beats a homepage link here: an info_ link carries no cart
+  // attribute, so it can never be attributed however well it converts.
+  it("stays silent on a story when no default product is set", async () => {
+    const res = await handleNonTextDm(nonTextDm("story_mention"), shop, proPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendDmNow).not.toHaveBeenCalled();
+    expect(incrementUsage).not.toHaveBeenCalled();
   });
 });
 

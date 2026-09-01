@@ -49,7 +49,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "30-day free trial · Story replies answered automatically · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
+        "30-day free trial · Story replies and mentions answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
     },
   ],
   creator: {
@@ -86,7 +86,7 @@ const FAQS = [
   },
   {
     q: "Can SocialReplAI reply to Instagram story replies?",
-    a: "Yes, on the Pro plan. When someone replies to your story, the AI answers with a product link. Story viewers are typically your warmest audience: they chose to watch and then chose to respond. Pro also handles multi-touch follow-ups for customers who click a link but don't check out.",
+    a: "Yes, on the Pro plan, including when someone tags you in their own story. Story viewers are typically your warmest audience: they chose to watch and then chose to respond. A story isn't a feed post, so there's nothing to map a product to, which is why Pro also lets you set a default product: the one offered whenever a message arrives with no post behind it. Pro handles multi-touch follow-ups too, for customers who click a link but don't check out.",
   },
   {
     q: "What does SocialRepl.ai actually do?",
@@ -600,7 +600,8 @@ export default function LandingPage() {
             </p>
             <ul className="srPlanFeatures">
               <li>Everything in Growth</li>
-              <li>Story replies answered automatically</li>
+              <li>Story replies and mentions answered automatically</li>
+              <li>Default product for stories and unmapped posts</li>
               <li>Follow-up messages</li>
               <li>Per-post analytics</li>
               <li>10,000 messages / month</li>
