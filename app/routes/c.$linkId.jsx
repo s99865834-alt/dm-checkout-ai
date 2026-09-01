@@ -36,9 +36,9 @@ export async function loader({ params, request }) {
     return new Response("Not Found", { status: 404 });
   }
 
-  const isInfoLink = linkId.startsWith("info_");
-  const shouldLogClick = !isInfoLink && looksLikeBrowser(request);
-  if (shouldLogClick) {
+  // All link types are logged, info_ included: see resolveTrackedLink in
+  // click-redirect.server.js for why.
+  if (looksLikeBrowser(request)) {
     const userAgent = request.headers.get("user-agent") || null;
     const forwarded = request.headers.get("x-forwarded-for");
     const ip = forwarded ? forwarded.split(",")[0].trim() : null;

@@ -10,7 +10,7 @@ import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { getStoredStoreContext } from "./db.server";
-import { sendInstagramPrivateReply, sendInstagramDm } from "./meta.server";
+import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import logger from "./logger.server";
@@ -995,6 +995,74 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 }
 
 /**
+ * Pick the catalog result that best matches a product the customer named.
+ * Exact title first, then a title containing it, then the search engine's own
+ * ranking. With no named product there is nothing to prefer, so take the top
+ * result.
+ */
+function pickCatalogMatch(candidates, entityProductName) {
+  if (!candidates?.length) return null;
+  if (!entityProductName) return candidates[0];
+  const wanted = entityProductName.toLowerCase();
+  return (
+    candidates.find((p) => (p.title || "").toLowerCase() === wanted) ||
+    candidates.find((p) => (p.title || "").toLowerCase().includes(wanted)) ||
+    candidates[0]
+  );
+}
+
+/**
+ * Reduce an Instagram caption to something worth searching a catalog with.
+ * Hashtags, @mentions, URLs and emoji are engagement decoration and match
+ * nothing in a product catalog, while the opening words of a caption are
+ * usually about the thing in the picture. Truncated because a rambling caption
+ * dilutes the search rather than sharpening it.
+ */
+export function captionToSearchTerm(caption) {
+  if (!caption) return null;
+  const cleaned = caption
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[@#][\w.]+/g, " ")
+    .replace(/\p{Extended_Pictographic}/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length < 3) return null;
+  return cleaned.split(" ").slice(0, 12).join(" ").slice(0, 120);
+}
+
+// One post collects many comments, so the caption is cached rather than
+// re-fetched per comment. Small and short-lived: captions rarely change, and
+// this only ever holds posts that had no product mapping.
+const CAPTION_CACHE_TTL_MS = 60 * 60 * 1000;
+const CAPTION_CACHE_MAX = 200;
+const captionCache = new Map();
+
+async function getPostCaptionSearchTerm(shopId, mediaId) {
+  if (!shopId || !mediaId) return null;
+
+  const cached = captionCache.get(mediaId);
+  if (cached && Date.now() - cached.at < CAPTION_CACHE_TTL_MS) return cached.term;
+
+  let term = null;
+  try {
+    const [media] = await getInstagramMediaByIds(shopId, [mediaId]);
+    term = captionToSearchTerm(media?.caption);
+  } catch (err) {
+    // A caption we can't read just means we fall back to the homepage link,
+    // which is what would have happened anyway. Not cached, so a transient
+    // Graph failure doesn't blank the caption for an hour.
+    logger.debug(`[automation] Caption lookup failed for media ${mediaId}: ${err?.message || err}`);
+    return null;
+  }
+
+  if (captionCache.size >= CAPTION_CACHE_MAX) {
+    captionCache.delete(captionCache.keys().next().value);
+  }
+  captionCache.set(mediaId, { term, at: Date.now() });
+  return term;
+}
+
+/**
  * Check if a comment has already received an automated DM reply.
  * We key by link_id = dm_reply_comment_${commentId} so one reply per Instagram comment regardless of message row.
  */
@@ -1258,56 +1326,54 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     // synthesized mapping when no explicit post→product mapping exists.
     let productMapping = productMappings.find((m) => m.ig_media_id === mediaId);
 
-    if (!productMapping) {
-      // Before giving up and sending a homepage link, try the Storefront
-      // MCP search_catalog with the comment text — it's the closest we
-      // get to "which product is this commenter asking about?" when the
-      // merchant hasn't mapped the Instagram post to a product.
-      if (shop.shopify_domain && message.text) {
-        const entityProductName = message.ai_entities?.product_name || null;
-        const searchTerm = entityProductName || message.text;
-        const candidates = await searchCatalogNormalized(
-          shop.shopify_domain,
-          searchTerm,
-          { limit: 3 }
-        );
-        if (candidates.length > 0) {
-          const best = entityProductName
-            ? candidates.find(
-                (p) =>
-                  (p.title || "").toLowerCase() ===
-                  entityProductName.toLowerCase()
-              ) ||
-              candidates.find((p) =>
-                (p.title || "")
-                  .toLowerCase()
-                  .includes(entityProductName.toLowerCase())
-              ) ||
-              candidates[0]
-            : candidates[0];
-          if (best) {
-            const firstVariant = best.variants?.nodes?.[0];
-            const variantGid = firstVariant?.id || null;
-            if (variantGid) {
-              logger.debug(
-                `[automation] MCP catalog search matched "${best.title}" for unmapped media ${mediaId}; using as product mapping`
-              );
-              // Synthesize a productMapping shape and fall through to the
-              // existing mapped-product flow below by reassigning.
-              // IDs stay in full gid format: the Admin GraphQL API and
-              // buildCheckoutLink both reject bare numeric IDs (this stripped
-              // them before, which crashed every reply on this path).
-              productMapping = {
-                product_id: best.id,
-                variant_id: variantGid,
-                product_handle: best.handle || null,
-                product_options: null,
-                ig_media_id: mediaId,
-                _from: "mcp_search_catalog",
-              };
-            }
-          }
+    if (!productMapping && shop.shopify_domain) {
+      // Before giving up and sending a homepage link, try to work out which
+      // product this is about. A homepage link is not a soft failure: info_
+      // links carry no cart attribute and aren't click-tracked, so a reply
+      // that sends one can never attribute an order however well it converts.
+      const entityProductName = message.ai_entities?.product_name || null;
+
+      const resolveFrom = async (term) => {
+        if (!term) return null;
+        const candidates = await searchCatalogNormalized(shop.shopify_domain, term, { limit: 3 });
+        return pickCatalogMatch(candidates, entityProductName);
+      };
+
+      // Best signal first: what the commenter actually named.
+      let best = await resolveFrom(entityProductName || message.text);
+      let matchSource = "comment";
+
+      // Most comments are pure reaction ("🔥🔥🔥", "👏👏👏", "Amen 🙏") and name
+      // no product at all, so the search above finds nothing and the post falls
+      // through to a homepage link. The caption describes the product even when
+      // the comment doesn't, and it costs one Graph call on a path that would
+      // otherwise have given up.
+      if (!best) {
+        const caption = await getPostCaptionSearchTerm(shop.id, mediaId);
+        if (caption) {
+          best = await resolveFrom(caption);
+          matchSource = "caption";
         }
+      }
+
+      // IDs stay in full gid format: the Admin GraphQL API and buildCheckoutLink
+      // both reject bare numeric IDs (this stripped them before, which crashed
+      // every reply on this path).
+      const variantGid = best?.variants?.nodes?.[0]?.id || null;
+      if (best && variantGid) {
+        logger.debug(
+          `[automation] Catalog search matched "${best.title}" from ${matchSource} for unmapped media ${mediaId}; using as product mapping`
+        );
+        // Synthesize a productMapping shape and fall through to the existing
+        // mapped-product flow below by reassigning.
+        productMapping = {
+          product_id: best.id,
+          variant_id: variantGid,
+          product_handle: best.handle || null,
+          product_options: null,
+          ig_media_id: mediaId,
+          _from: `catalog_search_${matchSource}`,
+        };
       }
     }
 

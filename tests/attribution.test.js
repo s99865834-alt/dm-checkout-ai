@@ -5,11 +5,23 @@
  * on the Shopify cart and arrive in the order's note_attributes even when the
  * customer buys hours or days after clicking.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// buildCheckoutLink writes, resolveTrackedLink reads. One fake covers both.
+const fake = vi.hoisted(() => ({ linkRow: { url: "https://store.example.com/products/x" } }));
 
 vi.mock("../app/lib/supabase.server", () => ({
-  default: { from: () => ({ insert: async () => ({ error: null }) }) },
+  default: {
+    from: () => ({
+      insert: async () => ({ error: null }),
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: fake.linkRow, error: null }) }),
+      }),
+    }),
+  },
 }));
+
+vi.mock("../app/lib/db.server", () => ({ logClick: vi.fn(async () => {}) }));
 
 vi.mock("../app/shopify.server", () => ({
   default: { clients: {} },
@@ -23,6 +35,8 @@ vi.mock("../app/lib/shopify-data.server", () => ({
 
 import { buildCheckoutLink, extractLinkIdFromNoteAttributes } from "../app/lib/links.server";
 import { isCheckoutLinkId } from "../app/lib/checkout-link-id";
+import { resolveTrackedLink } from "../app/lib/click-redirect.server";
+import { logClick } from "../app/lib/db.server";
 
 const shop = { id: "shop-1", shopify_domain: "test-store.myshopify.com" };
 
@@ -55,6 +69,52 @@ describe("extractLinkIdFromNoteAttributes", () => {
     expect(extractLinkIdFromNoteAttributes([])).toBeNull();
     expect(extractLinkIdFromNoteAttributes(undefined)).toBeNull();
     expect(extractLinkIdFromNoteAttributes([{ name: "ref", value: "not-ours" }])).toBeNull();
+  });
+});
+
+// info_ clicks used to be skipped as "housekeeping", which meant the one link
+// type we send in volume was the one we knew nothing about: an unmapped post
+// can only ever answer with an info_ link. Logging them costs no KPI accuracy,
+// since getAnalytics filters to isCheckoutLinkId before counting anything.
+describe("click logging by link type", () => {
+  const BROWSER_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+
+  function request(userAgent) {
+    return new Request("https://store.example.com/a/go/x", {
+      headers: userAgent ? { "user-agent": userAgent } : {},
+    });
+  }
+
+  beforeEach(() => {
+    logClick.mockClear();
+    fake.linkRow = { url: "https://store.example.com/products/x" };
+  });
+
+  for (const linkId of ["info_236a994b49a0", "pdp_lengS5Ka", "mEs7Sicv"]) {
+    it(`logs a browser click on ${linkId}`, async () => {
+      const url = await resolveTrackedLink(linkId, request(BROWSER_UA));
+      expect(url).toBe("https://store.example.com/products/x");
+      expect(logClick).toHaveBeenCalledTimes(1);
+      expect(logClick.mock.calls[0][0].linkId).toBe(linkId);
+    });
+  }
+
+  // Instagram fetches a preview the instant a DM is delivered. Counting that
+  // as a click would report engagement nobody had.
+  it("ignores link-preview crawlers", async () => {
+    await resolveTrackedLink("info_236a994b49a0", request("facebookexternalhit/1.1"));
+    expect(logClick).not.toHaveBeenCalled();
+  });
+
+  it("ignores requests with no user agent", async () => {
+    await resolveTrackedLink("info_236a994b49a0", request(null));
+    expect(logClick).not.toHaveBeenCalled();
+  });
+
+  it("still redirects when click logging throws", async () => {
+    logClick.mockRejectedValueOnce(new Error("db down"));
+    const url = await resolveTrackedLink("info_236a994b49a0", request(BROWSER_UA));
+    expect(url).toBe("https://store.example.com/products/x");
   });
 });
 

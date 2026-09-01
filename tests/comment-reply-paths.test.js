@@ -75,6 +75,7 @@ vi.mock("../app/lib/db.server", () => ({
 vi.mock("../app/lib/meta.server", () => ({
   sendInstagramPrivateReply: vi.fn(async () => ({ message_id: "sent-1" })),
   sendInstagramDm: vi.fn(async () => ({ message_id: "sent-2" })),
+  getInstagramMediaByIds: vi.fn(async () => []),
 }));
 
 vi.mock("../app/lib/shopify-data.server", () => ({
@@ -113,8 +114,8 @@ vi.mock("../app/lib/sales-agent.server", () => ({
 
 // ── System under test (real code) ───────────────────────────────────────────
 
-import { handleIncomingComment } from "../app/lib/automation.server";
-import { sendInstagramPrivateReply, sendInstagramDm } from "../app/lib/meta.server";
+import { handleIncomingComment, captionToSearchTerm } from "../app/lib/automation.server";
+import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "../app/lib/meta.server";
 import {
   getProductMappings,
   isHumanTakeoverActive,
@@ -206,6 +207,7 @@ beforeEach(() => {
   sendDmNow.mockResolvedValue({ sent: true });
   sendInstagramPrivateReply.mockResolvedValue({ message_id: "sent-1" });
   sendInstagramDm.mockResolvedValue({ message_id: "sent-2" });
+  getInstagramMediaByIds.mockResolvedValue([]);
 });
 
 describe("comment reply paths", () => {
@@ -319,4 +321,81 @@ describe("comment reply paths", () => {
     expect(res.sent).toBe(false);
     expect(sendInstagramPrivateReply).not.toHaveBeenCalled();
   });
+
+  // Most real comments are pure reaction and name no product, so the comment
+  // search finds nothing and the post used to answer with an info_ homepage
+  // link. Those carry no cart attribute and aren't click-tracked, so the order
+  // can never be attributed however well the reply converts.
+  it("unmapped post, reaction-only comment: resolves the product from the caption", async () => {
+    getProductMappings.mockResolvedValue([]);
+    getInstagramMediaByIds.mockResolvedValue([
+      { id: "media-caption-1", caption: "Fresh batch of Sea Moss Gel 🌊 available now #seamoss @shanescares" },
+    ]);
+    searchCatalogNormalized
+      .mockResolvedValueOnce([]) // the comment "🔥🔥🔥" matches nothing
+      .mockResolvedValueOnce([
+        {
+          id: "gid://shopify/Product/789",
+          title: "Sea Moss Gel",
+          handle: "sea-moss-gel",
+          variants: { nodes: [{ id: "gid://shopify/ProductVariant/987" }] },
+        },
+      ]);
+
+    const res = await handleIncomingComment(comment("🔥🔥🔥"), "media-caption-1", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(sentReplyText()).toMatch(/https?:\/\//);
+    // Second search is the caption, stripped of emoji, hashtags and mentions.
+    expect(searchCatalogNormalized).toHaveBeenCalledTimes(2);
+    expect(searchCatalogNormalized.mock.calls[1][1]).toBe("Fresh batch of Sea Moss Gel available now");
+  });
+
+  it("caption lookup fails: still replies, falling back to the homepage link", async () => {
+    getProductMappings.mockResolvedValue([]);
+    searchCatalogNormalized.mockResolvedValue([]);
+    getInstagramMediaByIds.mockRejectedValue(new Error("Graph API down"));
+
+    const res = await handleIncomingComment(comment("😍😍"), "media-caption-2", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(sentReplyText()).toContain("https://short.test/");
+  });
+
+  it("caption with nothing searchable in it: no wasted second search", async () => {
+    getProductMappings.mockResolvedValue([]);
+    searchCatalogNormalized.mockResolvedValue([]);
+    getInstagramMediaByIds.mockResolvedValue([{ id: "media-caption-3", caption: "🔥🔥🔥 #art #vibes" }]);
+
+    const res = await handleIncomingComment(comment("👏"), "media-caption-3", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(searchCatalogNormalized).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("captionToSearchTerm", () => {
+  it("keeps the words that describe the product", () => {
+    expect(captionToSearchTerm("New drop! The Rizzbot is here 🤖 #art #sculpture @friend")).toBe(
+      "New drop! The Rizzbot is here"
+    );
+  });
+
+  it("strips URLs", () => {
+    expect(captionToSearchTerm("Shop the Aurora Ring at https://example.com/x today")).toBe(
+      "Shop the Aurora Ring at today"
+    );
+  });
+
+  it("truncates a rambling caption, which dilutes the search rather than sharpening it", () => {
+    const long = Array.from({ length: 30 }, (_, i) => `word${i}`).join(" ");
+    expect(captionToSearchTerm(long).split(" ")).toHaveLength(12);
+  });
+
+  const nothingSearchable = ["🔥🔥🔥", "#sale #shop #love", "@someone", "", "  ", null, undefined];
+  for (const caption of nothingSearchable) {
+    it(`returns null for ${JSON.stringify(caption)}`, () => {
+      expect(captionToSearchTerm(caption)).toBeNull();
+    });
+  }
 });
