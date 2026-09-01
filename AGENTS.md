@@ -34,4 +34,14 @@ git merge-base --is-ancestor <sha> origin/main
 
 - No em dashes, in chat replies, code, comments, or product copy. Use a comma,
   a colon, or a second sentence.
-- Do not create or edit docs that were not asked for.
+- Be concise. This applies to replies, commit messages, and docs alike.
+
+## Docs: fix them, don't multiply them
+
+There are already 28 `.md` files here. The default failure mode is an agent
+writing a new one instead of doing the work.
+
+- **Do not create new `.md` files.** Correcting or trimming an existing doc is
+  expected and welcome. Adding another is not.
+- If something needs recording, put it in the closest existing doc.
+- Prefer deleting a stale doc over leaving it to be believed later.
