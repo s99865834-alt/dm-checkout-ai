@@ -4,7 +4,7 @@
  */
 
 import OpenAI from "openai";
-import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
+import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, markReplyUndelivered, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -157,10 +157,30 @@ async function persistReplyLinks(shop, messageId, replyText, links) {
   return inserted;
 }
 
-/** Undo persistReplyLinks after a failed send (keeps analytics honest). */
-async function rollbackReplyLinks(shopId, linkIds) {
+/**
+ * The claim row id for a DM reply. Mirrors claimMessageReply, which keys on
+ * external_id when Instagram gave us one so redelivered webhooks collapse onto
+ * the same claim.
+ */
+function dmClaimLinkId(message) {
+  return `dm_reply_ext_${message?.external_id || message?.id}`;
+}
+
+/**
+ * Undo a reply after the send failed (keeps analytics honest).
+ *
+ * Two things have to be put right. The tool-minted link rows are deleted, so a
+ * link nobody received can't be counted or resolved. The claim row stays,
+ * because it reserved the single reply Instagram allows and retrying risks a
+ * double-send, but it gets marked so no count mistakes it for a delivered
+ * reply.
+ */
+async function rollbackReplyLinks(shopId, linkIds, undelivered = null) {
   for (const linkId of linkIds || []) {
     await deleteLinkSent(shopId, linkId);
+  }
+  if (undelivered?.linkId) {
+    await markReplyUndelivered(shopId, undelivered.linkId, undelivered.reason);
   }
 }
 
@@ -445,7 +465,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         const insertedLinkIds = await persistReplyLinks(shop, message.id, agentResult.text, agentResult.links);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, agentResult.text);
         if (sendResult?.sent === false) {
-          await rollbackReplyLinks(shop.id, insertedLinkIds);
+          await rollbackReplyLinks(shop.id, insertedLinkIds, {
+            linkId: dmClaimLinkId(message),
+            reason: sendResult?.reason || "dm_send_failed",
+          });
           return sendResult;
         }
         await incrementUsage(shop.id, 1);
@@ -646,7 +669,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             ]);
             const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
             if (sendResult?.sent === false) {
-              await rollbackReplyLinks(shop.id, insertedLinkIds);
+              await rollbackReplyLinks(shop.id, insertedLinkIds, {
+                linkId: dmClaimLinkId(message),
+                reason: sendResult?.reason || "dm_send_failed",
+              });
               return sendResult;
             }
             await incrementUsage(shop.id, 1);
@@ -786,7 +812,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         ]);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
         if (sendResult?.sent === false) {
-          await rollbackReplyLinks(shop.id, insertedLinkIds);
+          await rollbackReplyLinks(shop.id, insertedLinkIds, {
+            linkId: dmClaimLinkId(message),
+            reason: sendResult?.reason || "dm_send_failed",
+          });
           return sendResult;
         }
         await incrementUsage(shop.id, 1);
@@ -974,7 +1003,10 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         ]);
         const sendResult = await sendDmReply(shop.id, message.from_user_id, replyText);
         if (sendResult?.sent === false) {
-          await rollbackReplyLinks(shop.id, insertedLinkIds);
+          await rollbackReplyLinks(shop.id, insertedLinkIds, {
+            linkId: dmClaimLinkId(message),
+            reason: sendResult?.reason || "dm_send_failed",
+          });
           return sendResult;
         }
         await incrementUsage(shop.id, 1);
@@ -1408,7 +1440,10 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
     ]);
     const sendResult = await sendDmReply(shop.id, fromUserId, replyText);
     if (sendResult?.sent === false) {
-      await rollbackReplyLinks(shop.id, insertedLinkIds);
+      await rollbackReplyLinks(shop.id, insertedLinkIds, {
+        linkId: dmClaimLinkId(message),
+        reason: sendResult?.reason || "dm_send_failed",
+      });
       return sendResult;
     }
     await incrementUsage(shop.id, 1);
@@ -1821,13 +1856,27 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     // looked failed to us. Either way the commenter got an answer, and the
     // claim row written before the send already prevents retries — so this is
     // expected platform behaviour, not an error worth logging as one.
+    // Whatever went wrong, the claim row may already be in place holding
+    // reply_text. Marking it keeps it from counting as a reply the customer
+    // received: it reserved Instagram's one private reply and then didn't use
+    // it. Harmless no-op when we failed before claiming.
+    const claimedLinkId = message.external_id
+      ? `dm_reply_comment_${message.external_id}`
+      : null;
+
     if (error?.meta?.error_subcode === 2534023) {
       logger.debug(
         `[automation] Comment ${message.external_id ?? message.id} already has a private reply on Instagram; treating as handled`
       );
+      if (claimedLinkId) {
+        await markReplyUndelivered(shop.id, claimedLinkId, "instagram_reply_already_exists");
+      }
       return { sent: false, reason: "Comment already has a private reply on Instagram" };
     }
     console.error(`[automation] Error processing comment ${message.id}:`, error);
+    if (claimedLinkId) {
+      await markReplyUndelivered(shop.id, claimedLinkId, error?.message || "unknown_send_error");
+    }
     return { sent: false, reason: error.message || "Unknown error" };
   }
 }
