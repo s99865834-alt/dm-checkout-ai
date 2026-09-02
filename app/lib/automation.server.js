@@ -8,7 +8,8 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, alrea
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize, resolveVariantByOptionValue, askedCustomerToChoose } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
+import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
 import { getStoredStoreContext } from "./db.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
