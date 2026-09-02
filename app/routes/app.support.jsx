@@ -109,6 +109,17 @@ export default function SupportPage() {
                   When we detect another tool actively replying on your account, we show a notice on
                   your Home page so you always know why message counts might look lower than expected.
                 </p>
+                <p>
+                  <strong>Check Instagram&apos;s own automated replies too.</strong> Instagram has a
+                  built-in feature that DMs people who comment on your posts, and it counts as
+                  another tool for this purpose. It matters most on comments, because Instagram
+                  allows only one reply per comment ever: whoever answers first wins, and the other
+                  reply is refused. If your Home page says comment replies couldn&apos;t be sent,
+                  this is the first thing to check. Look under your Instagram professional
+                  dashboard for automated responses or automations (in the Instagram app, or in
+                  Meta Business Suite under Inbox), and switch off anything that replies to
+                  comments or sends automatic DMs.
+                </p>
               </div>
             </details>
             <details className="srFaqItem">

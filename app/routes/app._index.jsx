@@ -57,7 +57,7 @@ export const loader = async ({ request }) => {
   let reviewEligible = false;
   let lastInboundMessageAt = null;
   let messageAccess = "unknown";
-  let competingTool = { detected: false, appId: null, conversations: 0 };
+  let competingTool = { detected: false, appId: null, conversations: 0, intercepted: 0 };
   let storyMessages = 0;
 
   if (shop?.id) {
@@ -112,10 +112,16 @@ export const loader = async ({ request }) => {
           ).catch(() => "unknown"),
           new Promise((resolve) => setTimeout(() => resolve("pending"), 1500)),
         ]),
-        // Another automation tool detected on this Instagram account (via
-        // outbound echo app_ids). Powers the "avoiding duplicate replies"
-        // banner so a quiet dashboard is explained instead of mysterious.
-        getCompetingToolStatus(shop.id).catch(() => ({ detected: false, appId: null, conversations: 0 })),
+        // Something other than us answering this Instagram account, from
+        // refused comment replies (and, in theory, foreign echo app_ids).
+        // Powers the contested-inbox banner so a quiet dashboard gets
+        // explained instead of looking broken.
+        getCompetingToolStatus(shop.id).catch(() => ({
+          detected: false,
+          appId: null,
+          conversations: 0,
+          intercepted: 0,
+        })),
         // Story replies and mentions received this month. Only fetched when
         // the shop can't act on them, since the number exists to explain the
         // silence and quantify what upgrading would unlock.
@@ -922,24 +928,39 @@ export default function Index() {
           </div>
         </s-banner>
       )}
-      {/* Contested inbox: another automation tool is replying on this account.
-          Explain why the dashboard may look quiet and put the choice with the
-          merchant instead of silently losing the race to reply. */}
+      {/* Contested inbox: something else is answering this account. Explain why
+          the dashboard may look quiet and put the choice with the merchant
+          instead of silently losing the race to reply. */}
       {isConnected && competingTool?.detected && (
-        <s-banner tone="info">
+        <s-banner tone="warning">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">
-                Another messaging tool appears to be replying on this Instagram account.
+                {competingTool.intercepted > 0
+                  ? `${competingTool.intercepted} of your comment replies couldn't be sent this week`
+                  : "Another messaging tool appears to be replying on this Instagram account"}
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                To keep customers from getting duplicate replies, SocialRepl.ai steps aside in
-                conversations that have already been answered. If you want SocialRepl.ai handling
-                your messages (with product answers, checkout links, and sale attribution), turn off
-                message automation in the other tool. See Support for details.
+                {competingTool.intercepted > 0 ? (
+                  <>
+                    Instagram allows only one reply per comment, and something answered these
+                    first. Usually that&apos;s Instagram&apos;s own automated replies or another
+                    automation app, though it can also be you replying by hand. If it isn&apos;t
+                    you, switching the other one off lets SocialRepl.ai answer with the real
+                    product details and a checkout link, so the sales it drives show up in
+                    Analytics.
+                  </>
+                ) : (
+                  <>
+                    To keep customers from getting duplicate replies, SocialRepl.ai steps aside in
+                    conversations that have already been answered. If you want SocialRepl.ai
+                    handling your messages, with product answers, checkout links, and sale
+                    attribution, turn off message automation in the other tool.
+                  </>
+                )}
               </span>
             </div>
-            <s-button href="/app/support" variant="secondary" size="slim">Learn more</s-button>
+            <s-button href="/app/support" variant="secondary" size="slim">How to fix</s-button>
           </div>
         </s-banner>
       )}
