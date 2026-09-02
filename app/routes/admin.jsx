@@ -631,7 +631,17 @@ export default function Admin() {
                     <AutomationCell row={row} />
                   </td>
                   <td style={styles.td}>{formatTenure(row.created_at)}</td>
-                  <td style={styles.td}>{row.messages_sent.toLocaleString()}</td>
+                  <td style={styles.td}>
+                    {row.messages_sent.toLocaleString()}
+                    {row.undelivered > 0 && (
+                      <span
+                        style={styles.lostReplies}
+                        title={`${row.undelivered} repl${row.undelivered === 1 ? "y was" : "ies were"} written but refused by Instagram, almost always because another automation tool used up the one private reply a comment allows`}
+                      >
+                        {row.undelivered} lost
+                      </span>
+                    )}
+                  </td>
                   <td style={styles.td}>{formatRevenue(row.revenue)}</td>
                   <td style={styles.td}>
                     {formatStoreRevenue(row.total_revenue_ytd, row.total_revenue_currency, row.total_revenue_capped)}
@@ -1061,6 +1071,13 @@ const styles = {
     backgroundColor: "#4c1d95",
     borderRadius: "4px",
     color: "#ddd6fe",
+    whiteSpace: "nowrap",
+  },
+  lostReplies: {
+    marginLeft: "0.4rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    color: "#fb923c",
     whiteSpace: "nowrap",
   },
 };

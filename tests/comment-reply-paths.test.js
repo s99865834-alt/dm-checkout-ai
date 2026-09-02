@@ -60,6 +60,7 @@ vi.mock("../app/lib/db.server", () => ({
   incrementUsage: vi.fn(),
   logLinkSent: vi.fn(async () => ({ id: "row-1" })),
   deleteLinkSent: vi.fn(),
+  markReplyUndelivered: vi.fn(),
   alreadyRepliedToMessage: vi.fn(async () => false),
   alreadyRepliedToExternalMessage: vi.fn(async () => false),
   claimMessageReply: vi.fn(async () => true),
@@ -127,8 +128,11 @@ import {
   alreadyRepliedToMessage,
   alreadyRepliedToExternalMessage,
   logLinkSent,
+  deleteLinkSent,
+  markReplyUndelivered,
   getRecentConversationContext,
   getStoredStoreContext,
+  incrementUsage,
 } from "../app/lib/db.server";
 import { searchCatalogNormalized, resolveVariantViaMcp } from "../app/lib/storefront-mcp.server";
 import {
@@ -208,6 +212,91 @@ beforeEach(() => {
   sendInstagramPrivateReply.mockResolvedValue({ message_id: "sent-1" });
   sendInstagramDm.mockResolvedValue({ message_id: "sent-2" });
   getInstagramMediaByIds.mockResolvedValue([]);
+});
+
+/**
+ * A reply that Instagram refuses.
+ *
+ * Instagram allows exactly one private reply per comment, ever. When another
+ * automation tool on the same account gets there first it fails with subcode
+ * 2534023. This happened three times across Love By Luna and Mark Watts on
+ * 1-2 Sep 2026, and because the claim row is written before the send and kept
+ * afterwards, each one still counted as a reply on /admin and in the
+ * merchant's response rate.
+ */
+function replyAlreadyExists() {
+  const err = new Error("There has been reply to this comment before");
+  err.meta = { error_subcode: 2534023, code: 100 };
+  return err;
+}
+
+describe("a reply Instagram refuses", () => {
+  const mappedPost = () =>
+    getProductMappings.mockResolvedValue([
+      {
+        ig_media_id: "media-1",
+        product_id: "gid://shopify/Product/123",
+        variant_id: "gid://shopify/ProductVariant/456",
+        product_handle: "test-product",
+        product_options: null,
+      },
+    ]);
+
+  it("marks the claim so it stops counting as a delivered reply", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(replyAlreadyExists());
+
+    const msg = comment("how much is this?");
+    const res = await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "instagram_reply_already_exists"
+    );
+  });
+
+  it("does not charge the merchant for a message nobody received", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(replyAlreadyExists());
+
+    await handleIncomingComment(comment("how much is this?"), "media-1", shop, growthPlan);
+
+    expect(incrementUsage).not.toHaveBeenCalled();
+  });
+
+  it("removes the link rows so nobody holds a link that resolves", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(replyAlreadyExists());
+
+    await handleIncomingComment(comment("how much is this?"), "media-1", shop, growthPlan);
+
+    expect(deleteLinkSent).toHaveBeenCalled();
+  });
+
+  it("records the reason for a failure that isn't the one-reply limit", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(new Error("network unreachable"));
+
+    const msg = comment("how much is this?");
+    await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "network unreachable"
+    );
+  });
+
+  it("leaves the claim alone when the send succeeds", async () => {
+    mappedPost();
+
+    const res = await handleIncomingComment(comment("how much is this?"), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(markReplyUndelivered).not.toHaveBeenCalled();
+  });
 });
 
 describe("comment reply paths", () => {

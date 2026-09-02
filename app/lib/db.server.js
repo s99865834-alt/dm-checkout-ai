@@ -2,6 +2,7 @@ import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
+import { countRepliesByShop } from "./reply-counts";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
@@ -849,6 +850,32 @@ export async function deleteLinkSent(shopId, linkId) {
     .eq("link_id", linkId);
   if (error) {
     console.warn("[db] deleteLinkSent error:", error.message);
+  }
+}
+
+/**
+ * Mark a claimed reply as never delivered.
+ *
+ * The claim row is written before the send so it reserves the single private
+ * reply Instagram allows per comment. When the send is then rejected we keep
+ * the row (retrying is pointless and would double-reply if it ever succeeded),
+ * but it must stop counting as a reply: otherwise /admin and the merchant's
+ * response rate both credit us with a message the customer never got.
+ *
+ * Losing the race to another automation tool on the same Instagram account is
+ * the common cause, so this is expected traffic rather than an error, and it
+ * is recorded as data instead of logged as a failure.
+ */
+export async function markReplyUndelivered(shopId, linkId, reason) {
+  if (!shopId || !linkId) return;
+  const { error } = await supabase
+    .from("links_sent")
+    .update({ failed_reason: (reason || "unknown").slice(0, 300) })
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId)
+    .is("failed_reason", null);
+  if (error) {
+    console.warn("[db] markReplyUndelivered error:", error.message);
   }
 }
 
@@ -1810,7 +1837,7 @@ export async function getAnalytics(shopId, planName, options = {}) {
     // Get links_sent first (may be narrowed by productId)
     let linksQuery = supabase
       .from("links_sent")
-      .select("id, message_id, link_id, product_id")
+      .select("id, message_id, link_id, product_id, failed_reason")
       .eq("shop_id", shopId);
 
     if (productId) {
@@ -1823,11 +1850,16 @@ export async function getAnalytics(shopId, planName, options = {}) {
       linksQuery = linksQuery.lte("sent_at", endDate);
     }
 
-    const { data: linksSent, error: linksError } = await linksQuery;
+    const { data: linksSentRaw, error: linksError } = await linksQuery;
 
     if (linksError) {
       console.error("[analytics] Error fetching links sent:", linksError);
     }
+
+    // A rejected send leaves its claim row behind on purpose (it reserved
+    // Instagram's one reply per comment), so drop those here or the response
+    // rate credits us for messages the customer never received.
+    const linksSent = (linksSentRaw || []).filter((l) => !l.failed_reason);
 
     // When filtering by post, scope messages to those with matching links
     const postFilterMessageIds = productId
@@ -2443,7 +2475,7 @@ async function buildAdminStoresResult(shops) {
 
   const { data: linksRows, error: linksError } = await supabase
     .from("links_sent")
-    .select("shop_id");
+    .select("shop_id, message_id, link_id, failed_reason");
 
   if (linksError) {
     console.error("getAdminDashboardStores links_sent error", linksError);
@@ -2457,11 +2489,8 @@ async function buildAdminStoresResult(shops) {
     console.error("getAdminDashboardStores attribution error", attrError);
   }
 
-  const messagesByShop = new Map();
-  (linksRows || []).forEach((row) => {
-    const id = row.shop_id;
-    messagesByShop.set(id, (messagesByShop.get(id) || 0) + 1);
-  });
+  const { delivered: messagesByShop, undelivered: undeliveredByShop } =
+    countRepliesByShop(linksRows);
 
   const revenueByShop = new Map();
   (attributionRows || []).forEach((row) => {
@@ -2509,6 +2538,11 @@ async function buildAdminStoresResult(shops) {
       // the dashboard renders it without repeating the date arithmetic.
       comment_trial: commentTrialStatus(s),
       messages_sent: messagesByShop.get(s.id) || 0,
+      // Replies we wrote and Instagram refused, nearly always because another
+      // automation tool on the same account used up the one private reply a
+      // comment allows. A rising number here means we're losing that race, not
+      // that automation is broken.
+      undelivered: undeliveredByShop.get(s.id) || 0,
       revenue: revenueByShop.get(s.id) || 0,
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
