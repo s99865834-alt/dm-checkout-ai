@@ -31,17 +31,34 @@ vi.mock("../app/lib/links.server", () => ({
 
 const { toolsForSurface } = await import("../app/lib/sales-agent.server");
 
-const names = (storyContext) => toolsForSurface(storyContext).map((t) => t.function.name);
+const names = (storyContext, customerText = null) =>
+  toolsForSurface(storyContext, customerText).map((t) => t.function.name);
 
 describe("which link tools the agent is offered", () => {
-  it("offers both link tools in a normal DM", () => {
-    const offered = names(null);
+  it("offers the product page link when the customer asked for the page", () => {
+    const offered = names(null, "can you send me the product page?");
     expect(offered).toContain("get_checkout_link");
     expect(offered).toContain("get_product_page_link");
   });
 
+  // A product-page link credits an order only within the same session, so it
+  // is worth spending our one message on solely when the page is what they
+  // asked for. Everything else is answered in the reply plus a checkout link.
+  it.each([
+    "is this jacket waterproof?",
+    "does it come in black?",
+    "how much is it",
+    "send me a link",
+  ])("withholds the product page link for %s", (text) => {
+    const offered = names(null, text);
+    expect(offered).not.toContain("get_product_page_link");
+    expect(offered).toContain("get_checkout_link");
+  });
+
+  // Even an explicit page request doesn't earn one on a story: the product is
+  // the shop's default rather than one the customer named.
   it.each(["story_reply", "story_mention"])("withholds the product page link on a %s", (kind) => {
-    const offered = names({ kind, productName: "The Complete Snowboard" });
+    const offered = names({ kind, productName: "The Complete Snowboard" }, "send me the product page");
     expect(offered).not.toContain("get_product_page_link");
     expect(offered).toContain("get_checkout_link");
   });
@@ -57,8 +74,9 @@ describe("which link tools the agent is offered", () => {
   });
 
   it("does not mutate the shared tool list", () => {
-    const before = names(null).length;
+    const before = names(null, "send me the product page").length;
     names({ kind: "story_reply" });
-    expect(names(null).length).toBe(before);
+    names(null, "is it waterproof?");
+    expect(names(null, "send me the product page").length).toBe(before);
   });
 });
