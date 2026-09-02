@@ -2582,18 +2582,34 @@ const STORE_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  * @returns {Promise<Object|null>}
  */
 export async function getStoredStoreContext(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
-  if (!shopId) return null;
+  const { context, stale } = await getStoredStoreContextWithAge(shopId, ttlMs);
+  return stale ? null : context;
+}
+
+/**
+ * The cached store context together with whether it has gone stale.
+ *
+ * Callers that would rather answer from an old snapshot than make a customer
+ * wait on the Admin API need both facts: the value to use now, and whether to
+ * kick off a refresh for next time. getStoredStoreContext, which throws the
+ * value away when stale, is written in terms of this.
+ *
+ * A row with context but no timestamp counts as stale, since an unknown age is
+ * exactly the case worth refreshing.
+ */
+export async function getStoredStoreContextWithAge(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
+  if (!shopId) return { context: null, stale: false };
   const { data, error } = await supabase
     .from("shops")
     .select("store_context_json, store_context_updated_at")
     .eq("id", shopId)
     .single();
-  if (error || !data?.store_context_json) return null;
-  if (ttlMs > 0 && data.store_context_updated_at) {
-    const age = Date.now() - new Date(data.store_context_updated_at).getTime();
-    if (age > ttlMs) return null; // stale — caller should refresh
-  }
-  return data.store_context_json;
+  if (error || !data?.store_context_json) return { context: null, stale: false };
+  if (ttlMs <= 0) return { context: data.store_context_json, stale: false };
+  const age = data.store_context_updated_at
+    ? Date.now() - new Date(data.store_context_updated_at).getTime()
+    : Infinity;
+  return { context: data.store_context_json, stale: age > ttlMs };
 }
 
 /**

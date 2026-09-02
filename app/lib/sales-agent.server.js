@@ -28,7 +28,7 @@
 
 import OpenAI from "openai";
 import logger from "./logger.server";
-import { getStoredStoreContext } from "./db.server";
+import { getStoreContextForReply } from "./store-context.server";
 import {
   getShopifyStoreInfo,
   getShopifyProductContextForReply,
@@ -321,7 +321,7 @@ export async function generateAgentReply({
         return formatProductDetails(raw);
       }
       case "get_store_info": {
-        let storeInfo = await getStoredStoreContext(shop.id, 0).catch(() => null);
+        let storeInfo = await getStoreContextForReply(shop).catch(() => null);
         if (!storeInfo) {
           storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
         }

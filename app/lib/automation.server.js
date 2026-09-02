@@ -11,7 +11,7 @@ import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
 import { asksForProductPage, admitsNoAnswer } from "./reply-rules";
-import { getStoredStoreContext } from "./db.server";
+import { getStoreContextForReply } from "./store-context.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
@@ -494,7 +494,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       // once made the AI ignore the product count sitting in this context).
       const [brandVoiceData, storeInfoResult] = await Promise.all([
         brandVoiceFor(shop.id, plan),
-        getStoredStoreContext(shop.id, 0).catch(() => null),
+        getStoreContextForReply(shop).catch(() => null),
       ]);
 
       let storeInfo = storeInfoResult;
