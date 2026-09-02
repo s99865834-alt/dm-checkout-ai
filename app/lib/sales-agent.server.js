@@ -153,7 +153,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: "get_checkout_link",
       description:
-        "Create a tracked checkout link for a product (optionally a specific variant). Returns the exact URL to paste into your reply. Use when the customer shows buying intent.",
+        "Create a tracked checkout link for a product (optionally a specific variant). Returns the exact URL to paste into your reply. This is the default link to send whenever you are pointing a customer at a specific product, including when they are simply admiring it. It opens their cart pre-filled with the item, where they can still see it and change their mind, and it is the only link that reliably credits a resulting order to this conversation.",
       parameters: {
         type: "object",
         properties: {
@@ -174,7 +174,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: "get_product_page_link",
       description:
-        "Create a tracked link to a product's page on the store, where the customer can read details and see all variants. Use when they want to learn more but aren't ready to buy.",
+        "Create a tracked link to a product's page on the store. Use ONLY when the customer explicitly asks to see the product page, or needs to read the full description or compare variants for themselves. Do not use it as a softer alternative to a checkout link: a product-page link loses the order credit if the customer buys in a later session, so reach for get_checkout_link in every other case.",
       parameters: {
         type: "object",
         properties: {
@@ -252,6 +252,21 @@ function formatProductDetails(raw) {
  * @returns {Promise<{text: string, links: Array<{productId, variantId, url, linkId}>} | null>}
  *   null means "couldn't produce a reply" — caller should use the legacy pipeline.
  */
+/**
+ * The tools offered to the model for one reply.
+ *
+ * On a story the product is usually the shop's default one rather than
+ * something the customer named, so there is no "they only want to read about
+ * it" case to serve. A pdp_ link there would set no attributes[ref] cart
+ * attribute and is excluded from the links-sent KPI, so choosing one costs the
+ * merchant the order credit. The prompt already asks for a checkout link;
+ * withholding the other tool means that doesn't depend on the model agreeing.
+ */
+export function toolsForSurface(storyContext) {
+  if (!storyContext) return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.filter((t) => t.function?.name !== "get_product_page_link");
+}
+
 export async function generateAgentReply({
   shop,
   message,
@@ -263,6 +278,8 @@ export async function generateAgentReply({
 }) {
   if (!isSalesAgentEnabled()) return null;
   if (!shop?.shopify_domain || !message?.text) return null;
+
+  const toolDefinitions = toolsForSurface(storyContext);
 
   // Links minted during the loop; logged to links_sent by the caller after send.
   const linksCreated = [];
@@ -359,7 +376,7 @@ export async function generateAgentReply({
         completionParamsForModel(REPLY_MODEL, {
           model: REPLY_MODEL,
           messages,
-          tools: TOOL_DEFINITIONS,
+          tools: toolDefinitions,
           tool_choice: forceAnswer ? "none" : "auto",
           temperature: 0.4,
           max_tokens: 500,
@@ -400,10 +417,17 @@ export async function generateAgentReply({
   };
 
   // Deterministic fallback link, best-first: a link the model already minted
-  // this run but forgot to paste → a PDP link for the conversation's context
+  // this run but forgot to paste → a link for the conversation's context
   // product → the store's browse-all page (raw URL; shortenUrlsInReply
   // converts it into a tracked info_ link before send). Used by the link
   // guarantee below so a required link NEVER depends on the model behaving.
+  //
+  // The context-product link is a checkout link, with a product page only as a
+  // second try. Both reach the same product, but only the checkout link sets
+  // the attributes[ref] cart attribute, so only it can still credit the order
+  // if the customer buys in a later session. A pdp_ link is also excluded from
+  // the links-sent KPI, so falling back to one quietly costs the merchant the
+  // reporting this app exists to provide.
   const getFallbackLinkUrl = async () => {
     if (linksCreated.length > 0) {
       const last = linksCreated[linksCreated.length - 1];
@@ -412,9 +436,19 @@ export async function generateAgentReply({
     }
     const ctxProductId = threadContext?.lastProductLink?.product_id;
     if (ctxProductId) {
+      const gid = toProductGid(ctxProductId);
+      const variantGid = toVariantGid(threadContext.lastProductLink.variant_id);
       try {
-        const gid = toProductGid(ctxProductId);
-        const variantGid = toVariantGid(threadContext.lastProductLink.variant_id);
+        const checkout = await buildCheckoutLink(shop, gid, variantGid, 1);
+        if (checkout?.linkId) {
+          linksCreated.push({ productId: gid, variantId: variantGid, url: checkout.url, linkId: checkout.linkId });
+          const url = await getTrackedLinkUrl(shop, checkout.linkId).catch(() => null);
+          if (url) return url;
+        }
+      } catch (err) {
+        logger.debug(`[sales-agent] Fallback checkout link failed: ${err?.message || err}`);
+      }
+      try {
         const pdp = await buildProductPageLink(shop, gid, variantGid);
         if (pdp) {
           linksCreated.push({ productId: gid, variantId: variantGid, url: pdp.url, linkId: pdp.linkId });
@@ -585,8 +619,7 @@ HOW TO SELL:
 - Answer their actual question first, accurately and specifically (exact prices, exact options).
 - When they name a product, search for it and check the title actually matches their words. Never assume they mean a product from earlier in the conversation when they've named a different one.
 - If the exact thing they want isn't available, search for the closest alternative and offer it — don't just say no.
-- When they show buying intent, create a checkout link and include it naturally.
-- When they ask for a link to a product, call get_product_page_link (or get_checkout_link if they're buying) for that product. Never promise a link without calling a link tool.
+- When you point at a specific product, call get_checkout_link. That is the default, and it applies to admiration ("this is sick!", "obsessed", "need this") exactly as much as to "I'll take it": the link opens a cart they can still look at and walk away from, and it is the only link that credits a resulting sale back to this conversation. Call get_product_page_link only when they explicitly want the page itself, to read the description or compare variants. Never promise a link without calling a link tool.
 - If they want to browse, ask about "the collection", or you can't pinpoint one product (e.g. "what's your most popular item?"), call get_store_info and share the browse-all-products URL it returns.
 - If a product comes in multiple sizes/colors and they want to buy but haven't chosen, ask which one they want (list the options) rather than sending a generic link.
 ${vagueRule}
@@ -655,7 +688,7 @@ function buildUserMessage({ message, intent, threadContext, storyContext }) {
         : "They replied to one of this store's Instagram stories";
     parts.push(
       storyContext.productName
-        ? `${surface}, so you cannot see what was in it and there is no post mapping for it. If their message identifies a product, answer about that product as normal. If it does not (a reaction, an emoji, "love this", "how much"), treat it as interest in "${storyContext.productName}", which the merchant set as the product their stories are usually about. Confirm it with search_products, then link it. Do not tell the customer it was a default or a guess.`
+          ? `${surface}, so you cannot see what was in it and there is no post mapping for it. If their message identifies a product, answer about that product as normal. If it does not (a reaction, an emoji, "love this", "how much"), treat it as interest in "${storyContext.productName}", which the merchant set as the product their stories are usually about. Confirm it with search_products, then call get_checkout_link for it and paste that URL in. Someone who replies to a story is already interested, so give them the link that lets them buy, not one that makes them go looking. Do not tell the customer it was a default or a guess.`
         : `${surface}, so you cannot see what was in it and there is no post mapping for it. Never guess which product the story showed. If their message doesn't identify a product, reply warmly without naming one.`
     );
   }
