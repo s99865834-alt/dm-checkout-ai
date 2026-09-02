@@ -14,10 +14,13 @@
  * The option values below are the real ones from that product.
  */
 import { describe, it, expect } from "vitest";
+// Imported from variant-match, not shopify-data.server: that module imports
+// shopify.server, which builds the Prisma client and the Shopify app at import
+// time and needs credentials CI does not have.
 import {
   resolveVariantByOptionValue,
   askedCustomerToChoose,
-} from "../app/lib/shopify-data.server";
+} from "../app/lib/variant-match";
 
 const variant = (id, opts, availableForSale = true) => ({
   id,
