@@ -11,7 +11,7 @@ import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
 import { asksForProductPage, admitsNoAnswer } from "./reply-rules";
-import { getStoreContextForReply } from "./store-context.server";
+import { getStoreContextForReply, ensureStoreContextFresh } from "./store-context.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
@@ -226,6 +226,11 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       logger.debug(`[automation] DM automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "DM automation disabled" };
     }
+
+    // Keep the store-context cache warm off the back of ordinary traffic.
+    // Not awaited, and throttled to one age check per shop per hour, so this
+    // adds nothing to how fast the customer gets an answer.
+    ensureStoreContextFresh(shop);
 
     // Follow-up automation toggle (PRO). When disabled, we do NOT ask clarifying questions.
     const followupAutomationEnabled = settings?.followup_enabled === true;
@@ -1484,6 +1489,10 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       logger.debug(`[automation] Comment automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "Comment automation disabled" };
     }
+
+    // Same warm-the-cache call as the DM path: unawaited and throttled, so
+    // comment volume keeps the store context current at no cost to speed.
+    ensureStoreContextFresh(shop);
 
     // 2.5. Human-takeover pause: the comment reply lands as a DM, so if the
     // merchant is mid-conversation with this person, stay out of it.
