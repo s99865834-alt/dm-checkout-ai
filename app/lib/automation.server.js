@@ -8,7 +8,7 @@ import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, alrea
 import { getProductMappings } from "./db.server";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize, resolveVariantByOptionValue, askedCustomerToChoose } from "./shopify-data.server";
 import { getStoredStoreContext } from "./db.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
@@ -38,6 +38,32 @@ export { buildCheckoutLink, buildProductPageLink } from "./links.server";
  * are preserved) and adds the size we want to switch to. Returns null if
  * we don't have enough info to make a meaningful call.
  */
+/**
+ * Options and variants for a product already in the conversation.
+ *
+ * Prefers the copy cached on post_product_map (no API call) and falls back to
+ * a live read. Returns null when neither is available, which callers treat as
+ * "cannot resolve a variant" rather than an error.
+ */
+async function loadProductOptions(shop, productId) {
+  if (!productId) return null;
+
+  const { data: mapping } = await supabase
+    .from("post_product_map")
+    .select("product_options")
+    .eq("shop_id", shop.id)
+    .eq("product_id", productId)
+    .limit(1)
+    .maybeSingle();
+
+  if (mapping?.product_options) return mapping.product_options;
+
+  if (!shop.shopify_domain) return null;
+  const raw = await getShopifyProductContextForReply(shop.shopify_domain, productId).catch(() => null);
+  if (!raw) return null;
+  return { options: raw.options, variants: raw.variants?.nodes || [] };
+}
+
 function buildSelectedForSizeSwitch(allVariants, mappedVariantId, sizeOptionName, chosenSize) {
   if (!sizeOptionName || !chosenSize) return null;
   const mapped = Array.isArray(allVariants)
@@ -286,6 +312,46 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       }
     }
 
+    // Did our own last reply ask them to pick between options? Answers to that
+    // question are the highest-intent message in a thread and the easiest to
+    // misread: "Love the sunset!" names no product, so the classifier (told to
+    // judge messages in isolation, so it stops carrying stale products between
+    // turns) called it not_relevant, inferIntentFromText looks for the word
+    // "colour" rather than a colour, and a customer who had just picked from
+    // five colours we listed got no reply at all.
+    //
+    // So match their words against the option values this product actually has.
+    // A hit is a purchase with the variant already decided; anything else still
+    // gets an answer, because we asked and they replied.
+    const weAskedThemToChoose = askedCustomerToChoose(threadContext?.lastOutbound?.reply_text);
+    let variantAnswer = null;
+
+    if (hasPriorProductContext && (weAskedThemToChoose || !intent)) {
+      const productOpts = await loadProductOptions(shop, lastProductLink.product_id);
+      const resolved = productOpts
+        ? resolveVariantByOptionValue(productOpts, message.text, lastProductLink.variant_id)
+        : null;
+
+      if (resolved?.variant) {
+        variantAnswer = { ...resolved, productOpts };
+        intent = "purchase";
+        logger.debug(
+          `[automation] Message ${message.id} picks ${resolved.chosen
+            .map((c) => `${c.name}=${c.value}`)
+            .join(", ")}; sending a checkout link for that variant`
+        );
+      } else if (weAskedThemToChoose && !intent) {
+        // They answered, but named nothing we stock or named two things. Let
+        // the agent re-offer the options rather than dropping the message.
+        intent = "variant_inquiry";
+        logger.debug(
+          `[automation] Message ${message.id} answers our question with no usable value (${
+            resolved?.ambiguous ? `ambiguous: ${resolved.values.join("/")}` : "no match"
+          }); routing to the agent`
+        );
+      }
+    }
+
     if (!intent || !eligibleIntents.includes(intent)) {
       logger.debug(`[automation] AI intent "${message.ai_intent}" not eligible for automation`);
       return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
@@ -340,25 +406,33 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // errors out, or declines to answer. All compliance gates (one reply per
     // message, opt-out, 24h window, usage cap) have already run above, and
     // claim/send/usage accounting here mirrors the legacy branches exactly.
+    // ...except when the customer has just told us which variant they want. At
+    // that point the only correct reply is a checkout link for that exact
+    // variant, and the deterministic branch in 6a builds it. Handing this to a
+    // model risks it choosing a different variant, or no link at all, on the
+    // one message in the thread that was about to become an order.
     try {
       const brandVoiceData = await brandVoiceFor(shop.id, plan);
-      const agentResult = await generateAgentReply({
-        shop,
-        message,
-        intent,
-        brandVoice: brandVoiceData,
-        threadContext,
-        allowClarify: plan.followup === true && followupAutomationEnabled,
-        // Story replies reach the agent before the legacy path's default-product
-        // fallback below, and most story replies are reactions with no product
-        // in them, so the agent is where this actually has to work.
-        storyContext: isStorySurface(message)
-          ? {
-              kind: message.content_type,
-              productName: await defaultProductName(shop, settings, plan),
-            }
-          : null,
-      });
+      const agentResult = variantAnswer
+        ? null
+        : await generateAgentReply({
+            shop,
+            message,
+            intent,
+            brandVoice: brandVoiceData,
+            threadContext,
+            allowClarify: plan.followup === true && followupAutomationEnabled,
+            // Story replies reach the agent before the legacy path's
+            // default-product fallback below, and most story replies are
+            // reactions with no product in them, so the agent is where this
+            // actually has to work.
+            storyContext: isStorySurface(message)
+              ? {
+                  kind: message.content_type,
+                  productName: await defaultProductName(shop, settings, plan),
+                }
+              : null,
+          });
 
       if (agentResult?.text) {
         if (!(await claimMessageReply(shop.id, message.id, agentResult.text, message.external_id))) {
@@ -464,22 +538,11 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         //     resolve the correct variant based on the customer's reply.
         const isSizeFollowUp = lastProductLink.link_id?.startsWith("size_q_") && !lastProductLink.url;
 
-        if (isSizeFollowUp) {
-          // Fetch product options once for both size inference and variant resolution
-          let productOpts = null;
-          const { data: mapping } = await supabase
-            .from("post_product_map")
-            .select("product_options")
-            .eq("shop_id", shop.id)
-            .eq("product_id", lastProductLink.product_id)
-            .limit(1)
-            .maybeSingle();
-          productOpts = mapping?.product_options || null;
-
-          if (!productOpts && shop.shopify_domain) {
-            const raw = await getShopifyProductContextForReply(shop.shopify_domain, lastProductLink.product_id);
-            if (raw) productOpts = { options: raw.options, variants: raw.variants?.nodes || [] };
-          }
+        if (isSizeFollowUp || variantAnswer) {
+          // Fetch product options once for both size inference and variant
+          // resolution. variantAnswer already carries them from the recovery
+          // step, so reuse those rather than reading twice.
+          const productOpts = variantAnswer?.productOpts || (await loadProductOptions(shop, lastProductLink.product_id));
 
           const sizeCheck = productOpts ? detectSizeOption(productOpts) : null;
           const customerSize = message.ai_entities?.size || null;
@@ -492,42 +555,54 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             ) || null;
           }
 
-          if (inferredSize && sizeCheck) {
+          if (variantAnswer || (inferredSize && sizeCheck)) {
             const allVariants = productOpts?.variants?.nodes || productOpts?.variants || [];
 
-            // Prefer the Storefront MCP (get_product with `selected`) since
-            // it does server-side variant matching with Shopify's own
-            // option-alias handling. Fall back to the local
-            // resolveVariantBySize helper on failure.
-            const mcpSelected = buildSelectedForSizeSwitch(
-              allVariants,
-              lastProductLink.variant_id,
-              sizeCheck.sizeOptionName,
-              inferredSize
-            );
-            const productGid = lastProductLink.product_id?.startsWith(
-              "gid://shopify/Product/"
-            )
-              ? lastProductLink.product_id
-              : `gid://shopify/Product/${lastProductLink.product_id}`;
-            let resolved =
-              mcpSelected && shop.shopify_domain
-                ? await resolveVariantViaMcp(
-                    shop.shopify_domain,
-                    productGid,
-                    mcpSelected
-                  )
-                : null;
-            if (!resolved) {
-              resolved = resolveVariantBySize(
+            // The option-value path already matched against this product's own
+            // values, so there is nothing for the size aliaser to add. Only
+            // run it when a size is what we're resolving.
+            let resolved = variantAnswer || null;
+
+            if (!resolved && sizeCheck) {
+              // Prefer the Storefront MCP (get_product with `selected`) since
+              // it does server-side variant matching with Shopify's own
+              // option-alias handling. Fall back to the local
+              // resolveVariantBySize helper on failure.
+              const mcpSelected = buildSelectedForSizeSwitch(
                 allVariants,
                 lastProductLink.variant_id,
                 sizeCheck.sizeOptionName,
                 inferredSize
               );
+              const productGid = lastProductLink.product_id?.startsWith(
+                "gid://shopify/Product/"
+              )
+                ? lastProductLink.product_id
+                : `gid://shopify/Product/${lastProductLink.product_id}`;
+              resolved =
+                mcpSelected && shop.shopify_domain
+                  ? await resolveVariantViaMcp(
+                      shop.shopify_domain,
+                      productGid,
+                      mcpSelected
+                    )
+                  : null;
+              if (!resolved) {
+                resolved = resolveVariantBySize(
+                  allVariants,
+                  lastProductLink.variant_id,
+                  sizeCheck.sizeOptionName,
+                  inferredSize
+                );
+              }
             }
 
             const resolvedVariantId = resolved?.variant?.id || lastProductLink.variant_id;
+
+            // What to confirm back to them: the size they asked for, or the
+            // option values they picked ("Sunset").
+            const choiceConfirmation =
+              inferredSize || variantAnswer?.chosen?.map((c) => c.value).join(" / ") || null;
 
             const [checkoutLink, brandVoiceData, productInfo] = await Promise.all([
               buildCheckoutLink(shop, lastProductLink.product_id, resolvedVariantId, 1),
@@ -554,7 +629,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
                 originChannel,
                 inboundChannel: "dm",
                 triggerChannel: originChannel,
-                sizeConfirmation: inferredSize,
+                choiceConfirmation,
                 recentMessages: (threadContext?.messages || [])
                   .filter((m) => m.id !== message.id)
                   .slice(0, 8)
@@ -2168,7 +2243,7 @@ ${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelConte
 ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
-${safeChannelContext?.sizeConfirmation ? `- The customer was asked what size they want and replied with: "${safeChannelContext.sizeConfirmation}". Confirm their size choice and send the checkout link. Keep it brief.` : ""}
+${safeChannelContext?.choiceConfirmation ? `- The customer was asked which one they want and picked: "${safeChannelContext.choiceConfirmation}". Confirm that choice by name and send the checkout link. Keep it brief, and do not ask them to pick again.` : ""}
 ${safeChannelContext?.sharedPost ? `- SHARED POST, NO TEXT: The customer forwarded one of your Instagram posts into this DM thread and wrote nothing at all. Acknowledge that they shared the post and treat it as interest in that product, then give the link. Never quote them or refer to anything they "said" or "asked" — they sent no words, and inventing some is an obvious tell. Keep it to two short sentences.` : ""}
 ${safeChannelContext?.storyReply ? `- STORY REACTION, NO TEXT: The customer reacted to your Instagram story without writing anything (a heart, a sticker, an image). Never quote them or refer to anything they "said". They watched your story and responded to it, so acknowledge the reaction warmly, then offer the product with the link as an invitation rather than a pitch. No urgency, no hype. Two short sentences.` : ""}
 ${safeChannelContext?.storyMention ? `- STORY MENTION, NO TEXT: The customer tagged this store in their own Instagram story. They wrote nothing to you, so never quote them or refer to anything they "said". This is a favour, not a purchase question: thank them warmly and specifically for the shoutout FIRST, then mention the product is there if they or their friends want it, with the link. It is an invitation, not a pitch: no urgency, no hype, no "don't miss out". Two short sentences.` : ""}
