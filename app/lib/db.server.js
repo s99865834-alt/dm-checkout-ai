@@ -619,36 +619,88 @@ export async function recordToolDetection(shopId, appId, igUserId) {
 }
 
 /**
- * Competing-tool status for one shop: detected when the same non-SocialRepl
- * app_id touched >= 3 distinct conversations in the last 7 days (threshold
- * keeps a one-off Business-Suite manual reply from tripping the banner).
- * Fails closed ({detected:false}) — banner is informational only.
+ * Whether something other than us is answering this shop's Instagram, from two
+ * independent signals over the last 7 days.
+ *
+ * The original signal was the app_id Meta stamps on outbound echoes: the same
+ * foreign app across >= 3 conversations. It has never fired in production. Of
+ * 1,199 outbound replies from something that wasn't us, not one carried an
+ * app_id, because Instagram's own automated replies aren't an app and so have
+ * none, and a comment private reply appears not to stamp one either.
+ *
+ * The signal that does exist is interception: Instagram allows exactly one
+ * private reply per comment, so when ours is refused, something got there
+ * first. That also happens when the merchant answers a comment by hand, which
+ * is why it takes a run of them rather than one.
+ *
+ * Fails closed on either query, since the banner is informational.
  */
 export async function getCompetingToolStatus(shopId) {
-  const empty = { detected: false, appId: null, conversations: 0 };
+  const empty = { detected: false, appId: null, conversations: 0, intercepted: 0 };
   if (!shopId) return empty;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [byAppId, intercepted] = await Promise.all([
+    topForeignApp(shopId, since),
+    countInterceptedCommentReplies(shopId, since),
+  ]);
+
+  return {
+    detected: byAppId.detected || intercepted >= INTERCEPTED_REPLY_THRESHOLD,
+    appId: byAppId.appId,
+    conversations: byAppId.conversations,
+    intercepted,
+  };
+}
+
+// Instagram refuses our reply when a comment already has one, which is also
+// what happens when the merchant answered that comment themselves. One or two
+// is therefore no evidence of anything; a run of them is.
+const INTERCEPTED_REPLY_THRESHOLD = 3;
+
+/** The foreign app_id seen across the most conversations, if any passes the bar. */
+async function topForeignApp(shopId, sinceIso) {
+  const none = { detected: false, appId: null, conversations: 0 };
   const { data, error } = await supabase
     .from("tool_detections")
     .select("app_id, ig_user_id")
     .eq("shop_id", shopId)
-    .gte("last_seen_at", since);
+    .gte("last_seen_at", sinceIso);
   if (error) {
     console.warn("[db] getCompetingToolStatus error:", error.message);
-    return empty;
+    return none;
   }
   const byApp = new Map();
   for (const row of data || []) {
     if (!byApp.has(row.app_id)) byApp.set(row.app_id, new Set());
     byApp.get(row.app_id).add(row.ig_user_id);
   }
-  let top = empty;
+  let top = none;
   for (const [appId, users] of byApp) {
     if (users.size >= 3 && users.size > top.conversations) {
       top = { detected: true, appId, conversations: users.size };
     }
   }
   return top;
+}
+
+/**
+ * Replies we composed for a comment and Instagram refused because the comment
+ * already had one. Reads failed_reason, so it only sees interceptions recorded
+ * since that column shipped.
+ */
+async function countInterceptedCommentReplies(shopId, sinceIso) {
+  const { count, error } = await supabase
+    .from("links_sent")
+    .select("link_id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .gte("sent_at", sinceIso)
+    .like("failed_reason", "instagram_reply_already_exists%");
+  if (error) {
+    console.warn("[db] countInterceptedCommentReplies error:", error.message);
+    return 0;
+  }
+  return count || 0;
 }
 
 /**
@@ -2582,18 +2634,34 @@ const STORE_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  * @returns {Promise<Object|null>}
  */
 export async function getStoredStoreContext(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
-  if (!shopId) return null;
+  const { context, stale } = await getStoredStoreContextWithAge(shopId, ttlMs);
+  return stale ? null : context;
+}
+
+/**
+ * The cached store context together with whether it has gone stale.
+ *
+ * Callers that would rather answer from an old snapshot than make a customer
+ * wait on the Admin API need both facts: the value to use now, and whether to
+ * kick off a refresh for next time. getStoredStoreContext, which throws the
+ * value away when stale, is written in terms of this.
+ *
+ * A row with context but no timestamp counts as stale, since an unknown age is
+ * exactly the case worth refreshing.
+ */
+export async function getStoredStoreContextWithAge(shopId, ttlMs = STORE_CONTEXT_TTL_MS) {
+  if (!shopId) return { context: null, stale: false };
   const { data, error } = await supabase
     .from("shops")
     .select("store_context_json, store_context_updated_at")
     .eq("id", shopId)
     .single();
-  if (error || !data?.store_context_json) return null;
-  if (ttlMs > 0 && data.store_context_updated_at) {
-    const age = Date.now() - new Date(data.store_context_updated_at).getTime();
-    if (age > ttlMs) return null; // stale — caller should refresh
-  }
-  return data.store_context_json;
+  if (error || !data?.store_context_json) return { context: null, stale: false };
+  if (ttlMs <= 0) return { context: data.store_context_json, stale: false };
+  const age = data.store_context_updated_at
+    ? Date.now() - new Date(data.store_context_updated_at).getTime()
+    : Infinity;
+  return { context: data.store_context_json, stale: age > ttlMs };
 }
 
 /**

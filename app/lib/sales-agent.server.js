@@ -28,7 +28,7 @@
 
 import OpenAI from "openai";
 import logger from "./logger.server";
-import { getStoredStoreContext } from "./db.server";
+import { getStoreContextForReply } from "./store-context.server";
 import {
   getShopifyStoreInfo,
   getShopifyProductContextForReply,
@@ -36,6 +36,7 @@ import {
   searchProductsByDomain,
 } from "./shopify-data.server";
 import { searchCatalogNormalized } from "./storefront-mcp.server";
+import { asksForProductPage } from "./reply-rules";
 import {
   buildCheckoutLink,
   buildProductPageLink,
@@ -255,15 +256,20 @@ function formatProductDetails(raw) {
 /**
  * The tools offered to the model for one reply.
  *
- * On a story the product is usually the shop's default one rather than
- * something the customer named, so there is no "they only want to read about
- * it" case to serve. A pdp_ link there would set no attributes[ref] cart
- * attribute and is excluded from the links-sent KPI, so choosing one costs the
- * merchant the order credit. The prompt already asks for a checkout link;
- * withholding the other tool means that doesn't depend on the model agreeing.
+ * get_product_page_link is withheld unless the customer asked for the page.
+ * A pdp_ link sets no attributes[ref] cart attribute, so it credits an order
+ * only within the same browsing session: across every product-page link ever
+ * sent, 38 clicks produced $0 of attributed revenue. The prompt already asks
+ * for a checkout link in every other case, and withholding the tool means
+ * that no longer depends on the model agreeing.
+ *
+ * Stories never get it. There the product is usually the shop's default rather
+ * than one the customer named, so "they only want to read about it" isn't a
+ * case that arises.
  */
-export function toolsForSurface(storyContext) {
-  if (!storyContext) return TOOL_DEFINITIONS;
+export function toolsForSurface(storyContext, customerText = null) {
+  const wantsPage = !storyContext && asksForProductPage(customerText);
+  if (wantsPage) return TOOL_DEFINITIONS;
   return TOOL_DEFINITIONS.filter((t) => t.function?.name !== "get_product_page_link");
 }
 
@@ -279,7 +285,7 @@ export async function generateAgentReply({
   if (!isSalesAgentEnabled()) return null;
   if (!shop?.shopify_domain || !message?.text) return null;
 
-  const toolDefinitions = toolsForSurface(storyContext);
+  const toolDefinitions = toolsForSurface(storyContext, message.text);
 
   // Links minted during the loop; logged to links_sent by the caller after send.
   const linksCreated = [];
@@ -315,7 +321,7 @@ export async function generateAgentReply({
         return formatProductDetails(raw);
       }
       case "get_store_info": {
-        let storeInfo = await getStoredStoreContext(shop.id, 0).catch(() => null);
+        let storeInfo = await getStoreContextForReply(shop).catch(() => null);
         if (!storeInfo) {
           storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
         }

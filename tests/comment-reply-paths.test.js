@@ -299,6 +299,76 @@ describe("a reply Instagram refuses", () => {
   });
 });
 
+/**
+ * Which link a product question earns.
+ *
+ * Product-page links are the best-clicking link we send and have never
+ * attributed a single order, because they carry only `ref` (same-session)
+ * while checkout links also carry `attributes[ref]`. So a product question is
+ * answered in the reply and offered a checkout link, and the page link is kept
+ * for customers who actually asked for the page.
+ */
+describe("links on a product question", () => {
+  const mappedPost = () =>
+    getProductMappings.mockResolvedValue([
+      {
+        ig_media_id: "media-1",
+        product_id: "gid://shopify/Product/123",
+        variant_id: "gid://shopify/ProductVariant/456",
+        product_handle: "test-product",
+        product_options: null,
+      },
+    ]);
+
+  it("sends a checkout link, not a product page link", async () => {
+    mappedPost();
+
+    const res = await handleIncomingComment(
+      comment("is this jacket waterproof?", { ai_intent: "product_question" }),
+      "media-1",
+      shop,
+      growthPlan
+    );
+
+    expect(res.sent).toBe(true);
+    // URLs are shortened, so the link type shows in the id: a bare 8-character
+    // id is a checkout link, a "pdp_" prefix is a product page.
+    const text = sentReplyText();
+    expect(text).not.toContain("pdp_");
+    expect(text).toMatch(/https:\/\/short\.test\/[A-Za-z0-9]{8}\b/);
+  });
+
+  it("sends a product page link when they asked for the page", async () => {
+    mappedPost();
+
+    const res = await handleIncomingComment(
+      comment("can you send me the product page?", { ai_intent: "product_question" }),
+      "media-1",
+      shop,
+      growthPlan
+    );
+
+    expect(res.sent).toBe(true);
+    expect(sentReplyText()).toContain("short.test/pdp_");
+  });
+
+  it("does not log a product page link it never sent", async () => {
+    // The old path built both links and logged both while sending one, which
+    // overstated "links sent" in the merchant's analytics.
+    mappedPost();
+
+    await handleIncomingComment(
+      comment("does it come in black?", { ai_intent: "variant_inquiry" }),
+      "media-1",
+      shop,
+      growthPlan
+    );
+
+    const loggedLinkIds = logLinkSent.mock.calls.map((c) => c[0].linkId);
+    expect(loggedLinkIds.some((id) => String(id).startsWith("pdp_"))).toBe(false);
+  });
+});
+
 describe("comment reply paths", () => {
   it("mapped post: replies with a tracked link", async () => {
     getProductMappings.mockResolvedValue([

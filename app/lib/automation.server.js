@@ -10,7 +10,8 @@ import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
-import { getStoredStoreContext } from "./db.server";
+import { asksForProductPage, admitsNoAnswer } from "./reply-rules";
+import { getStoreContextForReply } from "./store-context.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
@@ -493,7 +494,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       // once made the AI ignore the product count sitting in this context).
       const [brandVoiceData, storeInfoResult] = await Promise.all([
         brandVoiceFor(shop.id, plan),
-        getStoredStoreContext(shop.id, 0).catch(() => null),
+        getStoreContextForReply(shop).catch(() => null),
       ]);
 
       let storeInfo = storeInfoResult;
@@ -730,8 +731,9 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         // like "does this come in any other colors?" instead of just
         // pointing the customer at the PDP. Mirrors the comment-to-DM
         // path so behaviour is consistent across channels.
-        const needsPdp = intent === "product_question" || intent === "variant_inquiry";
-        const needsProductContext = needsPdp && shop.shopify_domain && productMapping.product_id;
+        const isProductQuestion = intent === "product_question" || intent === "variant_inquiry";
+        const needsProductContext = isProductQuestion && shop.shopify_domain && productMapping.product_id;
+        const needsPdp = isProductQuestion && asksForProductPage(message.text);
         const [pdpResult, checkoutLink, brandVoiceData, productInfo, rawProductContext] = await Promise.all([
           needsPdp
             ? buildProductPageLink(shop, productMapping.product_id, productMapping.variant_id, productMapping.product_handle)
@@ -933,8 +935,9 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           product_handle: matchedProduct.handle || null,
         };
 
-        const needsPdp = intent === "product_question" || intent === "variant_inquiry";
-        const needsProductContext = needsPdp && !!shop.shopify_domain;
+        const isProductQuestion = intent === "product_question" || intent === "variant_inquiry";
+        const needsProductContext = isProductQuestion && !!shop.shopify_domain;
+        const needsPdp = isProductQuestion && asksForProductPage(message.text);
         const [pdpResult, checkoutLink, brandVoiceData, productInfo, rawProductContext] = await Promise.all([
           needsPdp
             ? buildProductPageLink(shop, `gid://shopify/Product/${numericProductId}`, variantGid, productMapping.product_handle)
@@ -1741,8 +1744,16 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     }
 
     // 7-8. Build links, brand voice, product info, and product context in parallel
-    const needsPdpComment = message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry";
-    const needsProductContext = needsPdpComment && shop.shopify_domain && productMapping.product_id;
+    //
+    // Product context is what lets the reply actually answer the question, so
+    // it loads for every product question. The product-page link is separate
+    // and now needs an explicit request: it can only attribute an order made
+    // in the same session, so answering the question and offering a checkout
+    // link beats sending them off to read the page themselves.
+    const isProductQuestion =
+      message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry";
+    const needsProductContext = isProductQuestion && shop.shopify_domain && productMapping.product_id;
+    const needsPdpComment = isProductQuestion && asksForProductPage(message.text);
 
     const [rawProductContext, checkoutLinkResult, brandVoiceData, productInfo] = await Promise.all([
       needsProductContext
@@ -1777,7 +1788,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       logger.debug(
         `[automation] Product context attached for comment reply: productId=${productMapping.product_id} variantCount=${variantCount} contextLength=${productContextForReply?.text?.length ?? 0} preview=${(productContextForReply?.text ?? "").substring(0, 120).replace(/\n/g, " ")}...`
       );
-    } else if (needsPdpComment) {
+    } else if (isProductQuestion) {
       productContextForReply = {
         text: "Product variant data could not be loaded. Do not assume this product has multiple sizes or colors. If the customer asks about options/variants, say you don't have that information or that it only comes in one option.",
       };
@@ -1798,9 +1809,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         inboundChannel: "comment",
         triggerChannel: "comment",
         lastProductLink: {
-          url: (message.ai_intent === "product_question" || message.ai_intent === "variant_inquiry") && productPageUrlForMessage
-            ? productPageUrlForMessage
-            : checkoutUrlForMessage,
+          url: productPageUrlForMessage || checkoutUrlForMessage,
           product_id: productMapping.product_id,
           variant_id: productMapping.variant_id,
           trigger_channel: "comment",
@@ -2228,27 +2237,27 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           }
         } else if (intent === "product_question") {
           promptBase += ` who asked a question about the product (what it does, how it works, its features, variants, etc.)`;
-          promptBase += `. They are asking for information about the product, not necessarily ready to buy yet.`;
+          promptBase += `. Answering the question is the job of this reply. Do not send them somewhere to find the answer themselves.`;
           if (productContextForReply?.text) {
-            promptBase += ` Use the product context below to answer accurately (e.g. if they ask "does it come in X?" check the available options and say yes or no accordingly).`;
+            promptBase += ` Answer from the product context below (e.g. if they ask "does it come in X?" check the available options and say yes or no accordingly).`;
           }
+          promptBase += ` If the product context does not contain the answer, say plainly that you don't have that detail confirmed and that the owner can confirm here. Never guess: a confident wrong answer costs this store a return and a bad review.`;
           if (productPageUrl) {
-            promptBase += ` You can direct them to the product page (${productPageUrl}) for full details.`;
-          }
-          if (checkoutUrl) {
-            promptBase += ` If they're ready to buy, include the checkout link (${checkoutUrl}).`;
+            promptBase += ` They asked to see the page, so include this product page link: ${productPageUrl}.`;
+          } else if (checkoutUrl) {
+            promptBase += ` Once you've answered, offer the checkout link (${checkoutUrl}) for when they're ready to buy. Do not describe it as somewhere to read more.`;
           }
         } else if (intent === "variant_inquiry") {
           promptBase += ` who asked about product variants (size, color, etc.)`;
-          promptBase += `. They are interested in specific options.`;
+          promptBase += `. Name the options that actually exist rather than pointing them elsewhere to look.`;
           if (productContextForReply?.text) {
-            promptBase += ` Use the product context below to answer accurately. If they ask about an option we don't have (e.g. "do you have black?" and we don't), say so clearly and offer the product or checkout link for what we do have.`;
+            promptBase += ` Answer from the product context below. If they ask about an option we don't have (e.g. "do you have black?" and we don't), say so clearly and offer what we do have.`;
           }
+          promptBase += ` Never invent an option that isn't in the context.`;
           if (productPageUrl) {
-            promptBase += ` Direct them to the product page (${productPageUrl}) to see all variants.`;
-          }
-          if (checkoutUrl) {
-            promptBase += ` If they're ready to buy, include the checkout link (${checkoutUrl}).`;
+            promptBase += ` They asked to see the page, so include this product page link: ${productPageUrl}.`;
+          } else if (checkoutUrl) {
+            promptBase += ` Once you've answered, offer the checkout link (${checkoutUrl}) for when they're ready to buy.`;
           }
         } else if (intent === "purchase") {
           // Don't add duplicate "who said" if we already included originalMessage above
@@ -2309,10 +2318,10 @@ ${intent === "purchase" && !originalMessage ? `The customer expressed interest i
 ${intent === "price_request" ? `The customer specifically asked about the price. You MUST acknowledge their price question and answer it directly.` : ""}
 ${intent === "price_request" && productPrice ? `The exact price is ${productPrice} - you MUST state this price clearly in your response.` : ""}
 ${intent === "price_request" && !productPrice ? `You don't have the exact price, but you MUST acknowledge their price question. Tell them they can see the price when they click the checkout link.` : ""}
-${intent === "product_question" ? `The customer asked a question about a product. You should acknowledge their question and direct them to the product page (PDP) where they can find all product details. DO NOT pretend to know the answer if you don't have product information.` : ""}
-${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Direct them to the product page (PDP) where they can see all available options.` : ""}
+${intent === "product_question" ? `The customer asked a question about a product. Answer it from the product context. Do NOT deflect to a link instead of answering, and do NOT pretend to know the answer when the context doesn't contain it.` : ""}
+${intent === "variant_inquiry" ? `The customer asked about variants (size, color, etc.). Name the options that exist, taking them from the product context.` : ""}
 ${intent === "store_question" ? `Answer the customer's question using ONLY the store context below. Use exact numbers and contact details from the context. ${availableLinkTokens.length > 0 ? `When referencing a link, you MUST use ONLY one of these exact placeholder tokens (copy them character for character): ${availableLinkTokens.join(", ")}. Do NOT invent any other placeholders — only these exact tokens exist. If none of these tokens match what the customer is asking about, do NOT include any link.` : `Do NOT include any link or {{placeholder}} token — none are available for this store.`} Do NOT write out any URLs yourself. ${storeContactEmail ? `If the customer's question is not answered by the context, say you don't have that information and offer the contact email: ${storeContactEmail}.` : `If the customer's question is not answered by the context, say you don't have that information.`}` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `CRITICAL: Answer using ONLY the product context below. If the product context says "only one variant" or "does NOT come in different sizes or colors", you MUST answer NO to the customer (e.g. "No, it only comes in one option" or "We don't have other colors"). If they ask about a variant we don't have, say NO clearly and include the product page and checkout URLs from this prompt - copy those exact URLs into your reply.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `CRITICAL: Answer using ONLY the product context below. If the product context says "only one variant" or "does NOT come in different sizes or colors", you MUST answer NO to the customer (e.g. "No, it only comes in one option" or "We don't have other colors"). If they ask about a variant we don't have, say NO clearly and include the checkout URL from this prompt - copy that exact URL into your reply.` : ""}
 ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) ---\n${storeContextForReply.text}\n--- END STORE CONTEXT ---` : ""}
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
@@ -2323,20 +2332,19 @@ ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the
 ${warmthFirst ? `- CRITICAL: Thank-you first, link as a casual invitation second. No sales pressure or urgency language whatsoever.` : ""}
 ${intent === "purchase" && !warmthFirst ? `- CRITICAL: Read the original message carefully. If they explicitly said they want to buy (e.g., "I want to buy", "I'll take it"), direct them to checkout. If they just expressed enthusiasm/interest (e.g., "I love this!", "This is amazing!"), acknowledge their excitement first, then offer the checkout link as an option if they're interested in purchasing.` : ""}
 ${intent === "price_request" ? `- CRITICAL: Start your response by acknowledging their price question (e.g., "Yeah!" or "It's..." or "You can see it's...")` : ""}
-${intent === "product_question" && productPageUrl ? `- CRITICAL: Acknowledge their product question` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the product page (${productPageUrl}) where they can see all details/variants` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl && checkoutUrl ? `- Then, if they're ready to buy, you can optionally mention the checkout link (${checkoutUrl}) at the end` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? `- CRITICAL: Acknowledge their question and direct them to the checkout link for full details` : ""}
+${intent === "product_question" || intent === "variant_inquiry" ? `- CRITICAL: Answer the question in your own words. The reply must contain the answer, not a suggestion that they go and read it somewhere.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? `- They asked to see the page, so include this link: ${productPageUrl}` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl && checkoutUrl ? `- After the answer, offer the checkout link (${checkoutUrl}) for when they're ready to buy. Never present it as a place to find more information.` : ""}
 ${intent === "store_question" ? `- Answer from the store context only.${availableLinkTokens.length > 0 ? ` When linking to a policy or page, use ONLY one of these exact placeholder tokens: ${availableLinkTokens.join(", ")}. Do NOT invent any other placeholder.` : ` Do NOT include any link or {{placeholder}} token — none exist for this store.`} Do NOT write out any URLs yourself.${storeContactEmail ? ` If you don't have the info the customer asked for, say so and offer the contact email: ${storeContactEmail}.` : ""}` : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the product or checkout link for available options.` : ""}
+${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the checkout link for what we do have.` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl && !safeChannelContext?.isHomepageFallback ? `- Include this checkout link: ${checkoutUrl}` : ""}
 ${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- Include the store homepage link so they can browse (use this URL exactly): ${checkoutUrl}` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
 - CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? (availableLinkTokens.length > 0 ? `When you want to include a link, use ONLY one of these exact placeholder tokens from the store context (copy character-for-character, no other tokens exist): ${availableLinkTokens.join(", ")}. The placeholder will be replaced with the real URL automatically. If none of these tokens match what the customer asked about, do NOT include any link — just answer the question or say you don't have that info.` : `No link placeholders are available for this store. Do NOT include any link or {{placeholder}} token. Answer in plain text only.`) : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && productPageUrl ? "- Structure: Acknowledge question → Direct to product page link for details/variants → Optionally mention checkout link at the end if ready to buy" : ""}
-${(intent === "product_question" || intent === "variant_inquiry") && !productPageUrl ? "- CRITICAL: Don't make up details you don't know - just acknowledge their question and direct them to the link for full details. If you don't know the answer, say so." : ""}
+${intent === "product_question" || intent === "variant_inquiry" ? "- Structure: answer the question, then offer the link for when they're ready to buy" : ""}
+${intent === "product_question" || intent === "variant_inquiry" ? "- CRITICAL: Never invent a detail. If the product context doesn't answer the question, say you don't have that confirmed and that the owner can confirm here, then stop. Do not paper over a missing answer with a link." : ""}
 ${intent === "price_request" && !productPrice ? "- CRITICAL: If you don't have the exact price, direct them to the checkout link to see the price. Do NOT guess or estimate the price." : ""}
 ${customInstruction ? `` : `- End with an offer to help with questions`}
 
@@ -2409,14 +2417,21 @@ Write the response:`;
   // stripped a mangled version), append the right one so the customer always
   // receives a working link. store_question is exempt — its links are
   // optional policy tokens with their own fallback.
-  if (intent !== "store_question" && checkoutUrl && message) {
+  //
+  // One exception on top of store_question: a product question we genuinely
+  // can't answer. Stapling a cart link onto "I don't have that information"
+  // reads like a machine changing the subject, and the honest reply is worth
+  // more to the merchant than the link. Only explicit admissions match, so
+  // ordinary hedging still gets its link.
+  const answeredNothing =
+    (intent === "product_question" || intent === "variant_inquiry") && admitsNoAnswer(message);
+
+  if (intent !== "store_question" && checkoutUrl && message && !answeredNothing) {
     const allowedReplyUrls = [productPageUrl, checkoutUrl].filter(Boolean);
     const hasAllowedLink = allowedReplyUrls.some((u) => message.includes(u));
     if (!hasAllowedLink) {
-      const appendUrl =
-        (intent === "product_question" || intent === "variant_inquiry") && productPageUrl
-          ? productPageUrl
-          : checkoutUrl;
+      // productPageUrl now only exists when the customer asked for the page.
+      const appendUrl = productPageUrl || checkoutUrl;
       message = `${message.trim().replace(/[\s:：]+$/, "")}\n\n${appendUrl}`;
       console.warn(
         `[automation] Link guarantee: reply for intent "${intent}" was missing its link; appended ${appendUrl}`
