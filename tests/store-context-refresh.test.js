@@ -20,9 +20,8 @@ vi.mock("../app/lib/logger.server", () => ({
   default: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-const { getStoreContextForReply, resetStoreContextRefreshState } = await import(
-  "../app/lib/store-context.server"
-);
+const { getStoreContextForReply, ensureStoreContextFresh, resetStoreContextRefreshState } =
+  await import("../app/lib/store-context.server");
 const { getStoredStoreContextWithAge, saveStoredStoreContext } = await import(
   "../app/lib/db.server"
 );
@@ -153,6 +152,73 @@ describe("getStoreContextForReply", () => {
   it.each([null, undefined, {}])("returns null for %s", async (badShop) => {
     const context = await getStoreContextForReply(badShop);
     expect(context).toBeNull();
+    expect(getStoredStoreContextWithAge).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * getStoreContextForReply only runs when a customer asks about the store, so
+ * on its own it never reached the stores most out of date: Mark Watts Studios
+ * sat on a 34-day-old snapshot through a whole day of comment replies, because
+ * none of them was a store question.
+ */
+describe("ensureStoreContextFresh", () => {
+  it("refreshes a stale cache from an ordinary message", async () => {
+    getStoredStoreContextWithAge.mockResolvedValue({ context: CACHED, stale: true });
+
+    ensureStoreContextFresh(shop);
+    await settle();
+
+    expect(saveStoredStoreContext).toHaveBeenCalledWith(shop.id, FRESH);
+  });
+
+  it("hands back nothing awaitable, so no reply can end up waiting on it", () => {
+    getStoredStoreContextWithAge.mockResolvedValue({ context: CACHED, stale: true });
+
+    // Returning a promise would let a caller await the refresh by accident,
+    // which is the whole cost this is meant to avoid.
+    expect(ensureStoreContextFresh(shop)).toBeUndefined();
+  });
+
+  it("costs one age check per hour, not one per message", async () => {
+    getStoredStoreContextWithAge.mockResolvedValue({ context: CACHED, stale: false });
+
+    for (let i = 0; i < 50; i += 1) ensureStoreContextFresh(shop);
+    await settle();
+
+    expect(getStoredStoreContextWithAge).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks each shop separately", async () => {
+    getStoredStoreContextWithAge.mockResolvedValue({ context: CACHED, stale: false });
+
+    ensureStoreContextFresh(shop);
+    ensureStoreContextFresh({ id: "shop-9", shopify_domain: "other.myshopify.com" });
+    await settle();
+
+    expect(getStoredStoreContextWithAge).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing when the cache is fresh", async () => {
+    getStoredStoreContextWithAge.mockResolvedValue({ context: CACHED, stale: false });
+
+    ensureStoreContextFresh(shop);
+    await settle();
+
+    expect(getShopifyStoreInfo).not.toHaveBeenCalled();
+  });
+
+  it("survives a failing age check", async () => {
+    getStoredStoreContextWithAge.mockRejectedValue(new Error("db down"));
+
+    expect(() => ensureStoreContextFresh(shop)).not.toThrow();
+    await settle();
+    expect(saveStoredStoreContext).not.toHaveBeenCalled();
+  });
+
+  it.each([null, undefined, {}, { id: "shop-3" }])("ignores %s", async (badShop) => {
+    ensureStoreContextFresh(badShop);
+    await settle();
     expect(getStoredStoreContextWithAge).not.toHaveBeenCalled();
   });
 });

@@ -163,7 +163,12 @@ Respond with ONLY a valid JSON object (no markdown, no code blocks) with the fol
 }
 
 Intent meanings:
-- "purchase": Customer wants to buy something, is ready to purchase, or expresses enthusiasm/interest that suggests they would want to learn more or buy (e.g., "love this!", "I need this", "want this", "this is amazing", "this is so awesome", "where can I get this", "😍", "🔥"). When in doubt on a product post, lean toward "purchase" for positive/enthusiastic comments.
+- "purchase": Customer wants to buy something, is ready to purchase, or shows interest that suggests they would want to learn more or buy. This takes three forms, and all three count:
+    • explicit intent — "I want to buy", "I'll take it", "where can I get this"
+    • enthusiasm — "love this!", "I need this", "this is amazing", "😍", "🔥"
+    • interest stated plainly, with no excitement and no buying language — "I like the artwork of transformers", "I'm into the earth sign polishes", "been looking for something like this", "your prints are cool"
+  That third form is easy to miss and matters most. Someone who names a product, category, style or subject this store sells is a lead, even inside a greeting, even in a long rambling message, and even with no exclamation mark. Do NOT file those under not_relevant.
+  When in doubt on a product post, lean toward "purchase" for positive/enthusiastic comments.
 - "product_question": Customer is asking about ONE specific product they have in mind — its features, details, materials, sizing, how it works, etc. Must reference a specific item, not the catalog as a whole.
 - "variant_inquiry": Customer is asking about specific variants (size, color, availability) of a specific product.
 - "price_request": Customer is asking about pricing for a specific product.
@@ -173,7 +178,7 @@ Intent meanings:
     • the catalog as a whole — e.g. "how many products do you carry?", "what products do you sell?", "what kind of items do you have?", "do you carry shoes?", "do you sell anything for kids?", "what brands do you stock?", "is your store still open?"
   IMPORTANT: questions that mention "products" / "items" / "things" in the **plural and generic** ("products you carry", "do you have...", "what do you sell") are store_question, NOT product_question, even though the word "product" appears.
 - "clarification_needed": Customer message is too vague to determine what they want.
-- "not_relevant": Message is clearly spam, unrelated chatter, or has zero connection to the products or business (e.g., "lol", random tags, arguments between users).
+- "not_relevant": Message has zero connection to the products or the business. Spam and follower/romance scams ("my friend thinks you're her type"), arguments between other users, and chatter about something else entirely ("lol", "smh", random tags). Naming a product, category, style or subject the store sells is NOT not_relevant, however casually it is said.
 
 Disambiguation tie-breakers:
 1. If the message could refer to ONE specific item → product_question / variant_inquiry / price_request.
@@ -188,6 +193,9 @@ Examples (study these):
 - "Does this come in red?" → variant_inquiry (specific item)
 - "How does it work?" → product_question (specific item)
 - "How much is it?" → price_request (specific item)
+- "Hi man my name is Nelson and I like the artwork of transformers" → purchase (names a subject the store sells; a lead despite the greeting and the absence of buying language)
+- "hiii my friend saw ur profile and said youre exactly her type lol" → not_relevant (follower/romance spam, no connection to the products)
+- "@someone FINALLY! Because girl you are talking to a WALL" → not_relevant (argument between two other users, not about the products)
 - "I want this!" → purchase
 
 Confidence: How confident you are in the classification (0.0 = not confident, 1.0 = very confident)
