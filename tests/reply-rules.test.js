@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 // Imported from reply-rules, not automation.server: that module builds the
 // Supabase and Shopify clients at import time and needs credentials CI lacks.
-import { asksForProductPage, admitsNoAnswer } from "../app/lib/reply-rules";
+import {
+  asksForProductPage,
+  admitsNoAnswer,
+  asksIfAutomated,
+  claimsToBeHuman,
+  AUTOMATED_DISCLOSURE,
+} from "../app/lib/reply-rules";
 
 describe("asksForProductPage", () => {
   it.each([
@@ -75,5 +81,93 @@ describe("admitsNoAnswer", () => {
 
   it.each([null, undefined, "", "   "])("returns false for %s", (text) => {
     expect(admitsNoAnswer(text)).toBe(false);
+  });
+});
+
+/**
+ * A customer asked Mark Watts Studios "are you bot or real?" on 3 Sep 2026 and
+ * was told "I'm a real person here to help you shop". They followed up with
+ * "wait im talking to THE Matt Watts???", so they left believing they had
+ * reached the artist.
+ */
+describe("asksIfAutomated", () => {
+  it("catches the question that was answered with a lie", () => {
+    expect(asksIfAutomated("are you bot or real?")).toBe(true);
+  });
+
+  it.each([
+    "are you a bot?",
+    "r u a bot",
+    "Are you real?",
+    "are you human?",
+    "is this a bot",
+    "is this automated?",
+    "real or bot?",
+    "am i talking to a real person",
+    "am i chatting with a human",
+    "are you an ai",
+    "are you automated",
+    "are you chatgpt",
+    "wait is this an ai",
+  ])("fires on %s", (text) => {
+    expect(asksIfAutomated(text)).toBe(true);
+  });
+
+  it.each([
+    // Ordinary shopping talk must not be hijacked by the canned disclosure.
+    "are you shipping to canada?",
+    "are you open on sundays",
+    "is this real leather?",
+    "is this a real ruby",
+    "do you have this in a real size 8",
+    "are these prints signed?",
+    "is this bot polish available",
+  ])("does not fire on %s", (text) => {
+    expect(asksIfAutomated(text)).toBe(false);
+  });
+
+  it.each([null, undefined, "", "   "])("returns false for %s", (text) => {
+    expect(asksIfAutomated(text)).toBe(false);
+  });
+});
+
+describe("claimsToBeHuman", () => {
+  it("catches the exact reply that went out", () => {
+    expect(
+      claimsToBeHuman(
+        "I'm a real person here to help you shop and answer any questions about our products! Let me know if you want info or a link to anything from the store."
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    "I am a real person!",
+    "I'm human, promise",
+    "I'm not a bot, just here to help",
+    "I am not a robot",
+    "Yes, I'm real!",
+    "You're talking to a real person here",
+  ])("fires on %s", (text) => {
+    expect(claimsToBeHuman(text)).toBe(true);
+  });
+
+  it.each([
+    AUTOMATED_DISCLOSURE,
+    "These are real hand-pulled prints.",
+    "I'm really glad you like it!",
+    "The stones are real turquoise.",
+    "I'm an automated assistant for this store.",
+    "Yes, it's really back in stock.",
+  ])("does not fire on %s", (text) => {
+    expect(claimsToBeHuman(text)).toBe(false);
+  });
+
+  it.each([null, undefined, "", "   "])("returns false for %s", (text) => {
+    expect(claimsToBeHuman(text)).toBe(false);
+  });
+
+  it("the disclosure says what it is and does not deny being automated", () => {
+    expect(AUTOMATED_DISCLOSURE).toMatch(/automated assistant/i);
+    expect(claimsToBeHuman(AUTOMATED_DISCLOSURE)).toBe(false);
   });
 });

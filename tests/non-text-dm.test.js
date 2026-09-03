@@ -58,6 +58,9 @@ vi.mock("../app/lib/db.server", () => ({
   incrementUsage: vi.fn(),
   logLinkSent: vi.fn(async () => ({ id: "row-1" })),
   deleteLinkSent: vi.fn(),
+  markReplyUndelivered: vi.fn(),
+  getStoredStoreContextWithAge: vi.fn(async () => ({ context: null, stale: false })),
+  saveStoredStoreContext: vi.fn(),
   alreadyRepliedToMessage: vi.fn(async () => false),
   alreadyRepliedToExternalMessage: vi.fn(async () => false),
   claimMessageReply: vi.fn(async () => true),
@@ -104,7 +107,8 @@ vi.mock("../app/lib/sales-agent.server", () => ({
   completionParamsForModel: (_model, params) => params,
 }));
 
-import { handleNonTextDm } from "../app/lib/automation.server";
+import { handleNonTextDm, handleIncomingDm } from "../app/lib/automation.server";
+import { AUTOMATED_DISCLOSURE } from "../app/lib/reply-rules";
 import { sendInstagramDm } from "../app/lib/meta.server";
 import {
   getProductMappings,
@@ -366,6 +370,73 @@ describe("payloads that must never be answered", () => {
     // Text DMs belong to handleIncomingDm; double-handling would double-reply.
     const res = await handleNonTextDm(nonTextDm(null), shop, growthPlan);
     expect(res.sent).toBe(false);
+  });
+});
+
+/**
+ * "Are you a bot?" must be answered honestly, from a fixed string.
+ *
+ * A customer asked Mark Watts Studios "are you bot or real?" on 3 Sep 2026 and
+ * was told "I'm a real person here to help you shop", then replied "wait im
+ * talking to THE Matt Watts???". Whether the reply is honest cannot depend on
+ * a prompt being followed, so this path never reaches the model.
+ */
+describe("being asked whether we're a bot", () => {
+  const textDm = (text) => ({
+    id: "msg-bot-1",
+    external_id: "ext-bot-1",
+    channel: "dm",
+    text,
+    from_user_id: "customer-1",
+    ai_intent: "store_question",
+    ai_confidence: 0.9,
+    created_at: new Date().toISOString(),
+  });
+
+  beforeEach(() => {
+    getShopPlanAndUsage.mockResolvedValue({ usage: 0 });
+    getSettings.mockResolvedValue({ dm_automation_enabled: true });
+  });
+
+  it("answers with the disclosure instead of asking the model", async () => {
+    const res = await handleIncomingDm(textDm("are you bot or real?"), shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(sendDmNow).toHaveBeenCalled();
+    expect(sendDmNow.mock.calls[0][2]).toBe(AUTOMATED_DISCLOSURE);
+  });
+
+  it("answers on the free plan too, since honesty isn't a paid feature", async () => {
+    const res = await handleIncomingDm(textDm("are you a bot?"), shop, freePlan);
+
+    expect(res.sent).toBe(true);
+    expect(sendDmNow.mock.calls[0][2]).toBe(AUTOMATED_DISCLOSURE);
+  });
+
+  it("never claims to be a person", async () => {
+    await handleIncomingDm(textDm("am i talking to a real person"), shop, growthPlan);
+
+    const sent = sendDmNow.mock.calls[0][2];
+    expect(sent).toMatch(/automated assistant/i);
+    expect(sent).not.toMatch(/real person|i'm human|not a bot/i);
+  });
+
+  it("stays out of it while the owner is handling the conversation", async () => {
+    isHumanTakeoverActive.mockResolvedValue(true);
+
+    const res = await handleIncomingDm(textDm("are you a bot?"), shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendDmNow).not.toHaveBeenCalled();
+  });
+
+  it("leaves an ordinary product question alone", async () => {
+    // The canned answer must not hijack a real question that happens to
+    // contain one of these words.
+    const res = await handleIncomingDm(textDm("is this real leather?"), shop, growthPlan);
+
+    const sent = sendDmNow.mock.calls[0]?.[2];
+    if (res.sent) expect(sent).not.toBe(AUTOMATED_DISCLOSURE);
   });
 });
 

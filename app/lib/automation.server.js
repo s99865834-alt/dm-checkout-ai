@@ -10,7 +10,13 @@ import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
 import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
-import { asksForProductPage, admitsNoAnswer } from "./reply-rules";
+import {
+  asksForProductPage,
+  admitsNoAnswer,
+  asksIfAutomated,
+  claimsToBeHuman,
+  AUTOMATED_DISCLOSURE,
+} from "./reply-rules";
 import { getStoreContextForReply, ensureStoreContextFresh } from "./store-context.server";
 import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } from "./meta.server";
 import supabase from "./supabase.server";
@@ -270,6 +276,28 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     if (usageData.usage >= plan.cap) {
       logger.debug(`[automation] Usage cap exceeded for ${plan.name} shop ${shop.id}: ${usageData.usage}/${plan.cap}`);
       return { sent: false, reason: "Usage cap exceeded" };
+    }
+
+    // 2.5. "Are you a bot?" is answered from a fixed string, never by the
+    // model. Asked once and answered "I'm a real person here to help you
+    // shop", which left the customer believing they'd reached the artist
+    // himself. Whatever the plan or intent, the honest answer is cheap and
+    // must not depend on a prompt being followed.
+    if (asksIfAutomated(message.text)) {
+      if (!(await claimMessageReply(shop.id, message.id, AUTOMATED_DISCLOSURE, message.external_id))) {
+        return { sent: false, reason: "Already replied to this message" };
+      }
+      const sendResult = await sendDmReply(shop.id, message.from_user_id, AUTOMATED_DISCLOSURE);
+      if (sendResult?.sent === false) {
+        await rollbackReplyLinks(shop.id, [], {
+          linkId: dmClaimLinkId(message),
+          reason: sendResult?.reason || "dm_send_failed",
+        });
+        return sendResult;
+      }
+      await incrementUsage(shop.id, 1);
+      logger.debug(`[automation] Answered an "are you a bot" question for message ${message.id}`);
+      return { sent: true, reason: "Disclosed that replies are automated" };
     }
 
     // 3. Check if this is a follow-up (conversation support for Growth/Pro)
@@ -2352,6 +2380,7 @@ ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
 - CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? (availableLinkTokens.length > 0 ? `When you want to include a link, use ONLY one of these exact placeholder tokens from the store context (copy character-for-character, no other tokens exist): ${availableLinkTokens.join(", ")}. The placeholder will be replaced with the real URL automatically. If none of these tokens match what the customer asked about, do NOT include any link — just answer the question or say you don't have that info.` : `No link placeholders are available for this store. Do NOT include any link or {{placeholder}} token. Answer in plain text only.`) : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
 ${intent === "price_request" ? "- The checkout link shows the price - mention this if you don't have the exact price" : ""}
+- IDENTITY: you are an automated assistant for this store. If the customer asks whether you're a bot, an AI, a real person, or the owner, say plainly that you're an automated assistant and that the owner reads these messages too. NEVER claim to be a human, never claim to be the owner, and never deny being automated.
 ${intent === "product_question" || intent === "variant_inquiry" ? "- Structure: answer the question, then offer the link for when they're ready to buy" : ""}
 ${intent === "product_question" || intent === "variant_inquiry" ? "- CRITICAL: Never invent a detail. If the product context doesn't answer the question, say you don't have that confirmed and that the owner can confirm here, then stop. Do not paper over a missing answer with a link." : ""}
 ${intent === "price_request" && !productPrice ? "- CRITICAL: If you don't have the exact price, direct them to the checkout link to see the price. Do NOT guess or estimate the price." : ""}
@@ -2446,6 +2475,17 @@ Write the response:`;
         `[automation] Link guarantee: reply for intent "${intent}" was missing its link; appended ${appendUrl}`
       );
     }
+  }
+
+  // Last gate before the reply leaves: never let it claim to be a person.
+  // asksIfAutomated answers the direct question from a fixed string, but a
+  // customer can raise identity in ways no pattern catches, and a denial is
+  // the one answer that must never go out.
+  if (claimsToBeHuman(message)) {
+    console.warn(
+      `[automation] Reply for intent "${intent}" claimed to be human; replaced with the automated disclosure`
+    );
+    message = AUTOMATED_DISCLOSURE;
   }
 
   return stripEmDashes(message);
