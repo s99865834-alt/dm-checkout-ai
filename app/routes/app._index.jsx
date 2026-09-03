@@ -3,7 +3,7 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, getSentLinkCount, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
+import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
@@ -62,8 +62,8 @@ export const loader = async ({ request }) => {
 
   if (shop?.id) {
     let attributionCount = 0;
-    let sentLinkCount = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, sentLinkCount, lastInboundMessageAt, messageAccess, competingTool, storyMessages] =
+    let hasLinkClick = false;
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -94,7 +94,7 @@ export const loader = async ({ request }) => {
           : Promise.resolve(null),
         // Review-prompt eligibility: first attributed order OR 20+ sent replies.
         getAttributionCount(shop.id),
-        getSentLinkCount(shop.id),
+        shopHasLinkClick(shop.id),
         // Message-access health: proof that webhook events actually reach us
         // (Meta's "Allow access to messages" toggle isn't queryable via API).
         getLastInboundMessageAt(shop.id),
@@ -127,7 +127,12 @@ export const loader = async ({ request }) => {
         // silence and quantify what upgrading would unlock.
         plan?.stories ? Promise.resolve(0) : getStoryMessageCount(shop.id).catch(() => 0),
       ]);
-    reviewEligible = attributionCount >= 1 || sentLinkCount >= 20;
+    // Ask only once a customer has actually done something: an attributed
+    // order, or at minimum a click on a link we sent. The old bar was 20
+    // replies sent, which measures the app running rather than working, and it
+    // spent Shanesecares' one-per-60-days ask while they had zero attributed
+    // orders and two checkout links to their name.
+    reviewEligible = attributionCount >= 1 || hasLinkClick;
   }
 
   // Slow externals, streamed to the client as one promise (not awaited here).

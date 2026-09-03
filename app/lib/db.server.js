@@ -1132,24 +1132,32 @@ export async function getAttributionCount(shopId) {
 }
 
 /**
- * Lifetime count of reply links the app has sent for a shop (head-only count).
- * Proxy for "messages the app has sent" — every automated reply with a
- * checkout/PDP link records a links_sent row. Failure-safe (returns 0).
+ * Has a customer ever clicked a link this shop sent?
+ *
+ * Gates the App Store review prompt, which previously fired on 20 replies
+ * sent. That proves the app is running, not working: Shanesecares was asked
+ * with 60 replies sent and zero attributed orders. Shopify shows that modal at
+ * most once every 60 days, so the ask is worth spending on a merchant who has
+ * seen a customer act.
+ *
+ * A function rather than two round trips, because clicks has no foreign key to
+ * links_sent, so PostgREST can't embed it and the alternative is sending every
+ * link id for the shop in an `in (...)` list. Failure-safe (returns false).
+ *
  * @param {string} shopId
- * @returns {Promise<number>}
+ * @returns {Promise<boolean>}
  */
-export async function getSentLinkCount(shopId) {
-  if (!shopId) return 0;
-  const { count, error } = await supabase
-    .from("links_sent")
-    .select("*", { count: "exact", head: true })
-    .eq("shop_id", shopId);
+export async function shopHasLinkClick(shopId) {
+  if (!shopId) return false;
+  const { data, error } = await supabase.rpc("shop_has_link_click", {
+    p_shop_id: shopId,
+  });
 
   if (error) {
-    console.error("getSentLinkCount error", error);
-    return 0;
+    console.error("shopHasLinkClick error", error);
+    return false;
   }
-  return count || 0;
+  return data === true;
 }
 
 /**
