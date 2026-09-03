@@ -440,6 +440,91 @@ describe("being asked whether we're a bot", () => {
   });
 });
 
+/**
+ * A vague reply inside a live conversation.
+ *
+ * Love By Luna answered a question about Habit Breaker Nail Polish on 3 Sep
+ * 2026. The customer wrote back 2.5 minutes later with "So others don't have
+ * to learn this? I can't think of any bad habits I have", the classifier
+ * called it clarification_needed, and it was dropped, on the plan whose
+ * headline feature is multi-turn conversation.
+ */
+describe("a vague reply in a live thread", () => {
+  const vagueReply = (intent = "clarification_needed") => ({
+    id: "msg-vague-1",
+    external_id: "ext-vague-1",
+    channel: "dm",
+    text: "So others don't have to learn this? I can't think of any bad habits I have",
+    from_user_id: "customer-9",
+    ai_intent: intent,
+    ai_confidence: 0.8,
+    created_at: new Date().toISOString(),
+  });
+
+  const withPriorProduct = () =>
+    getRecentConversationContext.mockResolvedValue({
+      messages: [],
+      links: [],
+      lastProductLink: {
+        product_id: "gid://shopify/Product/123",
+        variant_id: "gid://shopify/ProductVariant/456",
+        url: "https://short.test/abc12345",
+      },
+      lastOutbound: { reply_text: "Becoming unbreakable means breaking bad habits." },
+    });
+
+  beforeEach(() => {
+    getShopPlanAndUsage.mockResolvedValue({ usage: 0 });
+    getSettings.mockResolvedValue({ dm_automation_enabled: true });
+  });
+
+  it("answers instead of dropping it, on a plan that sells multi-turn", async () => {
+    withPriorProduct();
+
+    const res = await handleIncomingDm(vagueReply(), shop, proPlan);
+
+    expect(res.sent).toBe(true);
+  });
+
+  it("still drops it on a plan without multi-turn", async () => {
+    withPriorProduct();
+
+    const res = await handleIncomingDm(vagueReply(), shop, freePlan);
+
+    expect(res.sent).toBe(false);
+  });
+
+  it("drops it when we've never linked them a product", async () => {
+    // Without prior context there is no conversation to continue, and this is
+    // the guard that keeps us out of chatter between the merchant and friends.
+    getRecentConversationContext.mockResolvedValue({ messages: [], links: [] });
+
+    const res = await handleIncomingDm(vagueReply(), shop, proPlan);
+
+    expect(res.sent).toBe(false);
+  });
+
+  it("never recovers not_relevant, however live the thread", async () => {
+    // not_relevant means the message has nothing to do with the store.
+    // Recovering it would drop us into personal conversations.
+    withPriorProduct();
+
+    const res = await handleIncomingDm(vagueReply("not_relevant"), shop, proPlan);
+
+    expect(res.sent).toBe(false);
+  });
+
+  it("stays out while the owner is handling the conversation", async () => {
+    withPriorProduct();
+    isHumanTakeoverActive.mockResolvedValue(true);
+
+    const res = await handleIncomingDm(vagueReply(), shop, proPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendDmNow).not.toHaveBeenCalled();
+  });
+});
+
 describe("guards shared with the text pipeline", () => {
   it("stays out of a conversation the owner is handling", async () => {
     isHumanTakeoverActive.mockResolvedValue(true);

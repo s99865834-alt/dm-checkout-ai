@@ -407,6 +407,31 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       }
     }
 
+    // A customer who replies to our answer and gets called "too vague" is
+    // still mid-conversation, and dropping them is how a paid thread dies.
+    // Love By Luna answered a question about Habit Breaker Nail Polish on
+    // 3 Sep 2026; the customer wrote back 2.5 minutes later with "So others
+    // don't have to learn this? I can't think of any bad habits I have" and
+    // got silence, on the plan whose headline feature is multi-turn.
+    //
+    // Scoped tightly on purpose. Only clarification_needed, which means the
+    // classifier couldn't tell what they wanted, never not_relevant, which
+    // means the message has nothing to do with the store: recovering that one
+    // would put us into the personal conversations merchants have with
+    // friends. It also requires a product we already linked them, and a plan
+    // that actually sells multi-turn.
+    if (
+      (!intent || !eligibleIntents.includes(intent)) &&
+      message.ai_intent === "clarification_needed" &&
+      hasPriorProductContext &&
+      plan.converse
+    ) {
+      intent = "product_question";
+      logger.debug(
+        `[automation] Message ${message.id} is a vague reply in a live thread about ${lastProductLink.product_id}; answering rather than dropping it`
+      );
+    }
+
     if (!intent || !eligibleIntents.includes(intent)) {
       logger.debug(`[automation] AI intent "${message.ai_intent}" not eligible for automation`);
       return { sent: false, reason: `AI intent "${message.ai_intent || "none"}" not eligible` };
