@@ -230,6 +230,30 @@ function replyAlreadyExists() {
   return err;
 }
 
+/**
+ * A comment that vanished before we could answer it.
+ *
+ * Love By Luna, 4 Sep 2026: a self-promotional comment arrived at 11:30:34,
+ * we attempted the private reply at 11:30:43, and Meta refused with subcode
+ * 2534066. Fetching the comment id afterwards returned "does not exist", so
+ * it had been deleted (Instagram's spam filter, most likely) inside those
+ * nine seconds. Meta words this one as a permissions problem, which it wasn't:
+ * the same token had been sending comment replies all week.
+ */
+function commentGoneOrNoScope() {
+  const err = new Error(
+    "Instagram API error: Please check if access token has enough IG permissions granular scopes for IG private reply. Or verify if the comment id is valid (Code: 200)"
+  );
+  err.meta = {
+    message:
+      "Please check if access token has enough IG permissions granular scopes for IG private reply. Or verify if the comment id is valid",
+    type: "IGApiException",
+    code: 200,
+    error_subcode: 2534066,
+  };
+  return err;
+}
+
 describe("a reply Instagram refuses", () => {
   const mappedPost = () =>
     getProductMappings.mockResolvedValue([
@@ -296,6 +320,49 @@ describe("a reply Instagram refuses", () => {
 
     expect(res.sent).toBe(true);
     expect(markReplyUndelivered).not.toHaveBeenCalled();
+  });
+
+  it("records a vanished comment under its own reason, not as an app error", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(commentGoneOrNoScope());
+
+    const msg = comment("how much is this?");
+    const res = await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "instagram_private_reply_rejected"
+    );
+  });
+
+  it("keeps a vanished comment out of the competing-tool count", async () => {
+    // The contested-inbox banner counts reasons starting with
+    // "instagram_reply_already_exists". A deleted comment is not a rival tool
+    // and must not read as one.
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(commentGoneOrNoScope());
+
+    await handleIncomingComment(comment("how much is this?"), "media-1", shop, growthPlan);
+
+    const reason = markReplyUndelivered.mock.calls[0][2];
+    expect(reason.startsWith("instagram_reply_already_exists")).toBe(false);
+  });
+
+  it("still treats an unrecognised failure as a real error", async () => {
+    // Quieting Instagram's documented refusals must not quieten everything.
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(new Error("socket hang up"));
+
+    const msg = comment("how much is this?");
+    await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "socket hang up"
+    );
   });
 });
 

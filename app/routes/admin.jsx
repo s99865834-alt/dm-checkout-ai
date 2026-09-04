@@ -636,7 +636,7 @@ export default function Admin() {
                     {row.undelivered > 0 && (
                       <span
                         style={styles.lostReplies}
-                        title={`${row.undelivered} repl${row.undelivered === 1 ? "y was" : "ies were"} written but refused by Instagram, almost always because another automation tool used up the one private reply a comment allows`}
+                        title={`${row.undelivered} repl${row.undelivered === 1 ? "y was" : "ies were"} written but refused by Instagram. Usually something else used up the one private reply a comment allows; sometimes the comment was deleted before we could answer it`}
                       >
                         {row.undelivered} lost
                       </span>

@@ -1315,6 +1315,35 @@ async function hasCommentBeenReplied(commentId, shopId) {
 // text-less message Instagram delivers was being dropped on every plan.
 const REPLYABLE_NON_TEXT = new Set(["share", "heart", "story_reply", "story_mention"]);
 
+/**
+ * Private-reply rejections that are Instagram behaving normally rather than us
+ * behaving badly. Each records a normalised reason so it stays countable, and
+ * none of them deserves a stack trace in the logs: a rare platform refusal
+ * dressed up as an app crash is how genuinely broken things get overlooked.
+ */
+const EXPECTED_PRIVATE_REPLY_REJECTIONS = {
+  // Instagram allows exactly one private reply per comment, ever. Either the
+  // merchant answered by hand, or another tool on the account got there first.
+  2534023: {
+    reason: "instagram_reply_already_exists",
+    detail: "already has a private reply on Instagram",
+  },
+  // Meta returns one message here for two different causes: a token missing
+  // the private-reply granular scope, or a comment id that is no longer
+  // valid. In practice it is the second, because comments get deleted, and
+  // Instagram's spam filter is quick about it: one vanished nine seconds
+  // after its webhook arrived, verified by fetching the id afterwards.
+  //
+  // Deliberately not labelled "deleted". A shop genuinely missing the scope
+  // gets this same subcode, and mislabelling that would bury a real problem,
+  // so the reason stays neutral. The tell is volume: one is a lost comment,
+  // fifty is a permissions fault.
+  2534066: {
+    reason: "instagram_private_reply_rejected",
+    detail: "was refused: the comment is gone, or the token lacks the private-reply scope",
+  },
+};
+
 const STORY_CONTENT_TYPES = new Set(["story_reply", "story_mention"]);
 
 export function isStorySurface(message) {
@@ -1921,12 +1950,6 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     logger.debug(`[automation] ✅ Comment private reply sent successfully for comment ${message.id}`);
     return { sent: true };
   } catch (error) {
-    // Instagram allows exactly one private reply per comment, ever. Subcode
-    // 2534023 means a reply already exists: the merchant replied manually,
-    // another tool on the account won the race, or a prior send succeeded but
-    // looked failed to us. Either way the commenter got an answer, and the
-    // claim row written before the send already prevents retries — so this is
-    // expected platform behaviour, not an error worth logging as one.
     // Whatever went wrong, the claim row may already be in place holding
     // reply_text. Marking it keeps it from counting as a reply the customer
     // received: it reserved Instagram's one private reply and then didn't use
@@ -1935,14 +1958,18 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       ? `dm_reply_comment_${message.external_id}`
       : null;
 
-    if (error?.meta?.error_subcode === 2534023) {
+    // Instagram refusing the private reply for one of its own documented
+    // reasons is expected, not a fault, and the claim row already prevents a
+    // retry, so there is nothing to recover and nothing to shout about.
+    const expected = EXPECTED_PRIVATE_REPLY_REJECTIONS[error?.meta?.error_subcode];
+    if (expected) {
       logger.debug(
-        `[automation] Comment ${message.external_id ?? message.id} already has a private reply on Instagram; treating as handled`
+        `[automation] Comment ${message.external_id ?? message.id} ${expected.detail}; treating as handled`
       );
       if (claimedLinkId) {
-        await markReplyUndelivered(shop.id, claimedLinkId, "instagram_reply_already_exists");
+        await markReplyUndelivered(shop.id, claimedLinkId, expected.reason);
       }
-      return { sent: false, reason: "Comment already has a private reply on Instagram" };
+      return { sent: false, reason: `Comment ${expected.detail}` };
     }
     console.error(`[automation] Error processing comment ${message.id}:`, error);
     if (claimedLinkId) {
