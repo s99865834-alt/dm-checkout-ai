@@ -21,10 +21,13 @@ claims, no "the first/best/only" (requirement 4.3). Pricing only in Pricing.
 
 **Verdict (do not reverse this without new evidence):**
 
-- **Copy:** subtitle, intro, and feature bullets stay. Details currently
-  claim story replies, which are Pro-only. Replace the details paragraph.
+- **Copy:** subtitle, intro, details, and feature bullets stay. A rewrite of
+  the details paragraph will not move installs. The only accuracy nit is the
+  phrase "and story replies" (Pro-only). Leave it unless you want that one
+  cut. Do not swap the paragraph for boutique-voice copy.
 - **Category:** appeal primary to Selling online - Other. Drop Abandoned cart
   (Pro follow-ups are not the main function). Drop hidden term `ai chatbot`.
+  (Stephan submitted the category appeal and search-term change on Sep 7 2026.)
 - **Price numbers:** keep Free / $39 Growth / $99 Pro. Do not cut Growth to
   match FlashDM's $10. Reorder Growth bullets so they sell comments, brand
   voice, and attribution, not "1,000 messages."
@@ -45,29 +48,18 @@ Live (98 chars), keep:
 
 > AI answers your Instagram DMs and comments with checkout links, turning conversations into orders.
 
-### App details — CHANGE
+### App details — KEEP
 
-**Currently live** (claims story replies, which are Pro-only):
+Live, keep:
 
 > Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs, comments, and story replies in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build: connect your account, set your tone, and go.
 
-**Replace with** (388 chars):
+Optional accuracy-only edit: delete `and story replies` from that sentence.
+Stories are Pro. Do not rewrite the rest. Do not claim story mentions.
 
-> Shoppers already asking "still available?" or DMing a size are ready to buy. SocialReplAI replies to Instagram DMs and comments in your brand voice, using your live catalog, pricing, and policies. Every reply can include a checkout link with the right product loaded, and each order is attributed to the conversation that drove it. Connect Instagram, map posts to products, set your tone.
+### Feature list — KEEP
 
-Do not put story replies in details, intro, or feature bullets. Stories are
-Pro. Do not claim story mentions until one is observed in production.
-
-### Feature list — KEEP (one em dash cleanup)
-
-Live bullets are the right five. Only change bullet 1 to drop the em dash
-(product copy rule). 80-char max.
-
-1. `AI replies to DMs and comments in your brand voice, no flows to build` (69)
-2. `Checkout links with the right product and variant pre-loaded in every reply` (75)
-3. `Order attribution shows the revenue each DM or comment drove` (60)
-4. `Answers product questions from your live catalog, pricing, and policies` (71)
-5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
+Live bullets are the right five. Do not churn them.
 
 ### Pricing — KEEP THE NUMBERS, REORDER GROWTH BULLETS
 
