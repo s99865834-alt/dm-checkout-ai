@@ -1132,6 +1132,71 @@ export async function getAttributionCount(shopId) {
 }
 
 /**
+ * Record that we were told about an order, whether or not we could credit it.
+ *
+ * Without this, attribution is unfalsifiable: the handler writes a row when it
+ * finds a link id and otherwise stores nothing, so afterwards "nobody who
+ * clicked bought" and "people bought and we missed them" look the same. The
+ * booleans say which signal carried the id, which is what tells the two apart:
+ * sightings piling up with both false means the ref is being lost before
+ * checkout rather than customers not buying.
+ *
+ * No customer field is read or stored, matching the handler's posture. Ignores
+ * the duplicate an order-webhook retry produces.
+ */
+export async function recordOrderSighting({
+  shopId,
+  orderId,
+  attributed = false,
+  amount = null,
+  currency = null,
+  hadCartRef = false,
+  hadLandingRef = false,
+}) {
+  if (!shopId || !orderId) return;
+  const { error } = await supabase.from("order_sightings").upsert(
+    {
+      shop_id: shopId,
+      order_id: String(orderId),
+      attributed,
+      amount: amount ?? null,
+      currency: currency ?? null,
+      had_cart_ref: hadCartRef,
+      had_landing_ref: hadLandingRef,
+    },
+    { onConflict: "shop_id,order_id" }
+  );
+  if (error) {
+    // Never throw: losing a diagnostic row must not fail the webhook and make
+    // Shopify retry an order we already processed.
+    console.warn("[db] recordOrderSighting error:", error.message);
+  }
+}
+
+/**
+ * Orders seen versus orders credited, per shop, for the admin dashboard.
+ * Returns a Map of shop_id -> { seen, attributed }.
+ */
+export async function getOrderSightingsByShop() {
+  const { data, error } = await supabase
+    .from("order_sightings")
+    .select("shop_id, attributed");
+  if (error) {
+    console.warn("[db] getOrderSightingsByShop error:", error.message);
+    return new Map();
+  }
+  const byShop = new Map();
+  for (const row of data || []) {
+    if (!row.shop_id) continue;
+    const entry = byShop.get(row.shop_id) || { seen: 0, attributed: 0 };
+    entry.seen += 1;
+    if (row.attributed) entry.attributed += 1;
+    byShop.set(row.shop_id, entry);
+  }
+  return byShop;
+}
+
+/**
  * Has a customer ever clicked a link this shop sent?
  *
  * Gates the App Store review prompt, which previously fired on 20 replies
@@ -2552,6 +2617,8 @@ async function buildAdminStoresResult(shops) {
   const { delivered: messagesByShop, undelivered: undeliveredByShop } =
     countRepliesByShop(linksRows);
 
+  const sightingsByShop = await getOrderSightingsByShop();
+
   const revenueByShop = new Map();
   (attributionRows || []).forEach((row) => {
     const id = row.shop_id;
@@ -2604,6 +2671,10 @@ async function buildAdminStoresResult(shops) {
       // that automation is broken.
       undelivered: undeliveredByShop.get(s.id) || 0,
       revenue: revenueByShop.get(s.id) || 0,
+      // Orders we were told about against orders we could credit. A large gap
+      // means the ref is being lost before checkout; no sightings at all means
+      // the orders/create webhook isn't reaching us for this shop.
+      orders: sightingsByShop.get(s.id) || { seen: 0, attributed: 0 },
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
       setup: {

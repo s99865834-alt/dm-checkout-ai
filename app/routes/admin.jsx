@@ -642,7 +642,19 @@ export default function Admin() {
                       </span>
                     )}
                   </td>
-                  <td style={styles.td}>{formatRevenue(row.revenue)}</td>
+                  <td style={styles.td}>
+                    {formatRevenue(row.revenue)}
+                    {row.orders?.seen > 0 && (
+                      <span
+                        style={
+                          row.orders.attributed === 0 ? styles.lostReplies : styles.ordersSeen
+                        }
+                        title={`We were told about ${row.orders.seen} order${row.orders.seen === 1 ? "" : "s"} and could credit ${row.orders.attributed}. A large gap means the tracking ref is being lost before checkout rather than customers not buying.`}
+                      >
+                        {row.orders.attributed}/{row.orders.seen}
+                      </span>
+                    )}
+                  </td>
                   <td style={styles.td}>
                     {formatStoreRevenue(row.total_revenue_ytd, row.total_revenue_currency, row.total_revenue_capped)}
                   </td>
@@ -1078,6 +1090,13 @@ const styles = {
     fontSize: "0.7rem",
     fontWeight: 600,
     color: "#fb923c",
+    whiteSpace: "nowrap",
+  },
+  ordersSeen: {
+    marginLeft: "0.4rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    color: "#8a8a8a",
     whiteSpace: "nowrap",
   },
 };
