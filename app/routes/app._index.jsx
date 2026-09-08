@@ -246,13 +246,13 @@ export const action = async ({ request }) => {
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       const brandVoiceReplyLang = formData.get("brand_voice_reply_language") || "auto";
       try {
-        const currentSettings = await getSettings(shop.id);
         await Promise.all([
+          // Only the three toggles this form owns. The per-post deny-list is
+          // left alone rather than read and written back.
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
-            disabled_post_ids: currentSettings?.disabled_post_ids ?? [],
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -283,12 +283,8 @@ export const action = async ({ request }) => {
         const newIds = togglePost === "enable"
           ? current.filter((id) => id !== postId)
           : current.includes(postId) ? current : [...current, postId];
-        await updateSettings(shop.id, {
-          dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
-          comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
-          followup_enabled: currentSettings?.followup_enabled ?? true,
-          disabled_post_ids: newIds,
-        });
+        // Only the deny-list. The automation toggles are left as they are.
+        await updateSettings(shop.id, { disabled_post_ids: newIds });
         return { success: true, actionType: "toggle-post-automation", newDisabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);

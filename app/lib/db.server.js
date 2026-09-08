@@ -1270,21 +1270,44 @@ export async function getSettings(shopId) {
  * @param {Object} settings
  * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
  */
-export async function updateSettings(shopId, settings) {
-  // Store the user's actual preference — plan gating is enforced at
-  // runtime (webhook / UI), not at persistence time, so preferences
-  // survive plan upgrades/downgrades.
+export async function updateSettings(shopId, settings = {}) {
+  if (!shopId) throw new Error("updateSettings requires a shopId");
+
+  // Only the fields the caller actually passed are changed. This used to
+  // coerce every omitted field to a hardcoded default, so saving one thing
+  // silently rewrote the rest: `{ disabled_post_ids: [...] }` on its own
+  // switched both automation toggles back on, and `{ dm_automation_enabled:
+  // false }` on its own wiped the per-post deny-list. Both callers happened to
+  // pass everything, so it never fired, which is exactly what makes it worth
+  // removing before someone adds a third caller.
+  //
+  // Omitted fields fall back to what the shop has now rather than to a
+  // constant, so an insert for a shop with no row still lands on the app's
+  // intended defaults (getSettings supplies those) instead of the column
+  // defaults, which disagree with them on followup_enabled.
+  const current = await getSettings(shopId);
+
+  const bool = (next, fallback) => (typeof next === "boolean" ? next : fallback);
+
   const { data, error } = await supabase
     .from("settings")
     .upsert(
       {
         shop_id: shopId,
-        dm_automation_enabled: settings.dm_automation_enabled ?? true,
-        comment_automation_enabled: settings.comment_automation_enabled ?? true,
-        followup_enabled: settings.followup_enabled ?? true,
+        // Store the user's actual preference: plan gating is enforced at
+        // runtime (webhook / UI), not at persistence time, so preferences
+        // survive plan upgrades and downgrades.
+        dm_automation_enabled: bool(settings.dm_automation_enabled, current.dm_automation_enabled),
+        comment_automation_enabled: bool(
+          settings.comment_automation_enabled,
+          current.comment_automation_enabled
+        ),
+        followup_enabled: bool(settings.followup_enabled, current.followup_enabled),
         // Deny-list: posts in this array have automation off; everything
         // else (including posts published later) is on by default.
-        disabled_post_ids: Array.isArray(settings.disabled_post_ids) ? settings.disabled_post_ids : [],
+        disabled_post_ids: Array.isArray(settings.disabled_post_ids)
+          ? settings.disabled_post_ids
+          : current.disabled_post_ids,
       },
       {
         onConflict: "shop_id",
