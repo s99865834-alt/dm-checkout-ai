@@ -1132,6 +1132,28 @@ export async function getAttributionCount(shopId) {
 }
 
 /**
+ * Comments received in the last N days.
+ *
+ * Used only to decide whether a shop with no product mappings is being told
+ * about it, so it is fetched only for those shops. Failure-safe (returns 0).
+ */
+export async function getRecentCommentCount(shopId, days = 7) {
+  if (!shopId) return 0;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("channel", "comment")
+    .gte("created_at", since);
+  if (error) {
+    console.warn("[db] getRecentCommentCount error:", error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
+/**
  * Record that we were told about an order, whether or not we could credit it.
  *
  * Without this, attribution is unfalsifiable: the handler writes a row when it
