@@ -3,12 +3,17 @@ import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount } from "../lib/db.server";
+import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
+
+// Comments in a week before the unmapped-posts warning is worth showing. A
+// store with a handful of comments has little to gain and doesn't need nagging;
+// one taking dozens is having products guessed at scale.
+const MAPPING_NUDGE_MIN_COMMENTS = 10;
 
 const META_APP_ID = process.env.META_APP_ID;
 const META_API_VERSION = process.env.META_API_VERSION || "v21.0";
@@ -59,6 +64,7 @@ export const loader = async ({ request }) => {
   let messageAccess = "unknown";
   let competingTool = { detected: false, appId: null, conversations: 0, intercepted: 0 };
   let storyMessages = 0;
+  let unmappedComments = 0;
 
   if (shop?.id) {
     let attributionCount = 0;
@@ -133,6 +139,12 @@ export const loader = async ({ request }) => {
     // spent Shanesecares' one-per-60-days ask while they had zero attributed
     // orders and two checkout links to their name.
     reviewEligible = attributionCount >= 1 || hasLinkClick;
+
+    // Comment volume, needed only to decide whether to raise the unmapped-posts
+    // problem, so only the shops that have no mappings pay for the query.
+    if (productMappings.length === 0) {
+      unmappedComments = await getRecentCommentCount(shop.id, 7).catch(() => 0);
+    }
   }
 
   // Slow externals, streamed to the client as one promise (not awaited here).
@@ -193,7 +205,7 @@ export const loader = async ({ request }) => {
     return { shopifyProducts, instagramInfo, mediaData };
   })();
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, deferred };
 };
 
 export const action = async ({ request }) => {
@@ -246,13 +258,13 @@ export const action = async ({ request }) => {
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       const brandVoiceReplyLang = formData.get("brand_voice_reply_language") || "auto";
       try {
-        const currentSettings = await getSettings(shop.id);
         await Promise.all([
+          // Only the three toggles this form owns. The per-post deny-list is
+          // left alone rather than read and written back.
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
-            disabled_post_ids: currentSettings?.disabled_post_ids ?? [],
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -283,12 +295,8 @@ export const action = async ({ request }) => {
         const newIds = togglePost === "enable"
           ? current.filter((id) => id !== postId)
           : current.includes(postId) ? current : [...current, postId];
-        await updateSettings(shop.id, {
-          dm_automation_enabled: currentSettings?.dm_automation_enabled ?? true,
-          comment_automation_enabled: currentSettings?.comment_automation_enabled ?? true,
-          followup_enabled: currentSettings?.followup_enabled ?? true,
-          disabled_post_ids: newIds,
-        });
+        // Only the deny-list. The automation toggles are left as they are.
+        await updateSettings(shop.id, { disabled_post_ids: newIds });
         return { success: true, actionType: "toggle-post-automation", newDisabledIds: newIds, message: `Post automation ${togglePost === "enable" ? "enabled" : "disabled"}` };
       } catch (err) {
         console.error("[home] Error toggling post automation:", err);
@@ -505,7 +513,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, deferred } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -930,6 +938,33 @@ export default function Index() {
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
+          </div>
+        </s-banner>
+      )}
+      {/* Unmapped posts. Without a mapping the product in a reply is guessed
+          from the caption or the comment text, and on a real catalogue it
+          guesses wrong. Mark Watts Studios took 139 comments in five days with
+          nothing mapped: a collector who asked for a specific piece by name was
+          told "I don't have information about that" and offered a different
+          print, and 86 cart links went out naming artwork nobody had asked
+          about. The merchant can only fix that if someone tells them. */}
+      {showPosts && productMappings?.length === 0 && unmappedComments >= MAPPING_NUDGE_MIN_COMMENTS && (
+        <s-banner tone="warning">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                {unmappedComments} comments came in this week and none of your posts are linked to a
+                product
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Without that link the reply has to guess which product a comment is about, from the
+                post caption and the customer&apos;s words. On a catalogue of any size it guesses
+                wrong, so someone asking about one item can be sent a link to another. Linking your
+                busiest posts to the right product takes a couple of minutes and every reply on
+                those posts then names the correct item.
+              </span>
+            </div>
+            <s-button href="#sr-panel-posts" variant="primary" size="slim">Link your posts</s-button>
           </div>
         </s-banner>
       )}
@@ -1366,7 +1401,13 @@ export default function Index() {
           </div>
         </s-section>
       ) : (
-        showPosts && <s-section heading="Your Instagram Posts">{postsPanel}</s-section>
+        showPosts && (
+          // Same id as the Pro tab panel (they never render together) so the
+          // unmapped-posts banner can link here on every plan.
+          <s-section heading="Your Instagram Posts">
+            <div id="sr-panel-posts">{postsPanel}</div>
+          </s-section>
+        )
       )}
 
     </s-page>

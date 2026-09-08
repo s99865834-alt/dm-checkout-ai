@@ -1132,6 +1132,93 @@ export async function getAttributionCount(shopId) {
 }
 
 /**
+ * Comments received in the last N days.
+ *
+ * Used only to decide whether a shop with no product mappings is being told
+ * about it, so it is fetched only for those shops. Failure-safe (returns 0).
+ */
+export async function getRecentCommentCount(shopId, days = 7) {
+  if (!shopId) return 0;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("channel", "comment")
+    .gte("created_at", since);
+  if (error) {
+    console.warn("[db] getRecentCommentCount error:", error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
+/**
+ * Record that we were told about an order, whether or not we could credit it.
+ *
+ * Without this, attribution is unfalsifiable: the handler writes a row when it
+ * finds a link id and otherwise stores nothing, so afterwards "nobody who
+ * clicked bought" and "people bought and we missed them" look the same. The
+ * booleans say which signal carried the id, which is what tells the two apart:
+ * sightings piling up with both false means the ref is being lost before
+ * checkout rather than customers not buying.
+ *
+ * No customer field is read or stored, matching the handler's posture. Ignores
+ * the duplicate an order-webhook retry produces.
+ */
+export async function recordOrderSighting({
+  shopId,
+  orderId,
+  attributed = false,
+  amount = null,
+  currency = null,
+  hadCartRef = false,
+  hadLandingRef = false,
+}) {
+  if (!shopId || !orderId) return;
+  const { error } = await supabase.from("order_sightings").upsert(
+    {
+      shop_id: shopId,
+      order_id: String(orderId),
+      attributed,
+      amount: amount ?? null,
+      currency: currency ?? null,
+      had_cart_ref: hadCartRef,
+      had_landing_ref: hadLandingRef,
+    },
+    { onConflict: "shop_id,order_id" }
+  );
+  if (error) {
+    // Never throw: losing a diagnostic row must not fail the webhook and make
+    // Shopify retry an order we already processed.
+    console.warn("[db] recordOrderSighting error:", error.message);
+  }
+}
+
+/**
+ * Orders seen versus orders credited, per shop, for the admin dashboard.
+ * Returns a Map of shop_id -> { seen, attributed }.
+ */
+export async function getOrderSightingsByShop() {
+  const { data, error } = await supabase
+    .from("order_sightings")
+    .select("shop_id, attributed");
+  if (error) {
+    console.warn("[db] getOrderSightingsByShop error:", error.message);
+    return new Map();
+  }
+  const byShop = new Map();
+  for (const row of data || []) {
+    if (!row.shop_id) continue;
+    const entry = byShop.get(row.shop_id) || { seen: 0, attributed: 0 };
+    entry.seen += 1;
+    if (row.attributed) entry.attributed += 1;
+    byShop.set(row.shop_id, entry);
+  }
+  return byShop;
+}
+
+/**
  * Has a customer ever clicked a link this shop sent?
  *
  * Gates the App Store review prompt, which previously fired on 20 replies
@@ -1205,21 +1292,44 @@ export async function getSettings(shopId) {
  * @param {Object} settings
  * @param {string} [planName] - Optional plan name already known by the caller (skips an extra DB read).
  */
-export async function updateSettings(shopId, settings) {
-  // Store the user's actual preference — plan gating is enforced at
-  // runtime (webhook / UI), not at persistence time, so preferences
-  // survive plan upgrades/downgrades.
+export async function updateSettings(shopId, settings = {}) {
+  if (!shopId) throw new Error("updateSettings requires a shopId");
+
+  // Only the fields the caller actually passed are changed. This used to
+  // coerce every omitted field to a hardcoded default, so saving one thing
+  // silently rewrote the rest: `{ disabled_post_ids: [...] }` on its own
+  // switched both automation toggles back on, and `{ dm_automation_enabled:
+  // false }` on its own wiped the per-post deny-list. Both callers happened to
+  // pass everything, so it never fired, which is exactly what makes it worth
+  // removing before someone adds a third caller.
+  //
+  // Omitted fields fall back to what the shop has now rather than to a
+  // constant, so an insert for a shop with no row still lands on the app's
+  // intended defaults (getSettings supplies those) instead of the column
+  // defaults, which disagree with them on followup_enabled.
+  const current = await getSettings(shopId);
+
+  const bool = (next, fallback) => (typeof next === "boolean" ? next : fallback);
+
   const { data, error } = await supabase
     .from("settings")
     .upsert(
       {
         shop_id: shopId,
-        dm_automation_enabled: settings.dm_automation_enabled ?? true,
-        comment_automation_enabled: settings.comment_automation_enabled ?? true,
-        followup_enabled: settings.followup_enabled ?? true,
+        // Store the user's actual preference: plan gating is enforced at
+        // runtime (webhook / UI), not at persistence time, so preferences
+        // survive plan upgrades and downgrades.
+        dm_automation_enabled: bool(settings.dm_automation_enabled, current.dm_automation_enabled),
+        comment_automation_enabled: bool(
+          settings.comment_automation_enabled,
+          current.comment_automation_enabled
+        ),
+        followup_enabled: bool(settings.followup_enabled, current.followup_enabled),
         // Deny-list: posts in this array have automation off; everything
         // else (including posts published later) is on by default.
-        disabled_post_ids: Array.isArray(settings.disabled_post_ids) ? settings.disabled_post_ids : [],
+        disabled_post_ids: Array.isArray(settings.disabled_post_ids)
+          ? settings.disabled_post_ids
+          : current.disabled_post_ids,
       },
       {
         onConflict: "shop_id",
@@ -2552,6 +2662,8 @@ async function buildAdminStoresResult(shops) {
   const { delivered: messagesByShop, undelivered: undeliveredByShop } =
     countRepliesByShop(linksRows);
 
+  const sightingsByShop = await getOrderSightingsByShop();
+
   const revenueByShop = new Map();
   (attributionRows || []).forEach((row) => {
     const id = row.shop_id;
@@ -2604,6 +2716,10 @@ async function buildAdminStoresResult(shops) {
       // that automation is broken.
       undelivered: undeliveredByShop.get(s.id) || 0,
       revenue: revenueByShop.get(s.id) || 0,
+      // Orders we were told about against orders we could credit. A large gap
+      // means the ref is being lost before checkout; no sightings at all means
+      // the orders/create webhook isn't reaching us for this shop.
+      orders: sightingsByShop.get(s.id) || { seen: 0, attributed: 0 },
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
       setup: {

@@ -11,7 +11,7 @@ if (typeof global.crypto === "undefined") {
 }
 
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, recordAttribution } from "../lib/db.server";
+import { getShopByDomain, recordAttribution, recordOrderSighting } from "../lib/db.server";
 import { extractLinkIdFromNoteAttributes } from "../lib/links.server";
 import logger from "../lib/logger.server";
 
@@ -165,6 +165,21 @@ export const action = async ({ request }) => {
       attributionData = parseAttributionUrl(referringSite);
       logger.debug(`[webhook] Parsed referring_site:`, attributionData);
     }
+
+    // Record the sighting either way. Attribution used to leave no trace when
+    // it found nothing, which made "is it working?" unanswerable: on 8 Sep
+    // 2026 there were 19 verified human clicks and zero attributed orders, and
+    // no way to tell whether nobody bought or we lost the ref. The booleans
+    // say which signal carried the id, so a systematic loss is visible.
+    await recordOrderSighting({
+      shopId: shopData.id,
+      orderId,
+      attributed: !!attributionData?.linkId,
+      amount: totalPrice,
+      currency,
+      hadCartRef: !!noteAttrLinkId,
+      hadLandingRef: !noteAttrLinkId && !!attributionData?.linkId,
+    });
 
     // If we found a link_id, record attribution
     if (attributionData?.linkId) {
