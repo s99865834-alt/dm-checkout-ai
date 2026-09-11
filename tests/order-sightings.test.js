@@ -28,7 +28,7 @@ vi.mock("../app/lib/supabase.server", () => {
   return { default: { from: (t) => chain(t), rpc: async () => ({ data: null, error: null }) } };
 });
 
-const { recordOrderSighting, getOrderSightingsByShop } = await import("../app/lib/db.server");
+const { recordOrderSighting } = await import("../app/lib/db.server");
 
 const SHOP = "shop-1";
 
@@ -108,31 +108,8 @@ describe("recordOrderSighting", () => {
   });
 });
 
-describe("getOrderSightingsByShop", () => {
-  it("counts seen and credited per shop", async () => {
-    selectResult = {
-      data: [
-        { shop_id: "a", attributed: true },
-        { shop_id: "a", attributed: false },
-        { shop_id: "a", attributed: false },
-        { shop_id: "b", attributed: true },
-      ],
-      error: null,
-    };
-
-    const byShop = await getOrderSightingsByShop();
-
-    expect(byShop.get("a")).toEqual({ seen: 3, attributed: 1 });
-    expect(byShop.get("b")).toEqual({ seen: 1, attributed: 1 });
-  });
-
-  it("returns an empty map on error rather than breaking the dashboard", async () => {
-    selectResult = { data: null, error: { message: "boom" } };
-    expect((await getOrderSightingsByShop()).size).toBe(0);
-  });
-
-  it("ignores rows with no shop", async () => {
-    selectResult = { data: [{ shop_id: null, attributed: true }], error: null };
-    expect((await getOrderSightingsByShop()).size).toBe(0);
-  });
-});
+// Counting sightings per shop deliberately has no JavaScript equivalent any
+// more. It lives in the admin_shop_stats SQL function, because fetching rows
+// to count them is what broke the dashboard: PostgREST truncates a select at
+// 1,000 rows without saying so, and once links_sent passed that the numbers
+// froze for days.

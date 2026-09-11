@@ -2,10 +2,8 @@ import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
-import { countRepliesByShop } from "./reply-counts";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
-import { isCheckoutLinkId } from "./checkout-link-id";
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -1196,29 +1194,6 @@ export async function recordOrderSighting({
 }
 
 /**
- * Orders seen versus orders credited, per shop, for the admin dashboard.
- * Returns a Map of shop_id -> { seen, attributed }.
- */
-export async function getOrderSightingsByShop() {
-  const { data, error } = await supabase
-    .from("order_sightings")
-    .select("shop_id, attributed");
-  if (error) {
-    console.warn("[db] getOrderSightingsByShop error:", error.message);
-    return new Map();
-  }
-  const byShop = new Map();
-  for (const row of data || []) {
-    if (!row.shop_id) continue;
-    const entry = byShop.get(row.shop_id) || { seen: 0, attributed: 0 };
-    entry.seen += 1;
-    if (row.attributed) entry.attributed += 1;
-    byShop.set(row.shop_id, entry);
-  }
-  return byShop;
-}
-
-/**
  * Has a customer ever clicked a link this shop sent?
  *
  * Gates the App Store review prompt, which previously fired on 20 replies
@@ -2004,201 +1979,72 @@ export async function getAnalytics(shopId, planName, options = {}) {
   };
 
   try {
-    // Get links_sent first (may be narrowed by productId)
-    let linksQuery = supabase
-      .from("links_sent")
-      .select("id, message_id, link_id, product_id, failed_reason")
-      .eq("shop_id", shopId);
+    // Every figure here is an aggregate, so all of it is computed in the
+    // database and no rows are transferred.
+    //
+    // This used to fetch a shop's entire messages and links_sent tables and
+    // aggregate them in JavaScript. PostgREST truncates a select at 1,000 rows
+    // and gives no indication that it did, so the page was on a timer:
+    // Shanesecares stood at 867 messages and Mark Watts at 860 on 11 Sep 2026,
+    // about a week from silently under-reporting their own numbers. The same
+    // flaw had already frozen /admin for days once links_sent passed 1,000.
+    // It would have been permanent rather than per-view, since the page
+    // defaults to no date filter.
+    //
+    // Cost is now constant with history instead of linear, which also matters
+    // for the Core Web Vitals requirement on this page.
+    const { data, error } = await supabase.rpc("shop_analytics_totals", {
+      p_shop_id: shopId,
+      p_start: startDate || null,
+      p_end: endDate || null,
+      p_product_id: productId || null,
+    });
 
-    if (productId) {
-      linksQuery = linksQuery.eq("product_id", productId);
-    }
-    if (startDate) {
-      linksQuery = linksQuery.gte("sent_at", startDate);
-    }
-    if (endDate) {
-      linksQuery = linksQuery.lte("sent_at", endDate);
-    }
-
-    const { data: linksSentRaw, error: linksError } = await linksQuery;
-
-    if (linksError) {
-      console.error("[analytics] Error fetching links sent:", linksError);
-    }
-
-    // A rejected send leaves its claim row behind on purpose (it reserved
-    // Instagram's one reply per comment), so drop those here or the response
-    // rate credits us for messages the customer never received.
-    const linksSent = (linksSentRaw || []).filter((l) => !l.failed_reason);
-
-    // When filtering by post, scope messages to those with matching links
-    const postFilterMessageIds = productId
-      ? [...new Set((linksSent || []).map(l => l.message_id).filter(Boolean))]
-      : null;
-
-    let messagesQuery = supabase
-      .from("messages")
-      .select("id, channel, ai_intent, last_user_message_at, created_at")
-      .eq("shop_id", shopId);
-
-    if (postFilterMessageIds) {
-      // Use a valid all-zeros UUID as a never-match sentinel. messages.id is a
-      // UUID column, so the previous "__none__" sentinel raised
-      // "22P02 invalid input syntax for type uuid" whenever the post filter
-      // resolved to zero matching messages.
-      messagesQuery = messagesQuery.in(
-        "id",
-        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
-      );
-    }
-    if (startDate) {
-      messagesQuery = messagesQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      messagesQuery = messagesQuery.lte("created_at", endDate);
-    }
-
-    const { data: allMessages, error: messagesError } = await messagesQuery;
-
-    if (messagesError) {
-      console.error("[analytics] Error fetching messages:", messagesError);
+    if (error) {
+      console.error("[analytics] shop_analytics_totals error:", error);
       return analytics;
     }
 
-    analytics.messagesReceived = (allMessages || []).length;
+    const t = Array.isArray(data) ? data[0] : data;
+    if (!t) return analytics;
 
-    if (linksError) {
-      console.error("[analytics] Error fetching links sent:", linksError);
-    }
+    const num = (v) => Number(v) || 0;
 
-    // Only checkout / add-to-cart links count. Homepage, PDP, claim-slot,
-    // size-question, and follow-up rows cannot attribute an order.
-    const checkoutLinks = (linksSent || []).filter((l) => isCheckoutLinkId(l.link_id));
-    analytics.linksSent = new Set(checkoutLinks.map((l) => l.link_id)).size;
+    analytics.messagesReceived = num(t.messages_received);
+    analytics.linksSent = num(t.checkout_links_sent);
+    analytics.clicks = num(t.clicks);
 
-    // Create map of message_id -> link_id, keeping the most recent link per message.
-    // messageToLink uses ALL entries (so response-rate counts every replied message),
-    // but linkIds/linkIdToChannel only include checkout links (for click queries).
-    const messageToLink = {};
-    const linkIdToChannel = {};
-    const linkIds = [];
-    (linksSent || []).forEach(link => {
-      if (link.message_id) {
-        const prev = messageToLink[link.message_id];
-        if (!prev || String(link.id) > String(prev.rowId)) {
-          messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
-        }
-        if (isCheckoutLinkId(link.link_id)) {
-          const message = (allMessages || []).find(m => m.id === link.message_id);
-          if (message) {
-            linkIdToChannel[link.link_id] = message.channel;
-          }
-        }
-      }
-      if (isCheckoutLinkId(link.link_id)) {
-        linkIds.push(link.link_id);
-      }
-    });
-    const messageToLinkId = {};
-    for (const [msgId, val] of Object.entries(messageToLink)) {
-      messageToLinkId[msgId] = val.linkId;
-    }
-
-    // Filter messages that have links sent (for channel performance and trigger phrases)
-    const messagesWithLinks = (allMessages || []).filter(m => messageToLinkId[m.id]);
-
-    // Response rate: % of messages that received an AI response (link sent)
+    // Response rate is replies over messages received. Replies Instagram
+    // refused are excluded in the function, so a reply nobody received does
+    // not count as one.
     if (analytics.messagesReceived > 0) {
-      analytics.responseRate = (messagesWithLinks.length / analytics.messagesReceived) * 100;
+      analytics.responseRate = (num(t.responded_messages) / analytics.messagesReceived) * 100;
     }
 
-    // Get clicks for ALL link_ids (not just those linked to messages).
-    // We track BOTH total click events (so the "Clicks" KPI keeps reflecting
-    // every individual click) AND the count of unique link_ids that were
-    // clicked at least once (so CTR can be reported as a real rate that
-    // never exceeds 100% even when a customer hammers the same link).
-    let uniqueLinksClicked = 0;
-    if (linkIds.length > 0) {
-      const { data: clicksData, error: clicksError } = await supabase
-        .from("clicks")
-        .select("link_id")
-        .in("link_id", linkIds);
-
-      if (!clicksError && Array.isArray(clicksData)) {
-        analytics.clicks = clicksData.length;
-        const uniq = new Set();
-        clicksData.forEach((c) => {
-          if (c?.link_id) uniq.add(c.link_id);
-        });
-        uniqueLinksClicked = uniq.size;
-      }
-    }
-
-    // CTR = (links that received at least one click) / (links sent).
-    // Using total click events here lets it run past 100% when a customer
-    // re-clicks (which is how socialreplai's overview was showing 500%).
+    // CTR counts links clicked at least once over links sent, so a customer
+    // re-clicking the same link cannot push it past 100%.
     if (analytics.linksSent > 0) {
-      analytics.ctr = (uniqueLinksClicked / analytics.linksSent) * 100;
+      analytics.ctr = (num(t.unique_links_clicked) / analytics.linksSent) * 100;
     }
 
-    // Top trigger phrases (group by ai_intent)
-    const intentCounts = {};
-    messagesWithLinks.forEach(msg => {
-      if (msg.ai_intent) {
-        intentCounts[msg.ai_intent] = (intentCounts[msg.ai_intent] || 0) + 1;
-      }
-    });
-    
-    analytics.topTriggerPhrases = Object.entries(intentCounts)
-      .map(([intent, count]) => ({ intent, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 3);
+    analytics.topTriggerPhrases = Array.isArray(t.top_intents)
+      ? t.top_intents.map((r) => ({ intent: r.intent, count: num(r.count) }))
+      : [];
 
-    // Growth tier: Per channel performance
     if (planName === "GROWTH" || planName === "PRO") {
-      const channelStats = {
-        dm: { sent: 0, responded: 0, clicks: 0 },
-        comment: { sent: 0, responded: 0, clicks: 0 },
+      analytics.channelPerformance = {
+        dm: {
+          sent: num(t.dm_sent),
+          responded: num(t.dm_responded),
+          clicks: num(t.dm_clicks),
+        },
+        comment: {
+          sent: num(t.comment_sent),
+          responded: num(t.comment_responded),
+          clicks: num(t.comment_clicks),
+        },
       };
-
-      // Count all messages per channel (not just ones with links)
-      (allMessages || []).forEach(msg => {
-        const channel = msg.channel;
-        if (channelStats[channel]) {
-          channelStats[channel].sent++;
-        }
-      });
-
-      // Count responded messages (those with links sent = AI responded)
-      messagesWithLinks.forEach(msg => {
-        const channel = msg.channel;
-        if (channelStats[channel]) {
-          channelStats[channel].responded++;
-        }
-      });
-
-      // Get clicks per channel
-      if (linkIds.length > 0) {
-        const { data: clicksData, error: clicksError } = await supabase
-          .from("clicks")
-          .select("link_id")
-          .in("link_id", linkIds);
-
-        if (!clicksError && clicksData) {
-          // Use the linkIdToChannel map we built earlier
-          clicksData.forEach(click => {
-            const channel = linkIdToChannel[click.link_id];
-            if (channel && channelStats[channel]) {
-              channelStats[channel].clicks++;
-            }
-          });
-        }
-      }
-
-      analytics.channelPerformance = channelStats;
-
-      // Top IG posts by engagement (simplified - would need media_id from comments)
-      // For now, return empty array - will be enhanced when we have comment media_id tracking
+      // Needs a media_id on comment rows before it can be built.
       analytics.topPosts = [];
     }
   } catch (error) {
@@ -2229,229 +2075,73 @@ export async function getProAnalytics(shopId, options = {}) {
   };
 
   try {
-    // When filtering by post/product, pre-fetch matching message IDs
-    let postFilterMessageIds = null;
-    if (productId) {
-      let pfLinksQ = supabase.from("links_sent").select("message_id").eq("shop_id", shopId).eq("product_id", productId);
-      if (startDate) pfLinksQ = pfLinksQ.gte("sent_at", startDate);
-      if (endDate) pfLinksQ = pfLinksQ.lte("sent_at", endDate);
-      const { data: pfLinks } = await pfLinksQ;
-      postFilterMessageIds = [...new Set((pfLinks || []).map(l => l.message_id).filter(Boolean))];
-    }
+    // Computed in the database, same reason as getAnalytics. This used to pull
+    // a shop's whole messages table with select("*"), plus attribution,
+    // links_sent and clicks, and aggregate in JavaScript. PostgREST truncates
+    // a select at 1,000 rows silently, which had already frozen /admin and was
+    // days from corrupting the main analytics page.
+    //
+    // shop_pro_analytics reproduces the previous definitions exactly, quirks
+    // included: substring sentiment matching with positive winning ties, one
+    // representative link per message chosen by greatest id as text, and
+    // follow-up "clicks" meaning messages that got a click rather than click
+    // events. Verified against independently written queries before this was
+    // wired up, so no number a merchant sees moves.
+    const { data, error } = await supabase.rpc("shop_pro_analytics", {
+      p_shop_id: shopId,
+      p_start: startDate || null,
+      p_end: endDate || null,
+      p_product_id: productId || null,
+    });
 
-    let messagesQuery = supabase
-      .from("messages")
-      .select("*")
-      .eq("shop_id", shopId);
-
-    if (postFilterMessageIds) {
-      // See note above: never-match sentinel must be a valid UUID for
-      // messages.id (UUID column). "__none__" raises 22P02.
-      messagesQuery = messagesQuery.in(
-        "id",
-        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
-      );
-    }
-    if (startDate) {
-      messagesQuery = messagesQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      messagesQuery = messagesQuery.lte("created_at", endDate);
-    }
-
-    const { data: allMessages, error: messagesError } = await messagesQuery;
-
-    if (messagesError) {
-      console.error("[pro-analytics] Error fetching messages:", messagesError);
+    if (error) {
+      console.error("[pro-analytics] shop_pro_analytics error:", error);
       return proAnalytics;
     }
 
-    if (!allMessages || allMessages.length === 0) {
-      return proAnalytics;
-    }
+    const t = Array.isArray(data) ? data[0] : data;
+    if (!t) return proAnalytics;
 
-    // Customer Segments: Count unique from_user_id interactions
-    const userInteractionCounts = {};
-    allMessages.forEach(msg => {
-      if (msg.from_user_id) {
-        userInteractionCounts[msg.from_user_id] = (userInteractionCounts[msg.from_user_id] || 0) + 1;
-      }
-    });
+    const num = (v) => Number(v) || 0;
 
-    Object.values(userInteractionCounts).forEach(count => {
-      if (count === 1) {
-        proAnalytics.customerSegments.firstTime++;
-      } else {
-        proAnalytics.customerSegments.repeat++;
-      }
-    });
-    proAnalytics.customerSegments.total = Object.keys(userInteractionCounts).length;
+    proAnalytics.customerSegments = {
+      firstTime: num(t.first_time_customers),
+      repeat: num(t.repeat_customers),
+      total: num(t.total_customers),
+    };
 
-    // Sentiment Analysis: Aggregate sentiment counts
-    allMessages.forEach(msg => {
-      if (msg.sentiment) {
-        const sentiment = msg.sentiment.toLowerCase();
-        if (sentiment === "positive" || sentiment.includes("positive")) {
-          proAnalytics.sentimentAnalysis.positive++;
-        } else if (sentiment === "negative" || sentiment.includes("negative")) {
-          proAnalytics.sentimentAnalysis.negative++;
-        } else {
-          proAnalytics.sentimentAnalysis.neutral++;
-        }
-        proAnalytics.sentimentAnalysis.total++;
-      }
-    });
+    proAnalytics.sentimentAnalysis = {
+      positive: num(t.sentiment_positive),
+      neutral: num(t.sentiment_neutral),
+      negative: num(t.sentiment_negative),
+      total: num(t.sentiment_total),
+    };
 
-    // Revenue Attribution: Sum revenue from attribution table
-    let attributionQuery = supabase
-      .from("attribution")
-      .select("*")
-      .eq("shop_id", shopId);
+    proAnalytics.revenueAttribution = {
+      total: num(t.revenue_total),
+      byChannel: { dm: num(t.revenue_dm), comment: num(t.revenue_comment) },
+      currency: t.revenue_currency || "USD",
+    };
 
-    if (startDate) {
-      attributionQuery = attributionQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      attributionQuery = attributionQuery.lte("created_at", endDate);
-    }
+    const withMessages = num(t.followup_with_messages);
+    const withoutMessages = num(t.followup_without_messages);
+    const withClicks = num(t.followup_with_clicks);
+    const withoutClicks = num(t.followup_without_clicks);
 
-    const { data: attributions, error: attributionError } = await attributionQuery;
-
-    if (!attributionError && attributions) {
-      attributions.forEach(attr => {
-        const amount = parseFloat(attr.amount || 0);
-        proAnalytics.revenueAttribution.total += amount;
-        
-        if (attr.channel === "dm") {
-          proAnalytics.revenueAttribution.byChannel.dm += amount;
-        } else if (attr.channel === "comment") {
-          proAnalytics.revenueAttribution.byChannel.comment += amount;
-        }
-
-        // Use currency from first attribution (assuming all same currency)
-        if (!proAnalytics.revenueAttribution.currency && attr.currency) {
-          proAnalytics.revenueAttribution.currency = attr.currency;
-        }
-      });
-    }
-
-    // Follow-Up Performance: Compare threads with vs without follow-ups
-    const messageIds = allMessages.map(m => m.id);
-    
-    // Get links_sent for these messages
-    const { data: linksSent, error: linksError } = await supabase
-      .from("links_sent")
-      .select("id, message_id, link_id")
-      .eq("shop_id", shopId)
-      .in("message_id", messageIds.length > 0 ? messageIds : [null]);
-
-    if (!linksError && linksSent) {
-      const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
-      const messageToLink = {};
-      linksSent.forEach(link => {
-        if (link.message_id) {
-          const prev = messageToLink[link.message_id];
-          if (!prev || String(link.id) > String(prev.rowId)) {
-            messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
-          }
-        }
-      });
-      const messageToLinkId = {};
-      for (const [msgId, val] of Object.entries(messageToLink)) {
-        messageToLinkId[msgId] = val.linkId;
-      }
-
-      // Get follow-ups for these messages
-      const { data: followups, error: followupsError } = await supabase
-        .from("followups")
-        .select("message_id, link_id")
-        .eq("shop_id", shopId)
-        .in("message_id", messageIds);
-
-      if (!followupsError && followups) {
-        const messagesWithFollowup = new Set();
-        followups.forEach(f => {
-          if (f.message_id) {
-            messagesWithFollowup.add(f.message_id);
-          }
-        });
-
-        // Get clicks for checkout links only
-        if (linkIds.length > 0) {
-          const { data: clicks, error: clicksError } = await supabase
-            .from("clicks")
-            .select("link_id")
-            .in("link_id", linkIds);
-
-          if (!clicksError && clicks) {
-            const linkIdToClicks = {};
-            clicks.forEach(click => {
-              if (click.link_id) {
-                linkIdToClicks[click.link_id] = (linkIdToClicks[click.link_id] || 0) + 1;
-              }
-            });
-
-            // Categorize messages
-            allMessages.forEach(msg => {
-              const linkId = messageToLinkId[msg.id];
-              if (!linkId) return;
-
-              const hasFollowup = messagesWithFollowup.has(msg.id);
-              const hasClick = linkIdToClicks[linkId] > 0;
-
-              if (hasFollowup) {
-                proAnalytics.followUpPerformance.withFollowup.messages++;
-                if (hasClick) {
-                  proAnalytics.followUpPerformance.withFollowup.clicks++;
-                }
-              } else {
-                proAnalytics.followUpPerformance.withoutFollowup.messages++;
-                if (hasClick) {
-                  proAnalytics.followUpPerformance.withoutFollowup.clicks++;
-                }
-              }
-            });
-
-            // Calculate CTR
-            if (proAnalytics.followUpPerformance.withFollowup.messages > 0) {
-              proAnalytics.followUpPerformance.withFollowup.ctr = 
-                (proAnalytics.followUpPerformance.withFollowup.clicks / 
-                 proAnalytics.followUpPerformance.withFollowup.messages) * 100;
-            }
-
-            if (proAnalytics.followUpPerformance.withoutFollowup.messages > 0) {
-              proAnalytics.followUpPerformance.withoutFollowup.ctr = 
-                (proAnalytics.followUpPerformance.withoutFollowup.clicks / 
-                 proAnalytics.followUpPerformance.withoutFollowup.messages) * 100;
-            }
-
-            // Calculate revenue for follow-up vs non-follow-up
-            // Match attribution by link_id
-            if (attributions) {
-              attributions.forEach(attr => {
-                if (attr.link_id) {
-                  // Find message that has this link_id
-                  const messageId = Object.keys(messageToLinkId).find(
-                    mid => messageToLinkId[mid] === attr.link_id
-                  );
-                  
-                  if (messageId) {
-                    const hasFollowup = messagesWithFollowup.has(messageId);
-                    const amount = parseFloat(attr.amount || 0);
-                    
-                    if (hasFollowup) {
-                      proAnalytics.followUpPerformance.withFollowup.revenue += amount;
-                    } else {
-                      proAnalytics.followUpPerformance.withoutFollowup.revenue += amount;
-                    }
-                  }
-                }
-              });
-            }
-          }
-        }
-      }
-    }
+    proAnalytics.followUpPerformance = {
+      withFollowup: {
+        messages: withMessages,
+        clicks: withClicks,
+        revenue: num(t.followup_with_revenue),
+        ctr: withMessages > 0 ? (withClicks / withMessages) * 100 : 0,
+      },
+      withoutFollowup: {
+        messages: withoutMessages,
+        clicks: withoutClicks,
+        revenue: num(t.followup_without_revenue),
+        ctr: withoutMessages > 0 ? (withoutClicks / withoutMessages) * 100 : 0,
+      },
+    };
   } catch (error) {
     console.error("[pro-analytics] Error calculating Pro analytics:", error);
   }
@@ -2643,33 +2333,44 @@ async function buildAdminStoresResult(shops) {
     mappedPostsByShop.set(row.shop_id, (mappedPostsByShop.get(row.shop_id) || 0) + 1);
   });
 
-  const { data: linksRows, error: linksError } = await supabase
-    .from("links_sent")
-    .select("shop_id, message_id, link_id, failed_reason");
+  // Counted in the database, one row per shop.
+  //
+  // This used to fetch every row of links_sent, attribution and
+  // order_sightings and count them here. PostgREST caps a select at 1,000
+  // rows and gives no indication when it truncates, so the moment links_sent
+  // passed 1,000 the whole dashboard froze: it kept counting the oldest 1,000
+  // rows and dropped everything newer. On 11 Sep 2026 the table held 1,065
+  // rows, Love By Luna had read 196 for days against a true 208, and a reply
+  // sent during a live test moved nothing.
+  //
+  // Any number added to this dashboard belongs in admin_shop_stats, not in
+  // another fetch-and-count. The trap is silent by design.
+  const { data: statRows, error: statsError } = await supabase.rpc("admin_shop_stats");
 
-  if (linksError) {
-    console.error("getAdminDashboardStores links_sent error", linksError);
+  if (statsError) {
+    console.error("getAdminDashboardStores admin_shop_stats error", statsError);
   }
 
-  const { data: attributionRows, error: attrError } = await supabase
-    .from("attribution")
-    .select("shop_id, amount");
+  const statsByShop = new Map(
+    (statRows || []).map((r) => [
+      r.shop_id,
+      {
+        messagesSent: Number(r.messages_sent) || 0,
+        undelivered: Number(r.undelivered) || 0,
+        revenue: parseFloat(r.revenue) || 0,
+        ordersSeen: Number(r.orders_seen) || 0,
+        ordersAttributed: Number(r.orders_attributed) || 0,
+      },
+    ])
+  );
 
-  if (attrError) {
-    console.error("getAdminDashboardStores attribution error", attrError);
-  }
-
-  const { delivered: messagesByShop, undelivered: undeliveredByShop } =
-    countRepliesByShop(linksRows);
-
-  const sightingsByShop = await getOrderSightingsByShop();
-
-  const revenueByShop = new Map();
-  (attributionRows || []).forEach((row) => {
-    const id = row.shop_id;
-    const amount = parseFloat(row.amount || 0);
-    revenueByShop.set(id, (revenueByShop.get(id) || 0) + amount);
-  });
+  const EMPTY_STATS = {
+    messagesSent: 0,
+    undelivered: 0,
+    revenue: 0,
+    ordersSeen: 0,
+    ordersAttributed: 0,
+  };
 
   return shops.map((s) => {
     const metaAuth = metaAuthByShop.get(s.id) || null;
@@ -2698,6 +2399,7 @@ async function buildAdminStoresResult(shops) {
         };
       }
     }
+    const stats = statsByShop.get(s.id) || EMPTY_STATS;
     return {
       shop_id: s.id,
       shopify_domain: s.shopify_domain,
@@ -2709,17 +2411,17 @@ async function buildAdminStoresResult(shops) {
       // Free comment-to-DM window. Computed here, like beta_trial above, so
       // the dashboard renders it without repeating the date arithmetic.
       comment_trial: commentTrialStatus(s),
-      messages_sent: messagesByShop.get(s.id) || 0,
-      // Replies we wrote and Instagram refused, nearly always because another
-      // automation tool on the same account used up the one private reply a
-      // comment allows. A rising number here means we're losing that race, not
-      // that automation is broken.
-      undelivered: undeliveredByShop.get(s.id) || 0,
-      revenue: revenueByShop.get(s.id) || 0,
+      messages_sent: stats.messagesSent,
+      // Replies we wrote and Instagram refused. Usually something else used up
+      // the one private reply a comment allows; sometimes the comment was
+      // deleted first. A rising number means we're losing that race, not that
+      // automation is broken.
+      undelivered: stats.undelivered,
+      revenue: stats.revenue,
       // Orders we were told about against orders we could credit. A large gap
       // means the ref is being lost before checkout; no sightings at all means
       // the orders/create webhook isn't reaching us for this shop.
-      orders: sightingsByShop.get(s.id) || { seen: 0, attributed: 0 },
+      orders: { seen: stats.ordersSeen, attributed: stats.ordersAttributed },
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
       setup: {
