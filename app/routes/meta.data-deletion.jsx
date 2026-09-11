@@ -16,6 +16,7 @@
 
 import crypto from "crypto";
 import logger from "../lib/logger.server";
+import { warnIfTruncated } from "../lib/row-cap";
 
 const META_APP_SECRET = process.env.META_APP_SECRET;
 
@@ -68,6 +69,14 @@ async function deleteUserData(igUserId) {
       throw messagesError;
     }
 
+    // A truncated read here would delete part of someone's data and report
+    // success, so the one place silence is unacceptable gets a tripwire.
+    if (warnIfTruncated(`data-deletion messages for ${igUserId}`, messages)) {
+      throw new Error(
+        "Refusing to report a partial deletion: the message read hit the row limit and must be paged"
+      );
+    }
+
     const messageIds = (messages || []).map(m => m.id);
     const shopIds = [...new Set((messages || []).map(m => m.shop_id))];
 
@@ -88,6 +97,11 @@ async function deleteUserData(igUserId) {
       if (linkReadError) {
         console.error("[data-deletion] Error reading links_sent:", linkReadError);
         throw linkReadError;
+      }
+      if (warnIfTruncated(`data-deletion links for ${igUserId}`, linkRows)) {
+        throw new Error(
+          "Refusing to report a partial deletion: the link read hit the row limit and must be paged"
+        );
       }
       linkIds = [...new Set((linkRows || []).map(l => l.link_id).filter(Boolean))];
     }

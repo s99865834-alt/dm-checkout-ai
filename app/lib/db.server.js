@@ -4,7 +4,6 @@ import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
-import { isCheckoutLinkId } from "./checkout-link-id";
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -2076,229 +2075,73 @@ export async function getProAnalytics(shopId, options = {}) {
   };
 
   try {
-    // When filtering by post/product, pre-fetch matching message IDs
-    let postFilterMessageIds = null;
-    if (productId) {
-      let pfLinksQ = supabase.from("links_sent").select("message_id").eq("shop_id", shopId).eq("product_id", productId);
-      if (startDate) pfLinksQ = pfLinksQ.gte("sent_at", startDate);
-      if (endDate) pfLinksQ = pfLinksQ.lte("sent_at", endDate);
-      const { data: pfLinks } = await pfLinksQ;
-      postFilterMessageIds = [...new Set((pfLinks || []).map(l => l.message_id).filter(Boolean))];
-    }
+    // Computed in the database, same reason as getAnalytics. This used to pull
+    // a shop's whole messages table with select("*"), plus attribution,
+    // links_sent and clicks, and aggregate in JavaScript. PostgREST truncates
+    // a select at 1,000 rows silently, which had already frozen /admin and was
+    // days from corrupting the main analytics page.
+    //
+    // shop_pro_analytics reproduces the previous definitions exactly, quirks
+    // included: substring sentiment matching with positive winning ties, one
+    // representative link per message chosen by greatest id as text, and
+    // follow-up "clicks" meaning messages that got a click rather than click
+    // events. Verified against independently written queries before this was
+    // wired up, so no number a merchant sees moves.
+    const { data, error } = await supabase.rpc("shop_pro_analytics", {
+      p_shop_id: shopId,
+      p_start: startDate || null,
+      p_end: endDate || null,
+      p_product_id: productId || null,
+    });
 
-    let messagesQuery = supabase
-      .from("messages")
-      .select("*")
-      .eq("shop_id", shopId);
-
-    if (postFilterMessageIds) {
-      // See note above: never-match sentinel must be a valid UUID for
-      // messages.id (UUID column). "__none__" raises 22P02.
-      messagesQuery = messagesQuery.in(
-        "id",
-        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
-      );
-    }
-    if (startDate) {
-      messagesQuery = messagesQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      messagesQuery = messagesQuery.lte("created_at", endDate);
-    }
-
-    const { data: allMessages, error: messagesError } = await messagesQuery;
-
-    if (messagesError) {
-      console.error("[pro-analytics] Error fetching messages:", messagesError);
+    if (error) {
+      console.error("[pro-analytics] shop_pro_analytics error:", error);
       return proAnalytics;
     }
 
-    if (!allMessages || allMessages.length === 0) {
-      return proAnalytics;
-    }
+    const t = Array.isArray(data) ? data[0] : data;
+    if (!t) return proAnalytics;
 
-    // Customer Segments: Count unique from_user_id interactions
-    const userInteractionCounts = {};
-    allMessages.forEach(msg => {
-      if (msg.from_user_id) {
-        userInteractionCounts[msg.from_user_id] = (userInteractionCounts[msg.from_user_id] || 0) + 1;
-      }
-    });
+    const num = (v) => Number(v) || 0;
 
-    Object.values(userInteractionCounts).forEach(count => {
-      if (count === 1) {
-        proAnalytics.customerSegments.firstTime++;
-      } else {
-        proAnalytics.customerSegments.repeat++;
-      }
-    });
-    proAnalytics.customerSegments.total = Object.keys(userInteractionCounts).length;
+    proAnalytics.customerSegments = {
+      firstTime: num(t.first_time_customers),
+      repeat: num(t.repeat_customers),
+      total: num(t.total_customers),
+    };
 
-    // Sentiment Analysis: Aggregate sentiment counts
-    allMessages.forEach(msg => {
-      if (msg.sentiment) {
-        const sentiment = msg.sentiment.toLowerCase();
-        if (sentiment === "positive" || sentiment.includes("positive")) {
-          proAnalytics.sentimentAnalysis.positive++;
-        } else if (sentiment === "negative" || sentiment.includes("negative")) {
-          proAnalytics.sentimentAnalysis.negative++;
-        } else {
-          proAnalytics.sentimentAnalysis.neutral++;
-        }
-        proAnalytics.sentimentAnalysis.total++;
-      }
-    });
+    proAnalytics.sentimentAnalysis = {
+      positive: num(t.sentiment_positive),
+      neutral: num(t.sentiment_neutral),
+      negative: num(t.sentiment_negative),
+      total: num(t.sentiment_total),
+    };
 
-    // Revenue Attribution: Sum revenue from attribution table
-    let attributionQuery = supabase
-      .from("attribution")
-      .select("*")
-      .eq("shop_id", shopId);
+    proAnalytics.revenueAttribution = {
+      total: num(t.revenue_total),
+      byChannel: { dm: num(t.revenue_dm), comment: num(t.revenue_comment) },
+      currency: t.revenue_currency || "USD",
+    };
 
-    if (startDate) {
-      attributionQuery = attributionQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      attributionQuery = attributionQuery.lte("created_at", endDate);
-    }
+    const withMessages = num(t.followup_with_messages);
+    const withoutMessages = num(t.followup_without_messages);
+    const withClicks = num(t.followup_with_clicks);
+    const withoutClicks = num(t.followup_without_clicks);
 
-    const { data: attributions, error: attributionError } = await attributionQuery;
-
-    if (!attributionError && attributions) {
-      attributions.forEach(attr => {
-        const amount = parseFloat(attr.amount || 0);
-        proAnalytics.revenueAttribution.total += amount;
-        
-        if (attr.channel === "dm") {
-          proAnalytics.revenueAttribution.byChannel.dm += amount;
-        } else if (attr.channel === "comment") {
-          proAnalytics.revenueAttribution.byChannel.comment += amount;
-        }
-
-        // Use currency from first attribution (assuming all same currency)
-        if (!proAnalytics.revenueAttribution.currency && attr.currency) {
-          proAnalytics.revenueAttribution.currency = attr.currency;
-        }
-      });
-    }
-
-    // Follow-Up Performance: Compare threads with vs without follow-ups
-    const messageIds = allMessages.map(m => m.id);
-    
-    // Get links_sent for these messages
-    const { data: linksSent, error: linksError } = await supabase
-      .from("links_sent")
-      .select("id, message_id, link_id")
-      .eq("shop_id", shopId)
-      .in("message_id", messageIds.length > 0 ? messageIds : [null]);
-
-    if (!linksError && linksSent) {
-      const linkIds = linksSent.map(l => l.link_id).filter(isCheckoutLinkId);
-      const messageToLink = {};
-      linksSent.forEach(link => {
-        if (link.message_id) {
-          const prev = messageToLink[link.message_id];
-          if (!prev || String(link.id) > String(prev.rowId)) {
-            messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
-          }
-        }
-      });
-      const messageToLinkId = {};
-      for (const [msgId, val] of Object.entries(messageToLink)) {
-        messageToLinkId[msgId] = val.linkId;
-      }
-
-      // Get follow-ups for these messages
-      const { data: followups, error: followupsError } = await supabase
-        .from("followups")
-        .select("message_id, link_id")
-        .eq("shop_id", shopId)
-        .in("message_id", messageIds);
-
-      if (!followupsError && followups) {
-        const messagesWithFollowup = new Set();
-        followups.forEach(f => {
-          if (f.message_id) {
-            messagesWithFollowup.add(f.message_id);
-          }
-        });
-
-        // Get clicks for checkout links only
-        if (linkIds.length > 0) {
-          const { data: clicks, error: clicksError } = await supabase
-            .from("clicks")
-            .select("link_id")
-            .in("link_id", linkIds);
-
-          if (!clicksError && clicks) {
-            const linkIdToClicks = {};
-            clicks.forEach(click => {
-              if (click.link_id) {
-                linkIdToClicks[click.link_id] = (linkIdToClicks[click.link_id] || 0) + 1;
-              }
-            });
-
-            // Categorize messages
-            allMessages.forEach(msg => {
-              const linkId = messageToLinkId[msg.id];
-              if (!linkId) return;
-
-              const hasFollowup = messagesWithFollowup.has(msg.id);
-              const hasClick = linkIdToClicks[linkId] > 0;
-
-              if (hasFollowup) {
-                proAnalytics.followUpPerformance.withFollowup.messages++;
-                if (hasClick) {
-                  proAnalytics.followUpPerformance.withFollowup.clicks++;
-                }
-              } else {
-                proAnalytics.followUpPerformance.withoutFollowup.messages++;
-                if (hasClick) {
-                  proAnalytics.followUpPerformance.withoutFollowup.clicks++;
-                }
-              }
-            });
-
-            // Calculate CTR
-            if (proAnalytics.followUpPerformance.withFollowup.messages > 0) {
-              proAnalytics.followUpPerformance.withFollowup.ctr = 
-                (proAnalytics.followUpPerformance.withFollowup.clicks / 
-                 proAnalytics.followUpPerformance.withFollowup.messages) * 100;
-            }
-
-            if (proAnalytics.followUpPerformance.withoutFollowup.messages > 0) {
-              proAnalytics.followUpPerformance.withoutFollowup.ctr = 
-                (proAnalytics.followUpPerformance.withoutFollowup.clicks / 
-                 proAnalytics.followUpPerformance.withoutFollowup.messages) * 100;
-            }
-
-            // Calculate revenue for follow-up vs non-follow-up
-            // Match attribution by link_id
-            if (attributions) {
-              attributions.forEach(attr => {
-                if (attr.link_id) {
-                  // Find message that has this link_id
-                  const messageId = Object.keys(messageToLinkId).find(
-                    mid => messageToLinkId[mid] === attr.link_id
-                  );
-                  
-                  if (messageId) {
-                    const hasFollowup = messagesWithFollowup.has(messageId);
-                    const amount = parseFloat(attr.amount || 0);
-                    
-                    if (hasFollowup) {
-                      proAnalytics.followUpPerformance.withFollowup.revenue += amount;
-                    } else {
-                      proAnalytics.followUpPerformance.withoutFollowup.revenue += amount;
-                    }
-                  }
-                }
-              });
-            }
-          }
-        }
-      }
-    }
+    proAnalytics.followUpPerformance = {
+      withFollowup: {
+        messages: withMessages,
+        clicks: withClicks,
+        revenue: num(t.followup_with_revenue),
+        ctr: withMessages > 0 ? (withClicks / withMessages) * 100 : 0,
+      },
+      withoutFollowup: {
+        messages: withoutMessages,
+        clicks: withoutClicks,
+        revenue: num(t.followup_without_revenue),
+        ctr: withoutMessages > 0 ? (withoutClicks / withoutMessages) * 100 : 0,
+      },
+    };
   } catch (error) {
     console.error("[pro-analytics] Error calculating Pro analytics:", error);
   }
