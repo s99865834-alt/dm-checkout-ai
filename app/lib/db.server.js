@@ -1980,201 +1980,72 @@ export async function getAnalytics(shopId, planName, options = {}) {
   };
 
   try {
-    // Get links_sent first (may be narrowed by productId)
-    let linksQuery = supabase
-      .from("links_sent")
-      .select("id, message_id, link_id, product_id, failed_reason")
-      .eq("shop_id", shopId);
+    // Every figure here is an aggregate, so all of it is computed in the
+    // database and no rows are transferred.
+    //
+    // This used to fetch a shop's entire messages and links_sent tables and
+    // aggregate them in JavaScript. PostgREST truncates a select at 1,000 rows
+    // and gives no indication that it did, so the page was on a timer:
+    // Shanesecares stood at 867 messages and Mark Watts at 860 on 11 Sep 2026,
+    // about a week from silently under-reporting their own numbers. The same
+    // flaw had already frozen /admin for days once links_sent passed 1,000.
+    // It would have been permanent rather than per-view, since the page
+    // defaults to no date filter.
+    //
+    // Cost is now constant with history instead of linear, which also matters
+    // for the Core Web Vitals requirement on this page.
+    const { data, error } = await supabase.rpc("shop_analytics_totals", {
+      p_shop_id: shopId,
+      p_start: startDate || null,
+      p_end: endDate || null,
+      p_product_id: productId || null,
+    });
 
-    if (productId) {
-      linksQuery = linksQuery.eq("product_id", productId);
-    }
-    if (startDate) {
-      linksQuery = linksQuery.gte("sent_at", startDate);
-    }
-    if (endDate) {
-      linksQuery = linksQuery.lte("sent_at", endDate);
-    }
-
-    const { data: linksSentRaw, error: linksError } = await linksQuery;
-
-    if (linksError) {
-      console.error("[analytics] Error fetching links sent:", linksError);
-    }
-
-    // A rejected send leaves its claim row behind on purpose (it reserved
-    // Instagram's one reply per comment), so drop those here or the response
-    // rate credits us for messages the customer never received.
-    const linksSent = (linksSentRaw || []).filter((l) => !l.failed_reason);
-
-    // When filtering by post, scope messages to those with matching links
-    const postFilterMessageIds = productId
-      ? [...new Set((linksSent || []).map(l => l.message_id).filter(Boolean))]
-      : null;
-
-    let messagesQuery = supabase
-      .from("messages")
-      .select("id, channel, ai_intent, last_user_message_at, created_at")
-      .eq("shop_id", shopId);
-
-    if (postFilterMessageIds) {
-      // Use a valid all-zeros UUID as a never-match sentinel. messages.id is a
-      // UUID column, so the previous "__none__" sentinel raised
-      // "22P02 invalid input syntax for type uuid" whenever the post filter
-      // resolved to zero matching messages.
-      messagesQuery = messagesQuery.in(
-        "id",
-        postFilterMessageIds.length > 0 ? postFilterMessageIds : ["00000000-0000-0000-0000-000000000000"]
-      );
-    }
-    if (startDate) {
-      messagesQuery = messagesQuery.gte("created_at", startDate);
-    }
-    if (endDate) {
-      messagesQuery = messagesQuery.lte("created_at", endDate);
-    }
-
-    const { data: allMessages, error: messagesError } = await messagesQuery;
-
-    if (messagesError) {
-      console.error("[analytics] Error fetching messages:", messagesError);
+    if (error) {
+      console.error("[analytics] shop_analytics_totals error:", error);
       return analytics;
     }
 
-    analytics.messagesReceived = (allMessages || []).length;
+    const t = Array.isArray(data) ? data[0] : data;
+    if (!t) return analytics;
 
-    if (linksError) {
-      console.error("[analytics] Error fetching links sent:", linksError);
-    }
+    const num = (v) => Number(v) || 0;
 
-    // Only checkout / add-to-cart links count. Homepage, PDP, claim-slot,
-    // size-question, and follow-up rows cannot attribute an order.
-    const checkoutLinks = (linksSent || []).filter((l) => isCheckoutLinkId(l.link_id));
-    analytics.linksSent = new Set(checkoutLinks.map((l) => l.link_id)).size;
+    analytics.messagesReceived = num(t.messages_received);
+    analytics.linksSent = num(t.checkout_links_sent);
+    analytics.clicks = num(t.clicks);
 
-    // Create map of message_id -> link_id, keeping the most recent link per message.
-    // messageToLink uses ALL entries (so response-rate counts every replied message),
-    // but linkIds/linkIdToChannel only include checkout links (for click queries).
-    const messageToLink = {};
-    const linkIdToChannel = {};
-    const linkIds = [];
-    (linksSent || []).forEach(link => {
-      if (link.message_id) {
-        const prev = messageToLink[link.message_id];
-        if (!prev || String(link.id) > String(prev.rowId)) {
-          messageToLink[link.message_id] = { linkId: link.link_id, rowId: link.id };
-        }
-        if (isCheckoutLinkId(link.link_id)) {
-          const message = (allMessages || []).find(m => m.id === link.message_id);
-          if (message) {
-            linkIdToChannel[link.link_id] = message.channel;
-          }
-        }
-      }
-      if (isCheckoutLinkId(link.link_id)) {
-        linkIds.push(link.link_id);
-      }
-    });
-    const messageToLinkId = {};
-    for (const [msgId, val] of Object.entries(messageToLink)) {
-      messageToLinkId[msgId] = val.linkId;
-    }
-
-    // Filter messages that have links sent (for channel performance and trigger phrases)
-    const messagesWithLinks = (allMessages || []).filter(m => messageToLinkId[m.id]);
-
-    // Response rate: % of messages that received an AI response (link sent)
+    // Response rate is replies over messages received. Replies Instagram
+    // refused are excluded in the function, so a reply nobody received does
+    // not count as one.
     if (analytics.messagesReceived > 0) {
-      analytics.responseRate = (messagesWithLinks.length / analytics.messagesReceived) * 100;
+      analytics.responseRate = (num(t.responded_messages) / analytics.messagesReceived) * 100;
     }
 
-    // Get clicks for ALL link_ids (not just those linked to messages).
-    // We track BOTH total click events (so the "Clicks" KPI keeps reflecting
-    // every individual click) AND the count of unique link_ids that were
-    // clicked at least once (so CTR can be reported as a real rate that
-    // never exceeds 100% even when a customer hammers the same link).
-    let uniqueLinksClicked = 0;
-    if (linkIds.length > 0) {
-      const { data: clicksData, error: clicksError } = await supabase
-        .from("clicks")
-        .select("link_id")
-        .in("link_id", linkIds);
-
-      if (!clicksError && Array.isArray(clicksData)) {
-        analytics.clicks = clicksData.length;
-        const uniq = new Set();
-        clicksData.forEach((c) => {
-          if (c?.link_id) uniq.add(c.link_id);
-        });
-        uniqueLinksClicked = uniq.size;
-      }
-    }
-
-    // CTR = (links that received at least one click) / (links sent).
-    // Using total click events here lets it run past 100% when a customer
-    // re-clicks (which is how socialreplai's overview was showing 500%).
+    // CTR counts links clicked at least once over links sent, so a customer
+    // re-clicking the same link cannot push it past 100%.
     if (analytics.linksSent > 0) {
-      analytics.ctr = (uniqueLinksClicked / analytics.linksSent) * 100;
+      analytics.ctr = (num(t.unique_links_clicked) / analytics.linksSent) * 100;
     }
 
-    // Top trigger phrases (group by ai_intent)
-    const intentCounts = {};
-    messagesWithLinks.forEach(msg => {
-      if (msg.ai_intent) {
-        intentCounts[msg.ai_intent] = (intentCounts[msg.ai_intent] || 0) + 1;
-      }
-    });
-    
-    analytics.topTriggerPhrases = Object.entries(intentCounts)
-      .map(([intent, count]) => ({ intent, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 3);
+    analytics.topTriggerPhrases = Array.isArray(t.top_intents)
+      ? t.top_intents.map((r) => ({ intent: r.intent, count: num(r.count) }))
+      : [];
 
-    // Growth tier: Per channel performance
     if (planName === "GROWTH" || planName === "PRO") {
-      const channelStats = {
-        dm: { sent: 0, responded: 0, clicks: 0 },
-        comment: { sent: 0, responded: 0, clicks: 0 },
+      analytics.channelPerformance = {
+        dm: {
+          sent: num(t.dm_sent),
+          responded: num(t.dm_responded),
+          clicks: num(t.dm_clicks),
+        },
+        comment: {
+          sent: num(t.comment_sent),
+          responded: num(t.comment_responded),
+          clicks: num(t.comment_clicks),
+        },
       };
-
-      // Count all messages per channel (not just ones with links)
-      (allMessages || []).forEach(msg => {
-        const channel = msg.channel;
-        if (channelStats[channel]) {
-          channelStats[channel].sent++;
-        }
-      });
-
-      // Count responded messages (those with links sent = AI responded)
-      messagesWithLinks.forEach(msg => {
-        const channel = msg.channel;
-        if (channelStats[channel]) {
-          channelStats[channel].responded++;
-        }
-      });
-
-      // Get clicks per channel
-      if (linkIds.length > 0) {
-        const { data: clicksData, error: clicksError } = await supabase
-          .from("clicks")
-          .select("link_id")
-          .in("link_id", linkIds);
-
-        if (!clicksError && clicksData) {
-          // Use the linkIdToChannel map we built earlier
-          clicksData.forEach(click => {
-            const channel = linkIdToChannel[click.link_id];
-            if (channel && channelStats[channel]) {
-              channelStats[channel].clicks++;
-            }
-          });
-        }
-      }
-
-      analytics.channelPerformance = channelStats;
-
-      // Top IG posts by engagement (simplified - would need media_id from comments)
-      // For now, return empty array - will be enhanced when we have comment media_id tracking
+      // Needs a media_id on comment rows before it can be built.
       analytics.topPosts = [];
     }
   } catch (error) {
