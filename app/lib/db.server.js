@@ -2,7 +2,6 @@ import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
-import { countRepliesByShop } from "./reply-counts";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
@@ -1193,29 +1192,6 @@ export async function recordOrderSighting({
     // Shopify retry an order we already processed.
     console.warn("[db] recordOrderSighting error:", error.message);
   }
-}
-
-/**
- * Orders seen versus orders credited, per shop, for the admin dashboard.
- * Returns a Map of shop_id -> { seen, attributed }.
- */
-export async function getOrderSightingsByShop() {
-  const { data, error } = await supabase
-    .from("order_sightings")
-    .select("shop_id, attributed");
-  if (error) {
-    console.warn("[db] getOrderSightingsByShop error:", error.message);
-    return new Map();
-  }
-  const byShop = new Map();
-  for (const row of data || []) {
-    if (!row.shop_id) continue;
-    const entry = byShop.get(row.shop_id) || { seen: 0, attributed: 0 };
-    entry.seen += 1;
-    if (row.attributed) entry.attributed += 1;
-    byShop.set(row.shop_id, entry);
-  }
-  return byShop;
 }
 
 /**
@@ -2643,33 +2619,44 @@ async function buildAdminStoresResult(shops) {
     mappedPostsByShop.set(row.shop_id, (mappedPostsByShop.get(row.shop_id) || 0) + 1);
   });
 
-  const { data: linksRows, error: linksError } = await supabase
-    .from("links_sent")
-    .select("shop_id, message_id, link_id, failed_reason");
+  // Counted in the database, one row per shop.
+  //
+  // This used to fetch every row of links_sent, attribution and
+  // order_sightings and count them here. PostgREST caps a select at 1,000
+  // rows and gives no indication when it truncates, so the moment links_sent
+  // passed 1,000 the whole dashboard froze: it kept counting the oldest 1,000
+  // rows and dropped everything newer. On 11 Sep 2026 the table held 1,065
+  // rows, Love By Luna had read 196 for days against a true 208, and a reply
+  // sent during a live test moved nothing.
+  //
+  // Any number added to this dashboard belongs in admin_shop_stats, not in
+  // another fetch-and-count. The trap is silent by design.
+  const { data: statRows, error: statsError } = await supabase.rpc("admin_shop_stats");
 
-  if (linksError) {
-    console.error("getAdminDashboardStores links_sent error", linksError);
+  if (statsError) {
+    console.error("getAdminDashboardStores admin_shop_stats error", statsError);
   }
 
-  const { data: attributionRows, error: attrError } = await supabase
-    .from("attribution")
-    .select("shop_id, amount");
+  const statsByShop = new Map(
+    (statRows || []).map((r) => [
+      r.shop_id,
+      {
+        messagesSent: Number(r.messages_sent) || 0,
+        undelivered: Number(r.undelivered) || 0,
+        revenue: parseFloat(r.revenue) || 0,
+        ordersSeen: Number(r.orders_seen) || 0,
+        ordersAttributed: Number(r.orders_attributed) || 0,
+      },
+    ])
+  );
 
-  if (attrError) {
-    console.error("getAdminDashboardStores attribution error", attrError);
-  }
-
-  const { delivered: messagesByShop, undelivered: undeliveredByShop } =
-    countRepliesByShop(linksRows);
-
-  const sightingsByShop = await getOrderSightingsByShop();
-
-  const revenueByShop = new Map();
-  (attributionRows || []).forEach((row) => {
-    const id = row.shop_id;
-    const amount = parseFloat(row.amount || 0);
-    revenueByShop.set(id, (revenueByShop.get(id) || 0) + amount);
-  });
+  const EMPTY_STATS = {
+    messagesSent: 0,
+    undelivered: 0,
+    revenue: 0,
+    ordersSeen: 0,
+    ordersAttributed: 0,
+  };
 
   return shops.map((s) => {
     const metaAuth = metaAuthByShop.get(s.id) || null;
@@ -2698,6 +2685,7 @@ async function buildAdminStoresResult(shops) {
         };
       }
     }
+    const stats = statsByShop.get(s.id) || EMPTY_STATS;
     return {
       shop_id: s.id,
       shopify_domain: s.shopify_domain,
@@ -2709,17 +2697,17 @@ async function buildAdminStoresResult(shops) {
       // Free comment-to-DM window. Computed here, like beta_trial above, so
       // the dashboard renders it without repeating the date arithmetic.
       comment_trial: commentTrialStatus(s),
-      messages_sent: messagesByShop.get(s.id) || 0,
-      // Replies we wrote and Instagram refused, nearly always because another
-      // automation tool on the same account used up the one private reply a
-      // comment allows. A rising number here means we're losing that race, not
-      // that automation is broken.
-      undelivered: undeliveredByShop.get(s.id) || 0,
-      revenue: revenueByShop.get(s.id) || 0,
+      messages_sent: stats.messagesSent,
+      // Replies we wrote and Instagram refused. Usually something else used up
+      // the one private reply a comment allows; sometimes the comment was
+      // deleted first. A rising number means we're losing that race, not that
+      // automation is broken.
+      undelivered: stats.undelivered,
+      revenue: stats.revenue,
       // Orders we were told about against orders we could credit. A large gap
       // means the ref is being lost before checkout; no sightings at all means
       // the orders/create webhook isn't reaching us for this shop.
-      orders: sightingsByShop.get(s.id) || { seen: 0, attributed: 0 },
+      orders: { seen: stats.ordersSeen, attributed: stats.ordersAttributed },
       instagram_connected: !!metaAuth,
       ig_business_id: metaAuth?.ig_business_id || null,
       setup: {
