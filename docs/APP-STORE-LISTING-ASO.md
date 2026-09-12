@@ -4,157 +4,157 @@ Use this copy and checklist when submitting or updating the SocialRepl.ai listin
 
 ---
 
-## 0. PASTE-READY listing fields: current → new (Jul 2026)
+## 0. PASTE-READY listing fields: current → new (Sep 2026)
 
-Field-by-field mapping so you can match the exact text in the Partner Dashboard
-(**Apps → SocialReplAI → Distribution → Manage listing**) to its replacement.
-"Currently live" text was pulled from apps.shopify.com/socialreplai on Jul 7, 2026.
+Field-by-field mapping for Partner Dashboard
+(**Apps → SocialReplAI → Distribution → Manage listing**).
+Live text pulled from apps.shopify.com/socialreplai on Sep 7, 2026.
 
-Character limits verified against Shopify's current submission form: introduction 100,
-details 500, features 80 each (form allows 5), subtitle ~62. Counts shown per field.
-Compliance notes baked in: no competitor names, no stats/data claims, no
-"the first/best/only" phrasing (App Store requirement 4.3), pricing only in the
-pricing section.
+Do not reopen the Jul 2026 Chat + Abandoned cart appeal. That change is live
+and it is the wrong aisle: "More apps like this" is WhatsApp cart recovery.
+Shopify's own category guidance is to match similar apps. FlashDM and
+Claimbase sit in Selling online - Other.
+
+Character limits: introduction 100, details 500, features 80 each (5 max),
+subtitle ~62, search terms 20 each (5 max). No competitor names, no stats
+claims, no "the first/best/only" (requirement 4.3). Pricing only in Pricing.
+
+**Verdict (do not reverse this without new evidence):**
+
+- **Copy:** subtitle, intro, details, and feature bullets stay. A rewrite of
+  the details paragraph will not move installs. The only accuracy nit is the
+  phrase "and story replies" (Pro-only). Leave it unless you want that one
+  cut. Do not swap the paragraph for boutique-voice copy.
+- **Category:** appeal primary to Selling online - Other. Drop Abandoned cart
+  (Pro follow-ups are not the main function). Drop hidden term `ai chatbot`.
+  (Stephan submitted the category appeal and search-term change on Sep 7 2026.)
+- **Price numbers:** keep Free / $39 Growth / $99 Pro. Do not cut Growth to
+  match FlashDM's $10. Reorder Growth bullets so they sell comments, brand
+  voice, and attribution, not "1,000 messages."
 
 ### App name — NO CHANGE
 
 Keep `SocialReplAI`.
 
-### App card subtitle
+### App card subtitle — NO CHANGE
 
-**Currently live:**
-
-> AI Instagram replies with checkout links for your store
-
-**Replace with** (57 chars):
+Live (57 chars), keep:
 
 > Turn Instagram DMs & comments into orders with AI replies
 
-### App introduction (the bold headline at the top of the listing)
+### App introduction — NO CHANGE
 
-**Currently live:**
-
-> Automate Instagram DM and comment replies with AI-powered checkout links. Sell more while you sleep.
-
-**Replace with** (98 chars):
+Live (98 chars), keep:
 
 > AI answers your Instagram DMs and comments with checkout links, turning conversations into orders.
 
-### App details (the paragraph under the introduction)
+### App details — KEEP
 
-**Currently live:**
+Live, keep:
 
-> SocialRepl.ai connects your Shopify store to Instagram so customer conversations become sales. When someone DMs you about a product or comments on a post, the app replies instantly with a personalized AI message and a direct checkout link. The AI learns your products, pricing, and store policies to answer questions accurately in your brand's voice. It handles follow-up questions, identifies which product a customer is asking about, and tracks which conversations lead to orders.
+> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs, comments, and story replies in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build: connect your account, set your tone, and go.
 
-**Replace with** (487 chars):
+Optional accuracy-only edit: delete `and story replies` from that sentence.
+Stories are Pro. Do not rewrite the rest. Do not claim story mentions.
 
-> Shoppers who DM you about a product are ready to buy — if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs and comments in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build — connect your account, set your tone, and go.
+### Feature list — KEEP
 
-### Feature list (5 bullets — replace all 5)
+Live bullets are the right five. Do not churn them.
 
-**Currently live:**
+### Pricing — KEEP THE NUMBERS, REORDER GROWTH BULLETS
 
-1. AI-Powered Instagram DM Automation with One-Click Checkout Links
-2. Automatically Reply to Post Comments with Private DMs and Product Links
-3. AI Brand Voice That Knows Your Products, Policies, and FAQs
-4. Order Attribution — Track Which Instagram Conversations Drive Sales
-5. Multi-Turn AI Conversations That Guide Customers to Checkout
+Do not change Free / $39 / $99. Growth is priced against chat-marketing tools
+that do not already know the Shopify catalog, not against FlashDM's $10 / 1,000
+queries. The listing currently leads Growth with "1,000 messages/month," which
+invites that $10 comparison. Nobody live is near 1,000 sends (busiest store is
+about 95/month). $39 is buying comment-to-DM, brand voice, and attribution.
 
-**Replace with** (80-char max each; ordered by differentiation):
+Partner Dashboard → Apps → SocialReplAI → Distribution → Pricing.
 
-1. `AI replies to DMs and comments in your brand voice — no flows to build` (72)
-2. `Checkout links with the right product and variant pre-loaded in every reply` (75)
-3. `Order attribution shows the revenue each DM or comment drove` (60)
-4. `Answers product questions from your live catalog, pricing, and policies` (71)
-5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
+**Free** (already honest, keep):
 
-Cut for space (work these into screenshots/captions or the details paragraph if
-room ever allows): follow-up messages for unfinished checkouts, multi-language
-replies, and the analytics dashboard (bullet 3 already carries the revenue story).
+- 100 messages/month
+- DM automation with AI
+- Checkout links
+- Basic analytics
+- Comment-to-DM free for first 14 days
+- 500 messages during those 14 days
 
-### Pricing — CHANGE (tier restructure, Aug 31 2026)
+**Growth $39** (replace feature order):
 
-Prices are unchanged (Free / $39 Growth / $99 Pro + 30-day Pro trial). What each
-plan *includes* changed, so the Pricing details section is now out of date:
+- Comment-to-DM, always on
+- Brand voice customization
+- Order attribution + full analytics
+- Multi-turn conversations
+- Store question answering
+- 1,000 messages/month
 
-| | was | now |
-|---|---|---|
-| Free monthly messages | 100 | 100 (500 during the comment window) |
-| Free comment-to-DM | not included | included for 14 days from Instagram connect |
-| Growth monthly messages | 500 | **1,000** |
-| Growth multi-turn | listed under Pro | **Growth** (it was always `PLANS.GROWTH.converse: true`) |
-| Pro | 10,000 messages, follow-ups | adds **story replies**; volume de-emphasised |
+**Pro $99** (keep, do not claim story mentions):
 
-Two compliance notes specific to these changes:
+- Everything in Growth
+- Instagram story replies
+- Follow-up messages
+- Per-post analytics
+- Priority support
+- 10,000 messages/month
 
-- **The 14-day comment window is pricing information** (requirement 4.2, which
-  explicitly covers free-trial duration). It belongs in Pricing details only.
-  Do not put "free for 14 days" in the introduction, details, features, or
-  screenshots. App Details should describe comment-to-DM as functionality; the
-  Pricing section states which plan includes it and for how long.
-- **Do not claim story mentions.** Story *replies* are answered on Pro and are
-  confirmed arriving in production. Story *mentions* have never been observed.
-  They can reach us two ways: as a `story_mention` attachment on the `messages`
-  field, which has been subscribed all along and is already parsed, or via
-  `messaging_referral`, which was misspelled as the plural and rejected until
-  Aug 31. So the missing subscription was probably not the blocker. Add the
-  claim once one is observed in `messages.content_type = 'story_mention'`.
+The 14-day comment window is pricing information (requirement 4.2). It belongs
+in Pricing details only. Do not put "free for 14 days" in the introduction,
+details, features, or screenshots.
 
-Message caps are enforced in our own database, not by Shopify Managed Pricing,
-so raising Growth to 1,000 needs no billing change — only the plan description
-in the Partner Dashboard (Apps → SocialReplAI → Distribution → Pricing).
+Do not claim story mentions. Story replies are answered on Pro. Mentions have
+not been observed in production. Add that claim only after one is seen in
+`messages.content_type = 'story_mention'`.
 
 ### Languages — NO CHANGE
 
-### Categories — CHANGE via appeal (currently "Marketing – Other")
+### Categories — APPEAL AWAY FROM CHAT (live is Chat + Abandoned cart)
 
-Per Shopify's taxonomy (shopify.dev/docs/apps/launch/app-store-review/app-listing-categories),
-there is no social-media tag under Marketing; the accurate tags are:
+Live tags are Chat (Store management → Support) and Abandoned cart (Marketing).
+That was the Jul 2026 appeal. It placed the listing next to WhatsApp
+cart-recovery apps. Shopify's category doc says to use the tags similar apps
+use. Instagram sales apps (FlashDM, Claimbase) use **Selling online - Other**.
+Abandoned cart is the wrong secondary: follow-ups are Pro-only and are not the
+main function. Shopify: if Y is a small extra, do not add Y as a tag.
 
-- **Primary: Chat** (Store management → Support → Chat) — tag definition
-  "apps that allow customers to connect with merchants via chat" matches the
-  app's main function (AI answering customer DMs/comments). Closest comparable
-  app (Dondy, WhatsApp commerce automation) is categorized Chat + Abandoned cart.
-- **Secondary: Abandoned cart** (Marketing → Abandoned cart) — justified by
-  Pro follow-up messages that re-engage shoppers who didn't finish checkout.
-- Category changes post-launch require an appeal via the link in the app
-  submission form. Appeal text:
+Subsequent category changes need an appeal (link on the listing form).
 
-  > **Requested change:** Primary tag from "Marketing – Other" to "Chat"
-  > (Store management → Support), with "Abandoned cart" as secondary.
-  >
-  > **Reason:** SocialReplAI's main function is conversational: it connects a
-  > merchant's Instagram Business account to their Shopify store, and AI
-  > replies to customer DMs and comments in real time — answering product,
-  > pricing, and policy questions and including checkout links. This matches
-  > the Chat tag definition ("apps that allow customers to connect with
-  > merchants via chat") more accurately than Marketing – Other. Comparable
-  > apps in this space (e.g., WhatsApp commerce-chat automation apps) are
-  > categorized under Chat.
-  >
-  > The secondary Abandoned cart tag reflects the app's follow-up messaging
-  > feature, which re-engages customers who received a checkout link but
-  > didn't complete their purchase.
+**Requested change:** Primary tag from Chat to Selling online - Other
+(Sales channels → Selling online). Remove Abandoned cart. No secondary tag.
 
-- **Structured features:** check every applicable feature (up to 25 per
-  category) — powers merchant comparison filters; editable anytime without appeal.
+**Appeal text:**
 
-### Search terms (hidden field, 5 max, 20 chars each — one idea per term)
+> Requested change: primary tag from Chat (Store management, Support) to
+> Selling online - Other (Sales channels, Selling online). Remove the
+> Abandoned cart secondary tag.
+>
+> Reason: SocialReplAI's main function is selling on Instagram. It connects a
+> merchant's Instagram Business account to their Shopify store, replies to
+> customer DMs and comments from the live catalog, and sends checkout links
+> with the product loaded. That matches Selling online ("apps that let
+> merchants sell across online platforms") and Selling online - Other ("other
+> ways to sell online"). Comparable Instagram sales apps on the App Store use
+> this tag.
+>
+> Chat is a poor fit. The listing currently appears next to WhatsApp
+> abandoned-cart apps, which is not the merchant searching for Instagram
+> comment-to-DM or Instagram checkout. Abandoned cart is also a poor fit:
+> follow-up messages exist only on Pro and are not the app's main function.
 
-Replaced Jul 7, 2026 (previous: instagram / sell on instagram / instagram dm /
-instagram comments / instagram marketing — mostly redundant with name/subtitle,
-and "instagram marketing" pulled wrong-intent searchers):
+**Structured features:** editable without appeal. Uncheck AI chatbots and
+Cart recovery if those are still selected. They match WhatsApp inbox tools,
+not this product. Check Social media / Automated responses if still offered.
 
-1. `instagram automation` (20 — "automation" appears nowhere in name/subtitle)
-2. `instagram auto reply` (20 — problem phrasing merchants type)
-3. `ai chatbot` (10 — high-volume head term; aligns with Chat category appeal)
-4. `comment to dm` (13 — named behavior, low competition; alt: `comment automation`)
-5. `sell on instagram` (17 — commerce intent, kept from previous set)
+### Search terms (hidden field, 5 max, 20 chars each, one idea per term)
 
-Rationale: title/subtitle already rank for "Instagram / DMs / comments / AI
-replies / orders" (name + subtitle are weighted heaviest), so search terms cover
-adjacent phrasings instead of repeating them. Revisit after 2–4 weeks of GA4
-listing data (Traffic acquisition filtered to hostname apps.shopify.com).
+Keep 1, 2, 4, 5. Replace `ai chatbot` (it pulls WhatsApp / generic chatbot
+intent and was added to match the Chat category).
+
+1. `instagram automation` (20)
+2. `instagram auto reply` (20)
+3. `instagram dm sales` (18)  ← replaces `ai chatbot`
+4. `comment to dm` (13)
+5. `sell on instagram` (17)
 
 ### Tracking information (same listing form) — verify, likely empty
 
@@ -341,11 +341,9 @@ plan terms — capture those on a Growth store instead.
 
 ## 6. Pricing clarity (in listing and screenshots)
 
-- **Free tier:** Prominent—“Start free: 100 automated messages per month, no credit card. Comment-to-DM included free for your first 14 days.”
-- **Growth:** $39/month — 1,000 messages, comment-to-DM always on, brand voice, multi-turn conversations, order attribution + full analytics.
-- **Pro:** $99/month — story replies, follow-up messages, per-post analytics, 10,000 messages, priority support.
-
-Ensure the pricing section in the App Store and any in-app billing screens clearly differentiate what each tier includes so merchants know before installing.
+- **Free tier:** 100 automated DMs per month, no credit card. Comment-to-DM for the first 14 days after Instagram connect (Pricing section only).
+- **Growth $39:** lead with comment-to-DM always on, brand voice, attribution. Put 1,000 messages last.
+- **Pro $99:** story replies, follow-ups, per-post analytics. Do not lead with 10,000 messages. Do not claim story mentions.
 
 **Anchor-defusing line (added to the website pricing cards, Aug 2026):** merchants who
 comparison-shop notice Growth/Pro land on the same numbers as well-known chat-marketing

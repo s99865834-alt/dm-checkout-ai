@@ -40,7 +40,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "1,000 messages/mo · Comment-to-DM always on · Brand voice customization · Multi-turn conversations · Custom reply language · Order attribution + full analytics",
+        "Comment-to-DM always on · Brand voice customization · Order attribution + full analytics · Multi-turn conversations · Custom reply language · 1,000 messages/mo",
     },
     {
       "@type": "Offer",
@@ -49,7 +49,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "30-day free trial · Story replies and mentions answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
+        "30-day free trial · Story replies answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
     },
   ],
   creator: {
@@ -570,12 +570,12 @@ export default function LandingPage() {
               catalog, with zero flows to build.
             </p>
             <ul className="srPlanFeatures">
-              <li>1,000 messages / month</li>
               <li>Comment-to-DM, always on</li>
               <li>Brand voice customization</li>
+              <li>Order attribution + full analytics</li>
               <li>Multi-turn conversations</li>
               <li>Custom reply language</li>
-              <li>Order attribution + full analytics</li>
+              <li>1,000 messages / month</li>
             </ul>
             <a
               className="srBtnPrimary"
@@ -600,7 +600,7 @@ export default function LandingPage() {
             </p>
             <ul className="srPlanFeatures">
               <li>Everything in Growth</li>
-              <li>Story replies and mentions answered automatically</li>
+              <li>Story replies answered automatically</li>
               <li>Default product for stories and unmapped posts</li>
               <li>Follow-up messages</li>
               <li>Per-post analytics</li>
