@@ -4,6 +4,7 @@
 // and cancel on FREE downgrade (which is permitted under Managed Pricing).
 
 import { updateShopPlan } from "./db.server";
+import { planFromSubscription } from "./plan-resolution";
 
 /**
  * Get the current active subscription for a shop
@@ -137,26 +138,39 @@ export function getTrialStatus(subscription) {
 }
 
 /**
- * Map a Shopify Managed Pricing subscription to our internal plan enum.
+ * Write shop.plan from a subscription we already hold.
  *
- * Returns:
- *   - "FREE" if there's no active subscription (the merchant is genuinely
- *     on the free tier)
- *   - "PRO" or "GROWTH" if the subscription name unambiguously matches
- *     (case-insensitive)
- *   - null if there IS an active subscription but its name doesn't map
- *     to one of our known plans. Callers MUST treat null as "I don't
- *     know — leave shop.plan alone" rather than silently downgrading.
+ * Split out from syncShopPlanWithSubscription so callers that have just
+ * fetched the subscription for another reason (the home loader reads it for
+ * the trial banner) can reconcile without a second Shopify round trip.
  *
+ * A comped shop is unaffected by whatever this writes: beta_trial_expires_at
+ * grants PRO ahead of shop.plan in loader-helpers.server.js, in
+ * getShopPlanAndUsage, and in the follow-up job, so reconciling such a shop
+ * down to FREE leaves its capabilities intact.
+ *
+ * @param {Object} shop - Shop row (must include id, plan, shopify_domain)
  * @param {Object|null} subscription - Result of getCurrentSubscription()
- * @returns {"FREE" | "GROWTH" | "PRO" | null}
+ * @returns {Promise<{changed: boolean, planBefore: string, planAfter: string}>}
  */
-export function planFromSubscription(subscription) {
-  if (!subscription || subscription.status !== "ACTIVE") return "FREE";
-  const name = (subscription.name || "").toLowerCase();
-  if (name.includes("pro")) return "PRO";
-  if (name.includes("growth")) return "GROWTH";
-  return null;
+export async function applySubscriptionToShopPlan(shop, subscription) {
+  const planBefore = shop?.plan || "FREE";
+  if (!shop?.id) return { changed: false, planBefore, planAfter: planBefore };
+
+  const mapped = planFromSubscription(subscription);
+  if (mapped === null) {
+    console.warn(
+      `[billing.sync] Unknown active subscription name "${subscription?.name}" for ${shop.shopify_domain}; leaving shop.plan="${planBefore}" untouched`
+    );
+    return { changed: false, planBefore, planAfter: planBefore };
+  }
+
+  if (planBefore === mapped) {
+    return { changed: false, planBefore, planAfter: mapped };
+  }
+
+  await updateShopPlan(shop.id, mapped);
+  return { changed: true, planBefore, planAfter: mapped };
 }
 
 /**
@@ -189,18 +203,5 @@ export async function syncShopPlanWithSubscription(admin, shop) {
     return { changed: false, planBefore, planAfter: planBefore };
   }
 
-  const mapped = planFromSubscription(subscription);
-  if (mapped === null) {
-    console.warn(
-      `[billing.sync] Unknown active subscription name "${subscription?.name}" for ${shop.shopify_domain}; leaving shop.plan="${planBefore}" untouched`
-    );
-    return { changed: false, planBefore, planAfter: planBefore };
-  }
-
-  if (planBefore === mapped) {
-    return { changed: false, planBefore, planAfter: mapped };
-  }
-
-  await updateShopPlan(shop.id, mapped);
-  return { changed: true, planBefore, planAfter: mapped };
+  return applySubscriptionToShopPlan(shop, subscription);
 }

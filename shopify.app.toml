@@ -24,6 +24,13 @@ api_version = "2026-01"
   topics = [ "orders/create" ]
   uri = "/webhooks/shopify/orders"
 
+  # Without this, shop.plan is only written when a merchant returns through
+  # /app/billing/activate, so cancellations, declined cards and frozen
+  # subscriptions never reach us and the shop keeps its paid plan forever.
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/webhooks/app/subscriptions_update"
+
   # Mandatory compliance webhooks (required for App Store)
   [[webhooks.subscriptions]]
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]

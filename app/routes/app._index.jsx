@@ -4,7 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount } from "../lib/db.server";
-import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
+import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
@@ -87,10 +87,20 @@ export const loader = async ({ request }) => {
         // Free-trial countdown for the banner. Failure-safe and cached: a
         // billing API hiccup should never block the dashboard, and the Shopify
         // call only runs once per TTL instead of on every page load.
+        //
+        // The same subscription reconciles shop.plan, which is the safety net
+        // behind the app_subscriptions/update webhook: a missed delivery would
+        // otherwise leave a cancelled merchant on their paid plan forever.
+        // Free of extra cost because this fetch already has to happen, and
+        // scoped to non-Free shops, which are exactly the ones that can be
+        // stale in the direction that costs money.
         plan?.name !== "FREE"
           ? cached(`trial:${shop.id}`, TRIAL_TTL_MS, async () => {
               try {
                 const subscription = await getCurrentSubscription(admin);
+                await applySubscriptionToShopPlan(shop, subscription).catch((err) =>
+                  console.error("[home] Error reconciling plan:", err.message),
+                );
                 return getTrialStatus(subscription);
               } catch (err) {
                 console.error("[home] Error fetching trial status:", err.message);
