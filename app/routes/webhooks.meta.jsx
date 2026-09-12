@@ -22,6 +22,11 @@ import { handleIncomingDm, handleIncomingComment, handleNonTextDm } from "../lib
 import supabase from "../lib/supabase.server";
 import { incCounter, recordTiming } from "../lib/metrics.server";
 import logger from "../lib/logger.server";
+import {
+  deriveAttachmentContentType,
+  extractSharedMediaId,
+  sharedPostUrlParamNames,
+} from "../lib/attachment-kind";
 
 const META_WEBHOOK_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const META_APP_SECRET = process.env.META_APP_SECRET;
@@ -241,51 +246,15 @@ function parseCommentEvent(comment) {
  * }
  */
 /**
- * Instagram delivers plenty of DMs that carry no text: a shared post, a heart,
- * a photo, an emoji reply to a story. This parser used to read `text` only, so
- * every one of those was logged with a null body and then abandoned by the
- * `parsed.messageText` gate below — 76 real customer messages across live
- * stores, including 41% of one merchant's entire DM volume.
- *
- * `contentType` classifies the payload so those can be routed, and `storyId`
- * makes story replies detectable (they are otherwise indistinguishable from
- * ordinary DMs, which is why they were being answered on every plan).
+ * `contentType` classifies a text-less payload so it can be routed, and
+ * `storyId` makes story replies detectable (they are otherwise
+ * indistinguishable from ordinary DMs, which is why they were once answered on
+ * every plan). The classification itself lives in app/lib/attachment-kind.js
+ * so it can be tested directly.
  *
  * The story CDN url is deliberately not returned: it expires within 24 hours,
  * so persisting it would only store a dead link.
  */
-function deriveAttachmentContentType(attachments) {
-  const types = (attachments || []).map((a) => String(a?.type || "").toLowerCase());
-  if (!types.length) return null;
-  // A shared post is the highest-intent non-text payload there is: the
-  // customer forwarded a product into the DM thread.
-  if (types.includes("share")) return "share";
-  if (types.includes("story_mention")) return "story_mention";
-  // Hearts arrive as stickers or like_heart depending on how they were sent;
-  // both are the same warm signal as a compliment comment.
-  if (types.some((t) => t === "like_heart" || t === "sticker")) return "heart";
-  for (const t of ["image", "video", "audio", "file"]) {
-    if (types.includes(t)) return t;
-  }
-  return "unsupported";
-}
-
-/**
- * Best-effort Instagram media id for a shared post. Share payload urls are
- * lookaside CDN links that usually carry the media as `asset_id`, but Meta
- * does not guarantee it, so callers must handle null.
- */
-function extractSharedMediaId(attachments) {
-  for (const a of attachments || []) {
-    if (String(a?.type || "").toLowerCase() !== "share") continue;
-    const url = a?.payload?.url;
-    if (!url) continue;
-    const match = /[?&]asset_id=(\d+)/.exec(String(url));
-    if (match) return match[1];
-  }
-  return null;
-}
-
 function parseMessageEvent(message) {
   try {
     // Instagram messaging events structure; message_edit has mid, text, num_edit
@@ -335,6 +304,22 @@ function parseMessageEvent(message) {
     }
 
     const igUsername = sender?.username || message.from?.username || null;
+    const sharedMediaId = extractSharedMediaId(attachments);
+
+    // A forwarded post we can't resolve to a media id can only fall back to
+    // the shop's default product, so it matters why the id is missing.
+    // `asset_id` was verified on real `share` payloads but never on `ig_post`,
+    // which the extractor used to skip entirely. Report the parameter names
+    // present rather than guessing at them.
+    if (contentType === "share" && !sharedMediaId) {
+      const params = sharedPostUrlParamNames(attachments);
+      logger.debug(
+        `[webhook] Shared post with no resolvable media id; url params present: ${
+          params.length ? params.join(", ") : "none"
+        }`
+      );
+    }
+
     return {
       messageId,
       messageText,
@@ -343,7 +328,7 @@ function parseMessageEvent(message) {
       timestamp,
       contentType,
       storyId: referralStory?.id || storyReply?.id || null,
-      sharedMediaId: extractSharedMediaId(attachments),
+      sharedMediaId,
       attachmentTypes: attachments.map((a) => a?.type).filter(Boolean),
       isStoryEvent: !!(referralStory || storyReply),
     };
