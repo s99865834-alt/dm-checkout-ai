@@ -8,6 +8,7 @@ import { isCheckoutLinkId } from "../lib/checkout-link-id";
 import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
 import { cached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
+import { PLANS } from "../lib/plans";
 
 // Mapped-post media for the PRO post filter changes rarely; cache it so the
 // analytics page doesn't hit the Instagram API (one call per mapped post) on
@@ -303,7 +304,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">Message limit reached — analytics are paused.</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    You've used all {plan.cap} messages this month. Upgrade to keep tracking and unlock full analytics.
+                    You've used all {plan.cap} messages this month. Upgrade to Growth for 1,000 messages, order attribution, and full analytics.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
@@ -316,7 +317,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Growth plan ($39/mo) includes 1,000 messages, comment automation, order attribution, and full analytics.
+                    Growth ($39/mo) includes 1,000 messages, comment automation, multi-turn, brand voice, order attribution, and full analytics.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">View plans</s-button>
@@ -329,7 +330,9 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">Unlock full analytics</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Free plan includes basic overview stats. Upgrade for order attribution, per-post filtering, and detailed conversion tracking.
+                    {plan?.commentTrial?.granting
+                      ? "This page shows messages, links, and clicks. Order attribution and the channel split stay on Growth ($39/mo) after the demo. Per-post analytics is on Pro."
+                      : "Free includes basic overview stats. Growth ($39/mo) adds order attribution and full analytics. Per-post analytics is on Pro."}
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">Compare plans</s-button>
@@ -505,7 +508,7 @@ export default function AnalyticsPage() {
                           <span className="srHeadingLg">
                             {analytics.messagesReceived || 0}
                             {plan?.name === "FREE" && (
-                              <span className="srTextSubdued" style={{ fontSize: 14, fontWeight: 400 }}> / {plan?.cap || 100}</span>
+                              <span className="srTextSubdued" style={{ fontSize: 14, fontWeight: 400 }}> / {plan?.cap ?? PLANS.FREE.cap}</span>
                             )}
                           </span>
                         </div>
@@ -551,7 +554,12 @@ export default function AnalyticsPage() {
                       </s-box>
                     )}
 
-                    {/* Growth Tier: Channel Performance */}
+                    {/* Growth Tier: Channel Performance. Hidden during the Free
+                        14-day demo so we don't tell a shop to upgrade for a
+                        split they were never promised, while Home says the
+                        Growth loop is already on. After the window, this is
+                        the one upgrade callout in the metrics block. */}
+                    {!plan?.commentTrial?.granting && (
                     <PlanGate requiredPlan="GROWTH" feature="Channel Performance Analytics">
                       {analytics.channelPerformance ? (
                         <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
@@ -589,6 +597,7 @@ export default function AnalyticsPage() {
                         </s-box>
                       ) : null}
                     </PlanGate>
+                    )}
 
                     {/* Pro Tier Metrics — only render the upgrade callout
                         for GROWTH users. FREE users already see the
@@ -695,7 +704,7 @@ export default function AnalyticsPage() {
                   <div className="srCardPad srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
                     <span className="srCardDesc" style={{ flex: 1 }}>
                       These comments from this month look like real purchase interest, but comment
-                      replies aren&apos;t included in the Free plan. On Growth, each of these customers
+                      replies {plan?.commentTrial?.expired ? "stopped when the 14-day window ended" : "aren't included on standing Free"}. On Growth ($39/mo), each of these customers
                       gets an automatic DM with an answer and a checkout link.
                     </span>
                     <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>

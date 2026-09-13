@@ -819,7 +819,7 @@ export default function Index() {
               <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 New DMs won't receive automated responses until next month.
-                Upgrade to Growth for 1,000 messages/mo plus comment automation and brand voice.
+                Upgrade to Growth for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
@@ -879,10 +879,11 @@ export default function Index() {
                 {plan.commentTrial.daysLeft === 1 ? "day" : "days"}
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                You are running Growth for this window: comments get a DM with a checkout link,
-                conversations continue past the first reply, and any resulting sale shows up in
-                Analytics. Your allowance is raised to {plan.cap} messages so comment volume
-                doesn&apos;t cut it short. Keeping it costs $39/mo on Growth.
+                You are running Growth&apos;s selling loop for this window: comments get a DM with a
+                checkout link, and conversations continue past the first reply. Your allowance
+                is raised to {plan.cap} messages so comment volume doesn&apos;t cut it short.
+                Keeping it costs $39/mo on Growth. Analytics on Free shows messages, links, and
+                clicks. Order attribution stays on Growth.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See plans</s-button>
@@ -1017,7 +1018,7 @@ export default function Index() {
           </div>
         </s-banner>
       )}
-      {shop && plan && plan.name === "FREE" && shop.usage_count === 0 && !missedComments && (
+      {shop && plan && plan.name === "FREE" && shop.usage_count === 0 && !missedComments && !isConnected && !plan?.commentTrial?.granting && (
         <s-banner tone="success">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
