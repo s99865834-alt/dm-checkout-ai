@@ -147,10 +147,9 @@ export default function SupportPage() {
               <summary className="srFaqSummary">Does the app reply to Instagram story replies?</summary>
               <div className="srFaqAnswer">
                 <p>
-                  Story replies are answered on the Pro plan, and so are story mentions, where
-                  someone tags you in their own story. Someone who watches your story and then
-                  responds to it is about as warm as an Instagram lead gets, so these are worth
-                  answering quickly.
+                  Story replies are answered on the Pro plan. Someone who watches your story
+                  and then responds to it is about as warm as an Instagram lead gets, so these
+                  are worth answering quickly.
                 </p>
                 <p>
                   Stories work differently from feed posts. A story expires in a day, so there&apos;s
