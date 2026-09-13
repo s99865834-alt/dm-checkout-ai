@@ -128,8 +128,9 @@ export default function VsManyChat() {
         build or maintain when your catalog changes. Every reply can carry a
         checkout link with the right variant pre-loaded, and every link is
         tracked through to the order, so the dashboard shows revenue per
-        conversation source. Setup is minutes, and the free plan (100
-        messages/month) lets you verify it converts before paying.
+        conversation source. Setup is minutes, and the free plan (25
+        messages/month after a 14-day Growth demo) lets you verify it converts
+        before paying.
       </p>
 
       <h2>SocialReplAI's limitations, stated plainly</h2>
@@ -139,8 +140,9 @@ export default function VsManyChat() {
         or campaign flows; it responds to customers who DM or comment, and
         sends follow-ups to people already in a conversation. It requires a
         Shopify store and an Instagram Business or Creator account linked to a
-        Facebook Page. And comment-to-DM automation starts on the Growth plan
-        ($39/month), not the free tier. If any of those are dealbreakers,
+        Facebook Page. Comment-to-DM is on Free for 14 days after you connect
+        Instagram, then it continues on Growth ($39/month). If any of those
+        are dealbreakers,
         ManyChat or another multi-channel platform is the better fit.
       </p>
 

@@ -55,7 +55,7 @@ export function DefaultProductSection({ settings, shopifyProducts, fetcher }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <span className="srCardDesc">
-        Story replies and story mentions are answered automatically on your plan.
+        Story replies are answered automatically on your plan.
         Unlike a feed post, a story can&apos;t be mapped to a product: it expires in
         a day, and most replies are a reaction rather than a product name. Pick the
         product your stories are usually about and those messages get a real
