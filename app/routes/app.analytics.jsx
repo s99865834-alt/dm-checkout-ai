@@ -367,7 +367,7 @@ export default function AnalyticsPage() {
               <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
                 <div style={{ flex: 1 }}>
                   <span className="srCardDesc">
-                    Want per-post analytics filtering, follow-up messages, and multi-turn conversations? <strong>Upgrade to Pro.</strong>
+                    Want per-post analytics, follow-up messages, and story replies? <strong>Upgrade to Pro.</strong>
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>

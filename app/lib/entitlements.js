@@ -2,16 +2,21 @@
  * Effective plan capabilities.
  *
  * A merchant's raw plan is not the whole story: Free gets a one-time window
- * where comment-to-DM is switched on. That exists because the paywall used to
- * be invisible — one live store took 326 comments over five weeks, every one
- * dropped by the plan gate with no banner and no error, concluded the app was
- * broken, and installed a competitor. Nobody upgrades to a feature they have
- * never seen work.
+ * where Growth's selling loop is switched on (comments, multi-turn, brand
+ * voice). That exists because the paywall used to be invisible: one live store
+ * took 326 comments over five weeks, every one dropped by the plan gate with
+ * no banner and no error, concluded the app was broken, and installed a
+ * competitor. Nobody upgrades to a feature they have never seen work.
  *
- * Everything that decides "can this shop reply to comments?" must go through
- * effectivePlan() so the UI and the automation pipeline cannot disagree. A
- * merchant seeing "comment automation active" while the webhook silently drops
- * comments is the exact failure this module exists to prevent.
+ * The window used to grant comments only. A comment-to-DM that cannot continue
+ * the conversation is a broken demo: the shopper asks a size, the AI goes
+ * silent, and the merchant jumps in. entitlements.js now grants the full Growth
+ * selling loop so day 15 is losing something that actually closed, not a
+ * one-shot DM.
+ *
+ * Everything that decides "can this shop reply to comments / continue a
+ * thread / use brand voice?" must go through effectivePlan() so the UI and
+ * the automation pipeline cannot disagree.
  *
  * No .server suffix: the UI imports this too.
  */
@@ -23,11 +28,11 @@ export const COMMENT_TRIAL_DAYS = 14;
 /**
  * Message allowance while the window is open.
  *
- * Free's standing cap of 100 is a single budget shared by DMs and comments, and
- * the stores this window exists for run far past it: one takes 274 comments and
- * 138 DMs a month. Left at 100 the window would end on volume inside a week,
- * so "free for 14 days" would be false for exactly the merchants who most need
- * to see it work. Reverts to 100 the moment the window closes.
+ * Free's standing cap of 25 is a single budget shared by DMs and comments, and
+ * the stores this window exists for run far past it. Left at 25 the window
+ * would end on volume in a couple of days, so "free for 14 days" would be
+ * false for exactly the merchants who most need to see it work. Reverts to
+ * 25 the moment the window closes.
  */
 export const COMMENT_TRIAL_CAP = 500;
 
@@ -74,19 +79,23 @@ export function effectivePlan(plan, shop) {
   const base = typeof plan === "string" || !plan ? getPlanConfig(plan) : plan;
   const trial = commentTrialStatus(shop);
 
-  // Only Free is ever upgraded by the window; paid plans already have comments.
-  const trialGrantsComments = base.name === "FREE" && trial.active;
+  // Only Free is ever upgraded by the window. Paid plans already have these.
+  // Stories, follow-ups, and default product stay Pro: the window is a Growth
+  // demo, not a Pro demo.
+  const trialGrantsGrowth = base.name === "FREE" && trial.active;
 
   return {
     ...base,
-    comments: base.comments || trialGrantsComments,
+    comments: base.comments || trialGrantsGrowth,
+    converse: base.converse || trialGrantsGrowth,
+    brandVoice: base.brandVoice || trialGrantsGrowth,
     // Never lower an existing cap, only raise it for the window.
-    cap: trialGrantsComments ? Math.max(base.cap, COMMENT_TRIAL_CAP) : base.cap,
+    cap: trialGrantsGrowth ? Math.max(base.cap, COMMENT_TRIAL_CAP) : base.cap,
     commentTrial: {
       ...trial,
       // True only while the window is what's providing access, so the UI can
       // show a countdown without implying paid plans are time-limited.
-      granting: trialGrantsComments,
+      granting: trialGrantsGrowth,
       // True once a Free shop's window has closed: the moment to ask for the
       // upgrade, because now they have seen it work.
       expired: base.name === "FREE" && trial.started && !trial.active,

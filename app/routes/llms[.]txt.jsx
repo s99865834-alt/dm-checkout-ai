@@ -1,4 +1,5 @@
 import { BLOG_POSTS, postUrl } from "../lib/blog-posts";
+import { PLANS } from "../lib/plans";
 
 export function loader() {
   const guideLinks = BLOG_POSTS.map(
@@ -23,7 +24,7 @@ SocialRepl.ai is a Shopify app that automatically responds to Instagram DMs and 
 - **Product-to-Post Mapping**: Merchants map Shopify products to Instagram posts via a visual grid, so the app knows which product each post is about.
 - **Click and Revenue Attribution**: Tracks which Instagram interactions lead to clicks and purchases.
 - **Follow-Up Messages**: Sends timed follow-ups to customers who haven't completed checkout.
-- **Multi-Tier Plans**: Free (100 messages/mo, comment-to-DM free for the first 14 days), Growth ($39/mo, 1,000 messages, comment-to-DM always on, brand voice, multi-turn conversations), Pro ($99/mo with a 30-day free trial, story replies and mentions, a default product for stories and unmapped posts, follow-ups, per-post analytics, 10,000 messages).
+- **Multi-Tier Plans**: Free (${PLANS.FREE.cap} messages/mo after a 14-day Growth demo covering comments, multi-turn, and brand voice), Growth ($39/mo with a 7-day free trial, 1,000 messages, comment-to-DM always on, brand voice, multi-turn conversations), Pro ($99/mo with a 30-day free trial, story replies, a default product for stories and unmapped posts, follow-ups, per-post analytics, 10,000 messages).
 
 ## Who it's for
 

@@ -73,7 +73,7 @@ export async function getShopWithPlan(request) {
         // Creation failures throw out of cached() so a miss is never stored.
         s = await createOrUpdateShop(shopDomain, {
           plan: "FREE",
-          monthly_cap: 100,
+          monthly_cap: getPlanConfig("FREE").cap,
           active: true,
         });
         logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
@@ -84,7 +84,7 @@ export async function getShopWithPlan(request) {
         try {
           s = await createOrUpdateShop(shopDomain, {
             plan: "FREE",
-            monthly_cap: 100,
+            monthly_cap: getPlanConfig("FREE").cap,
             active: true,
             usage_count: 0,
           });

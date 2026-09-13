@@ -129,20 +129,23 @@ Turn Instagram DMs and comments into sales with AI-powered automated responses a
 **Features by plan**
 
 **Free**
-- 25 automated messages per month
+- 25 automated messages per month after a 14-day Growth demo
 - DM automation with checkout links
+- Comment-to-DM, multi-turn, and brand voice for 14 days after connecting Instagram
 - Basic analytics (messages sent, CTR)
-- Order attribution tracking
 
-**Growth ($29/mo)**
-- 500 automated messages per month
-- Comment-to-DM automation
+**Growth ($39/mo)**
+- 7-day free trial
+- 1,000 automated messages per month
+- Comment-to-DM automation, always on
 - Multi-turn conversation support
 - Brand voice customization (Friendly, Expert, Casual)
 
 **Pro ($99/mo)**
-- 50,000 automated messages per month
-- Follow-up automation (abandoned checkout recovery)
+- 30-day free trial
+- 10,000 automated messages per month
+- Story replies and a default product for unmapped posts
+- Follow-up automation
 - All Growth features included
 - Priority support
 

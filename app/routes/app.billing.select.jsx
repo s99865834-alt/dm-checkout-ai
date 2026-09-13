@@ -133,11 +133,10 @@ export default function BillingSelect() {
       config: PLANS.FREE,
       description: "See it work on real customers",
       features: [
-        "100 messages/month",
+        `${PLANS.FREE.cap} messages/month`,
         "DM automation with AI",
-        "Comment-to-DM free for 14 days",
+        "Comment-to-DM, multi-turn, and brand voice for 14 days",
         "Store question answering",
-        "Multi-language replies",
         "Checkout links",
         "Basic analytics",
       ],
@@ -147,15 +146,16 @@ export default function BillingSelect() {
       price: "$39",
       period: "month",
       config: PLANS.GROWTH,
-      description: "Where most stores land",
-      badge: "Popular",
+      description: "Sell from comments and real conversations",
+      badge: "Most popular",
+      trialNote: "First 7 days free. Billing starts after your trial.",
       features: [
-        "1,000 messages/month",
         "Comment-to-DM, always on",
-        "Brand voice customization",
         "Multi-turn conversations",
+        "Brand voice customization",
         "Custom reply language",
         "Order attribution + full analytics",
+        "1,000 messages/month",
       ],
     },
     {
@@ -165,10 +165,10 @@ export default function BillingSelect() {
       config: PLANS.PRO,
       description: "Sell from stories and follow up",
       badge: "30-day free trial",
-      trialNote: "First 30 days free — billing starts after your trial",
+      trialNote: "First 30 days free. Billing starts after your trial.",
       features: [
         "Everything in Growth",
-        "Story replies and mentions answered automatically",
+        "Story replies answered automatically",
         "Default product for stories and unmapped posts",
         "Follow-up messages",
         "Per-post analytics",
@@ -323,7 +323,7 @@ export default function BillingSelect() {
             <tbody>
               <tr>
                 <td><span className="srTextStrong">Monthly Messages</span></td>
-                <td className="srTextCenter">100</td>
+                <td className="srTextCenter">{PLANS.FREE.cap.toLocaleString("en-US")}</td>
                 <td className="srTextCenter">1,000</td>
                 <td className="srTextCenter">10,000</td>
               </tr>
@@ -365,19 +365,19 @@ export default function BillingSelect() {
               </tr>
               <tr>
                 <td><span className="srTextStrong">Brand Voice</span></td>
-                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">First 14 days</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
                 <td><span className="srTextStrong">Custom Reply Language</span></td>
-                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">First 14 days</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
               <tr>
                 <td><span className="srTextStrong">Order Attribution + Full Analytics</span></td>
-                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">Revenue total</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>
@@ -385,7 +385,7 @@ export default function BillingSelect() {
                 {/* Matches PLANS.GROWTH.converse, which has been true all
                     along. The table was under-selling Growth. */}
                 <td><span className="srTextStrong">Multi-turn Conversations</span></td>
-                <td className="srTextCenter">—</td>
+                <td className="srTextCenter">First 14 days</td>
                 <td className="srTextCenter">✓</td>
                 <td className="srTextCenter">✓</td>
               </tr>

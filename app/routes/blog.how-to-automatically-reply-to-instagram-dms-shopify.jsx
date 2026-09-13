@@ -64,9 +64,10 @@ export default function HowToAutoReplyDMs() {
         >
           SocialReplAI
         </a>{" "}
-        from the Shopify App Store. The free plan includes 100 automated
-        messages per month with AI replies and checkout links, so you can test
-        it on real conversations before paying anything. Because it installs as
+        from the Shopify App Store. The free plan includes a 14-day Growth
+        demo (comments, multi-turn, brand voice) then 25 automated DMs per
+        month with checkout links, so you can test it on real conversations
+        before paying anything. Because it installs as
         a Shopify app, it already knows your products, variants, prices, and
         store policies — there is nothing to import or sync manually.
       </p>
