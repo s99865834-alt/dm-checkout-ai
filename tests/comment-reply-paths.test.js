@@ -497,6 +497,8 @@ describe("comment reply paths", () => {
       comment_trial_started_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(inWindow.comments).toBe(true);
+    expect(inWindow.converse).toBe(true);
+    expect(inWindow.brandVoice).toBe(true);
 
     const res = await handleIncomingComment(comment("how much?"), "media-1", shop, inWindow);
 

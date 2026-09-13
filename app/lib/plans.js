@@ -1,8 +1,11 @@
 // Caps are a single shared budget across DMs and comments (see the identical
-// check in both paths of automation.server.js). Growth sits at 1000 so that no
-// realistic store is pushed onto Pro by volume alone: Pro is chosen for stories
-// and follow-ups, not headroom. Observed usage for reference: the busiest live
-// store runs ~95 sends/month.
+// check in both paths of automation.server.js).
+//
+// Free's 25 is a demo, not a place to live. The busiest real stores already
+// run past that in a week, which is the point: after the 14-day window they
+// either pay for Growth or go quiet. Growth sits at 1000 so volume never
+// pushes a store onto Pro. Pro is chosen for stories and follow-ups.
+//
 // Every flag below is read by code and actually gates behaviour, with two
 // deliberate exceptions, marked at each plan:
 //
@@ -15,17 +18,18 @@
 // reads is worse than no flag: it reads like an enforced rule and isn't. The
 // default product shipped that way and was inert for a week.
 //
-// Gate on the flag, never on `plan.name`. entitlements.js grants capabilities
-// on trial, so a FREE shop can legitimately have `comments: true`, and a name
-// comparison gets that wrong.
+// Gate on the flag, never on `plan.name`. entitlements.js grants Growth
+// selling capabilities on the Free comment window, so a FREE shop can
+// legitimately have `comments: true` / `converse: true` / `brandVoice: true`,
+// and a name comparison gets that wrong.
 export const PLANS = {
   FREE: {
     name: "FREE",
-    cap: 100,
+    cap: 25,
     dm: true, // not gated: true on every plan
-    // Comments are off on Free, but a one-time trial window can switch them on
-    // (see entitlements.js). Merchants who never see comment-to-DM work have no
-    // reason to believe it does.
+    // Comments, multi-turn, and brand voice are off on standing Free. A
+    // one-time window can switch them on (see entitlements.js) so the merchant
+    // feels Growth before being asked to pay for it.
     comments: false,
     converse: false,
     brandVoice: false,
@@ -69,4 +73,3 @@ export function getPlanConfig(plan) {
   }
   return PLANS.FREE;
 }
-

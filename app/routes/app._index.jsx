@@ -9,6 +9,7 @@ import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
+import { PLANS } from "../lib/plans";
 
 // Comments in a week before the unmapped-posts warning is worth showing. A
 // store with a handful of comments has little to gain and doesn't need nagging;
@@ -831,7 +832,7 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Running low on messages. Upgrade to Growth for 5x the limit plus comment automation and full analytics.
+                Upgrade to Growth for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">View plans</s-button>
@@ -840,7 +841,7 @@ export default function Index() {
       )}
       {/* Honest ROI report: only rendered when tracked sales actually exceed
           the Growth price, so it reads as a report, not an ad. */}
-      {plan && plan.name === "FREE" && (monthRevenue?.total || 0) >= 39 && (
+      {plan && plan.name === "FREE" && (monthRevenue?.total || 0) > 0 && (
         <s-banner tone="success">
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
@@ -848,7 +849,9 @@ export default function Index() {
                 SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month.
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Growth costs $39/mo and adds comment automation, brand voice, and 1,000 messages — it would already be paying for itself.
+                {(monthRevenue.total || 0) >= 39
+                  ? "Growth costs $39/mo and keeps comment automation, brand voice, and multi-turn conversations. It would already be paying for itself."
+                  : "Growth ($39/mo) keeps comment automation, brand voice, and multi-turn conversations on after the 14-day window."}
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
@@ -872,14 +875,14 @@ export default function Index() {
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">
-                Comment automation is on for {plan.commentTrial.daysLeft} more{" "}
+                Comment automation, multi-turn, and brand voice are on for {plan.commentTrial.daysLeft} more{" "}
                 {plan.commentTrial.daysLeft === 1 ? "day" : "days"}
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Every comment with buying interest gets a DM with a checkout link, and any resulting
-                sale shows up in Analytics. Your allowance is raised to {plan.cap} messages for the
-                window so comment volume doesn&apos;t cut it short. Map products to your posts now so
-                you can see what it earns. Keeping it costs $39/mo on Growth.
+                You are running Growth for this window: comments get a DM with a checkout link,
+                conversations continue past the first reply, and any resulting sale shows up in
+                Analytics. Your allowance is raised to {plan.cap} messages so comment volume
+                doesn&apos;t cut it short. Keeping it costs $39/mo on Growth.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See plans</s-button>
@@ -1020,9 +1023,8 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">Welcome to SocialRepl.ai!</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                You're on the Free plan with {plan.cap} messages/mo. Connect your Instagram and comment
-                automation switches on free for 14 days, so you can see it answer real customers before
-                you decide anything. Map products to your posts to get the most out of it.
+                You're on Free. Connect Instagram for a 14-day Growth demo
+                (comments, multi-turn, brand voice), then {PLANS.FREE.cap} DMs/month.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
@@ -1248,7 +1250,7 @@ export default function Index() {
                           that makes a merchant distrust the whole dashboard. */}
                       <span className="srCardDesc">
                         {plan?.commentTrial?.granting
-                          ? `Auto-reply to comments with private DMs. Free for ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
+                          ? `Auto-reply to comments with private DMs. Growth demo: ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
                           : plan?.comments
                             ? "Auto-reply to comments with private DMs"
                             : "Upgrade to Growth to unlock comment automation"}

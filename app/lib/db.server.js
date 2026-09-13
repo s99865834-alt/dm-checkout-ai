@@ -66,7 +66,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
   // Base defaults - these are the initial values for a new shop
   const baseDefaults = {
     plan: "FREE",
-    monthly_cap: 100,
+    monthly_cap: getPlanConfig("FREE").cap,
     usage_month: usageMonth,
     usage_count: 0, // Always start at 0 on install/reinstall
     priority_support: false,
@@ -259,13 +259,12 @@ export async function getShopPlanAndUsage(shopId) {
   const planConfig = effectivePlan(baseConfig, data);
 
   // The plan config is the source of truth for the cap, not the stored
-  // monthly_cap. That column is only ever written from the same config, but it
-  // is written at upgrade time, so raising a cap in plans.js would otherwise
-  // leave existing subscribers on the old number while the UI (which reads
-  // plan.cap directly) advertised the new one. A stored cap that is higher
-  // still wins, so nothing is ever taken away from a shop mid-month.
-  const storedCap = Number(data.monthly_cap) || 0;
-  const cap = Math.max(planConfig.cap, storedCap);
+  // monthly_cap. That column is written at install/upgrade time and can lag
+  // a plans.js change. Using Math.max with the stored value used to mean a
+  // cap drop (Free 100 → 25) would keep existing shops on the old number
+  // while the UI advertised the new one. Enforcement and the dashboard
+  // both read plan.cap so a packaging change actually takes effect.
+  const cap = planConfig.cap;
 
   return {
     plan: planConfig,

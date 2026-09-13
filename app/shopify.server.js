@@ -8,6 +8,7 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 import { createOrUpdateShop, getShopByDomain } from "./lib/db.server";
 import { sendInstallAlert } from "./lib/install-alert.server";
+import { getPlanConfig } from "./lib/plans";
 import logger from "./lib/logger.server";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
@@ -53,7 +54,7 @@ const shopify = shopifyApp({
       if (!existing) {
         const result = await createOrUpdateShop(session.shop, {
           plan: "FREE",
-          monthly_cap: 100,
+          monthly_cap: getPlanConfig("FREE").cap,
           active: true,
         });
         logger.debug(`[afterAuth] Created new shop ${session.shop}: active=${result.active}, usage_count=${result.usage_count}`);
@@ -66,7 +67,7 @@ const shopify = shopifyApp({
         // after an uninstall, so reset plan/usage here too.
         const result = await createOrUpdateShop(session.shop, {
           plan: "FREE",
-          monthly_cap: 100,
+          monthly_cap: getPlanConfig("FREE").cap,
           active: true,
           usage_count: 0,
         });

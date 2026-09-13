@@ -5,27 +5,24 @@ Transform Instagram DMs and comments into sales with AI-powered automated respon
 ## Features
 
 ### Free Tier
-- 25 automated messages per month
+- 25 automated DMs per month after a 14-day Growth demo
+- DM automation with checkout links
+- Comment-to-DM, multi-turn, and brand voice for the first 14 days after connecting Instagram
 - Basic analytics (messages sent, CTR, top trigger phrases)
-- DM automation
-- Order attribution tracking
 
-### Growth Tier
-- 100 automated messages per month
-- All Free features, plus:
-- Comment-to-DM automation
+### Growth Tier ($39/mo, 7-day free trial)
+- 1,000 automated messages per month
+- Comment-to-DM always on
+- Multi-turn conversations
 - Brand voice customization
-- Per-channel analytics
-- Advanced message insights
+- Order attribution and full analytics
 
-### Pro Tier
-- Unlimited automated messages
+### Pro Tier ($99/mo, 30-day free trial)
+- 10,000 automated messages per month
 - All Growth features, plus:
+- Story replies and a default product for unmapped posts
 - Follow-up automation (23-24 hours after last message)
-- Customer segmentation analytics
-- Sentiment analysis
-- Revenue attribution by channel
-- Follow-up performance metrics
+- Per-post analytics
 - Priority support
 
 ## Getting Started

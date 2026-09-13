@@ -33,24 +33,33 @@ describe("commentTrialStatus", () => {
 });
 
 describe("effectivePlan", () => {
-  it("opens comments for Free inside the window", () => {
+  it("opens the Growth selling loop for Free inside the window", () => {
     const plan = effectivePlan(getPlanConfig("FREE"), { comment_trial_started_at: daysAgo(1) });
     expect(plan.comments).toBe(true);
+    expect(plan.converse).toBe(true);
+    expect(plan.brandVoice).toBe(true);
+    expect(plan.followup).toBe(false);
+    expect(plan.stories).toBe(false);
+    expect(plan.defaultProduct).toBe(false);
     expect(plan.commentTrial.granting).toBe(true);
     expect(plan.commentTrial.expired).toBe(false);
   });
 
-  it("closes comments for Free once the window expires, and flags it", () => {
+  it("closes the Growth selling loop for Free once the window expires, and flags it", () => {
     const plan = effectivePlan(getPlanConfig("FREE"), { comment_trial_started_at: daysAgo(99) });
     expect(plan.comments).toBe(false);
+    expect(plan.converse).toBe(false);
+    expect(plan.brandVoice).toBe(false);
     expect(plan.commentTrial.granting).toBe(false);
     // Drives the upgrade prompt: they have now seen it work.
     expect(plan.commentTrial.expired).toBe(true);
   });
 
-  it("leaves Free without comments when Instagram was never connected", () => {
+  it("leaves Free without the Growth selling loop when Instagram was never connected", () => {
     const plan = effectivePlan(getPlanConfig("FREE"), {});
     expect(plan.comments).toBe(false);
+    expect(plan.converse).toBe(false);
+    expect(plan.brandVoice).toBe(false);
     expect(plan.commentTrial.expired).toBe(false);
   });
 
@@ -58,14 +67,16 @@ describe("effectivePlan", () => {
     for (const name of ["GROWTH", "PRO"]) {
       const plan = effectivePlan(getPlanConfig(name), { comment_trial_started_at: daysAgo(1) });
       expect(plan.comments).toBe(true);
+      expect(plan.converse).toBe(true);
+      expect(plan.brandVoice).toBe(true);
       // Paid comments are not time-limited; the UI must not show a countdown.
       expect(plan.commentTrial.granting).toBe(false);
       expect(plan.commentTrial.expired).toBe(false);
     }
   });
 
-  // A 100-message cap shared between DMs and comments would end the window on
-  // volume in about a week for a store taking 274 comments a month, making the
+  // A 25-message cap shared between DMs and comments would end the window on
+  // volume in a couple of days for a store taking 274 comments a month, making the
   // 14-day promise false for the merchants it targets.
   it("lifts the Free cap while the window is open", () => {
     const plan = effectivePlan(getPlanConfig("FREE"), { comment_trial_started_at: daysAgo(1) });
@@ -105,6 +116,8 @@ describe("effectivePlan", () => {
   it("does not reopen the window for a shop that reconnected Instagram", () => {
     const shop = { comment_trial_started_at: daysAgo(40) };
     expect(effectivePlan(getPlanConfig("FREE"), shop).comments).toBe(false);
+    expect(effectivePlan(getPlanConfig("FREE"), shop).converse).toBe(false);
+    expect(effectivePlan(getPlanConfig("FREE"), shop).brandVoice).toBe(false);
   });
 });
 
@@ -115,9 +128,13 @@ describe("plan capability matrix", () => {
     expect(PLANS.PRO.stories).toBe(true);
   });
 
+  it("keeps Free's standing cap at a demo size", () => {
+    expect(PLANS.FREE.cap).toBe(25);
+    expect(PLANS.GROWTH.cap).toBeGreaterThan(PLANS.FREE.cap);
+  });
+
   it("keeps Growth roomy enough that volume never forces a Pro upgrade", () => {
-    // Busiest live store runs ~95 sends/month; Growth must clear that with
-    // room so Pro is chosen for features, not headroom.
+    // Pro is chosen for stories and follow-ups, not because 1,000 sends ran out.
     expect(PLANS.GROWTH.cap).toBeGreaterThanOrEqual(1000);
     expect(PLANS.PRO.cap).toBeGreaterThan(PLANS.GROWTH.cap);
     expect(PLANS.GROWTH.cap).toBeGreaterThan(PLANS.FREE.cap);

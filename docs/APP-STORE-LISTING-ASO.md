@@ -34,21 +34,21 @@ Keep `SocialReplAI`.
 
 **Currently live:**
 
-> Automate Instagram DM and comment replies with AI-powered checkout links. Sell more while you sleep.
-
-**Replace with** (98 chars):
-
 > AI answers your Instagram DMs and comments with checkout links, turning conversations into orders.
+
+**Replace with** (85 chars):
+
+> AI answers your Instagram DMs with checkout links, turning conversations into orders.
 
 ### App details (the paragraph under the introduction)
 
 **Currently live:**
 
-> SocialRepl.ai connects your Shopify store to Instagram so customer conversations become sales. When someone DMs you about a product or comments on a post, the app replies instantly with a personalized AI message and a direct checkout link. The AI learns your products, pricing, and store policies to answer questions accurately in your brand's voice. It handles follow-up questions, identifies which product a customer is asking about, and tracks which conversations lead to orders.
+> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs, comments, and story replies in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build: connect your account, set your tone, and go.
 
-**Replace with** (487 chars):
+**Replace with** (456 chars):
 
-> Shoppers who DM you about a product are ready to buy — if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs and comments in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build — connect your account, set your tone, and go.
+> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it. Comment-to-DM turns public comments into private conversations that convert. No flows to build: connect your account and go.
 
 ### Feature list (5 bullets — replace all 5)
 
@@ -62,9 +62,9 @@ Keep `SocialReplAI`.
 
 **Replace with** (80-char max each; ordered by differentiation):
 
-1. `AI replies to DMs and comments in your brand voice — no flows to build` (72)
-2. `Checkout links with the right product and variant pre-loaded in every reply` (75)
-3. `Order attribution shows the revenue each DM or comment drove` (60)
+1. `AI replies to Instagram DMs with checkout links, no flows to build` (66)
+2. `Checkout links with the right product and variant pre-loaded` (60)
+3. `Order attribution shows the revenue each conversation drove` (59)
 4. `Answers product questions from your live catalog, pricing, and policies` (71)
 5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
 
@@ -72,37 +72,65 @@ Cut for space (work these into screenshots/captions or the details paragraph if
 room ever allows): follow-up messages for unfinished checkouts, multi-language
 replies, and the analytics dashboard (bullet 3 already carries the revenue story).
 
-### Pricing — CHANGE (tier restructure, Aug 31 2026)
+### Pricing — CHANGE (Free becomes a demo, Sep 13 2026)
 
-Prices are unchanged (Free / $39 Growth / $99 Pro + 30-day Pro trial). What each
-plan *includes* changed, so the Pricing details section is now out of date:
+Prices are unchanged (Free / $39 Growth / $99 Pro). What each plan includes
+changed. Paste these into Partner Dashboard → Apps → SocialReplAI →
+Distribution → Pricing, then into the listing Pricing details.
 
-| | was | now |
+Do this **before** merging to `main`. The site and in-app billing now promise
+a 7-day Growth trial. If Managed Pricing does not have that trial set, the
+listing can be rejected under requirement 4.2.1.
+
+**Free**
+- 25 messages/month
+- DM automation with AI
+- Checkout links
+- Basic analytics
+- Comment-to-DM, multi-turn, and brand voice for first 14 days after connecting Instagram
+- 500 messages during those 14 days
+
+**Growth ($39/month)**
+- 7-day free trial
+- Comment-to-DM, always on
+- Multi-turn conversations
+- Brand voice customization
+- Order attribution + full analytics
+- 1,000 messages/month
+
+**Pro ($99/month)**
+- 30-day free trial
+- Everything in Growth
+- Instagram Stories automation
+- Default product for stories and unmapped posts
+- Follow-up messages
+- Per-post analytics
+- Priority support
+- 10,000 messages/month
+
+Two compliance notes:
+
+- **The 14-day comment window is pricing information** (requirement 4.2). It
+  belongs in Pricing details only. Do not put "free for 14 days" in the
+  introduction, details, features, or screenshots.
+- **Do not claim story mentions.** Story replies are answered on Pro.
+  Mentions have never been observed.
+
+Message caps are enforced in our own database, not by Shopify Managed Pricing,
+so dropping Free to 25 needs no billing-API change. The plan description in
+the Partner Dashboard still has to match, or the listing will be wrong.
+
+### Pricing (historical, Aug 31 2026)
+
+Previous row for context. Superseded by the Sep 13 table above.
+
+| | was | Aug 31 |
 |---|---|---|
 | Free monthly messages | 100 | 100 (500 during the comment window) |
 | Free comment-to-DM | not included | included for 14 days from Instagram connect |
-| Growth monthly messages | 500 | **1,000** |
-| Growth multi-turn | listed under Pro | **Growth** (it was always `PLANS.GROWTH.converse: true`) |
-| Pro | 10,000 messages, follow-ups | adds **story replies**; volume de-emphasised |
-
-Two compliance notes specific to these changes:
-
-- **The 14-day comment window is pricing information** (requirement 4.2, which
-  explicitly covers free-trial duration). It belongs in Pricing details only.
-  Do not put "free for 14 days" in the introduction, details, features, or
-  screenshots. App Details should describe comment-to-DM as functionality; the
-  Pricing section states which plan includes it and for how long.
-- **Do not claim story mentions.** Story *replies* are answered on Pro and are
-  confirmed arriving in production. Story *mentions* have never been observed.
-  They can reach us two ways: as a `story_mention` attachment on the `messages`
-  field, which has been subscribed all along and is already parsed, or via
-  `messaging_referral`, which was misspelled as the plural and rejected until
-  Aug 31. So the missing subscription was probably not the blocker. Add the
-  claim once one is observed in `messages.content_type = 'story_mention'`.
-
-Message caps are enforced in our own database, not by Shopify Managed Pricing,
-so raising Growth to 1,000 needs no billing change — only the plan description
-in the Partner Dashboard (Apps → SocialReplAI → Distribution → Pricing).
+| Growth monthly messages | 500 | 1,000 |
+| Growth multi-turn | listed under Pro | Growth |
+| Pro | 10,000 messages, follow-ups | adds story replies; volume de-emphasised |
 
 ### Languages — NO CHANGE
 
@@ -197,49 +225,27 @@ Use for the main visible description; lead with the outcome, then features.
 - Comment-to-DM: turn public comments into private DMs with the right product link
 - Free tier with DM automation each month — no credit card required (see pricing for limits)
 
-### 2.1 Free trials — VERIFY BEFORE SUBMITTING
-
-> **Unresolved contradiction.** This section says trials are disabled; §8's
-> checklist says Pro's 30-day trial is live. Meanwhile the marketing site
-> (`_index/route.jsx`), the in-app billing page (`app.billing.select.jsx`) and
-> the blog posts all advertise a 30-day Pro trial. If no trial is actually
-> configured in Managed Pricing, every one of those surfaces is promising
-> something the app does not deliver, which is both a rejection risk under
-> requirement 4.2.1 and a chargeback risk with real merchants.
->
-> Check Partner Dashboard → Apps → SocialReplAI → Distribution → Pricing → Pro
-> → "Trial period in days" and make reality and copy agree in whichever
-> direction is correct. `getTrialStatus()` in `billing.server.js` reads
-> `trialDays` off the live subscription, so the in-app banner is already driven
-> by the real value; only the static marketing copy can drift.
+### 2.1 Free trials — set these in Partner Dashboard before merging
 
 The app uses **Shopify Managed Pricing**. Trials are configured per plan in
-the Partner Dashboard (Apps → dm-checkout-ai → Distribution → Pricing →
-edit each plan → Trial period in days).
+the Partner Dashboard (Apps → SocialReplAI → Distribution → Pricing → edit
+each plan → Trial period in days).
 
-Note that the Free plan's 14-day comment window is **not** a Shopify trial. It
-is in-app functionality keyed to `shops.comment_trial_started_at`, needs no
-Managed Pricing configuration, and involves no charge approval. Describe it in
-Pricing details as part of what the Free plan includes, never as a "free trial",
-so it is not confused with the Pro trial.
+Required to match the site and in-app billing copy:
 
-While trials are disabled:
+- **Growth:** 7-day trial
+- **Pro:** 30-day free trial (already advertised)
 
-- **Do not mention "free trial" in the App Store listing copy.** Reviewers
-  reject listings that promise a trial the app does not deliver.
-- The **FREE plan** is the entry point — emphasise the free tier in the
-  listing instead of a trial.
-- The in-app beta-code redemption flow (`/app/pro-trial`) has been retired.
-  The route now redirects to the unified billing page.
+The Free plan's 14-day comment window is **not** a Shopify trial. It is
+in-app functionality keyed to `shops.comment_trial_started_at`, needs no
+Managed Pricing configuration, and involves no charge approval. Describe it
+in Pricing details as part of what the Free plan includes, never as a
+"free trial", so it is not confused with the Growth or Pro trials.
 
-To enable trials later (after app approval):
-
-1. Partner Dashboard → edit the Growth and/or Pro plan → set "Trial period
-   in days" (e.g. 14).
-2. Update the App Store listing copy to mention the trial duration, what is
-   included, and what happens when the trial ends (price, cancel path).
-3. No code changes required — the in-app upgrade flow already redirects to
-   Shopify's hosted pricing page, which renders the trial automatically.
+`getTrialStatus()` in `billing.server.js` reads `trialDays` off the live
+subscription, so the in-app banner is already driven by the real value. Only
+the static marketing copy can drift. If a trial is not configured, remove it
+from the listing, the site, and `app.billing.select.jsx` before merge.
 
 ---
 
@@ -265,21 +271,23 @@ SocialRepl.ai is a Shopify-native AI sales agent. Unlike generic chat-marketing 
 **Features by plan**
 
 **Free**
-- 100 automated messages per month
+- 25 automated messages per month
 - DM automation with AI and checkout links
-- Comment-to-DM included free for your first 14 days after connecting Instagram,
+- Comment-to-DM, multi-turn, and brand voice for your first 14 days after connecting Instagram,
   with your allowance raised to 500 messages during that period
 - Basic analytics (messages sent, CTR, top trigger phrases)
 - No credit card required
 
 **Growth ($39/mo)**
-- 1,000 automated messages per month
+- 7-day free trial
 - Comment-to-DM automation, always on
 - Brand voice customization (Casual, Professional, Friendly, and custom)
 - Multi-turn conversations
 - Order attribution + full analytics
+- 1,000 automated messages per month
 
 **Pro ($99/mo)**
+- 30-day free trial
 - Everything in Growth, plus story replies: the AI answers people who reply to
   your Instagram story with a product link
 - Follow-up messages for shoppers who got a link but didn't check out
@@ -341,7 +349,7 @@ plan terms — capture those on a Growth store instead.
 
 ## 6. Pricing clarity (in listing and screenshots)
 
-- **Free tier:** Prominent—“Start free: 100 automated messages per month, no credit card. Comment-to-DM included free for your first 14 days.”
+- **Free tier:** Prominent: "Start free: 14-day Growth demo, then 25 DMs/month. No credit card."
 - **Growth:** $39/month — 1,000 messages, comment-to-DM always on, brand voice, multi-turn conversations, order attribution + full analytics.
 - **Pro:** $99/month — story replies, follow-up messages, per-post analytics, 10,000 messages, priority support.
 
@@ -372,7 +380,7 @@ configure, it already knows your catalog."*
 - [ ] Title and subtitle include at least one high-intent keyword (e.g. Instagram DM, Instagram checkout).
 - [ ] Short description leads with outcome and mentions free tier.
 - [ ] Full description includes all three tiers and main features.
-- [ ] **Trial:** The Pro plan's 30-day free trial is live (Partner Dashboard → Managed Pricing). Listing text must match the trial settings exactly — duration, what's included, post-trial price, cancel path. Do not mention trials on plans that don't have one configured.
+- [ ] **Trial:** Growth's 7-day trial and Pro's 30-day trial are live (Partner Dashboard → Managed Pricing). Listing text must match the trial settings exactly: duration, what's included, post-trial price, cancel path. Do not mention a trial on a plan that does not have one configured.
 - [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test). The FREE plan is the entry point; no trial redemption flow.
 - [ ] 5–8 screenshots in order: connect → map → automation → reply with link → analytics (and optional attribution/brand voice).
 - [ ] Captions on every screenshot.
