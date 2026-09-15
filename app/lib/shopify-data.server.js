@@ -8,6 +8,7 @@ import { markShopUninstalled } from "./db.server";
 import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { expandSizeAliases } from "./variant-match";
+import { isShopNotFoundError, isShopifyAutomatedReviewShop } from "./shopify-review-shop";
 
 // ---------------------------------------------------------------------------
 // Background Admin API access
@@ -40,6 +41,10 @@ function isStoreFrozenError(error) {
   return String(error?.message || "").includes("402 Payment Required");
 }
 
+function isExpectedAdminApiMiss(error) {
+  return isStoreFrozenError(error) || isShopNotFoundError(error);
+}
+
 /**
  * Admin GraphQL client for a shop's stored offline session, or null when the
  * shop has no usable session. When Shopify reports the token as revoked
@@ -48,12 +53,17 @@ function isStoreFrozenError(error) {
  */
 async function getAdminClient(shopDomain) {
   if (!shopDomain) return null;
+  if (isShopifyAutomatedReviewShop(shopDomain)) return null;
   try {
     const { admin } = await unauthenticated.admin(shopDomain);
     return admin;
   } catch (error) {
     if (error?.constructor?.name === "SessionNotFoundError") {
       logger.debug(`[shopify-data] no offline session for ${shopDomain}`);
+      return null;
+    }
+    if (isExpectedAdminApiMiss(error)) {
+      logger.debug(`[shopify-data] admin client skipped for ${shopDomain}: ${error?.message || error}`);
       return null;
     }
     if (isTokenRevokedError(error)) {
@@ -80,6 +90,7 @@ async function shopGraphql(admin, query, variables = undefined) {
     const response = await admin.graphql(query, variables ? { variables } : undefined);
     return response.json();
   } catch (error) {
+    if (isExpectedAdminApiMiss(error)) throw error;
     // The GraphQL client buries the actual errors in error.errors.graphQLErrors,
     // which console.error renders as "[Array]" (Node truncates nested objects).
     // Surface them as JSON so production logs are actually diagnosable.
@@ -170,11 +181,11 @@ export async function getStoreTotalRevenueYTD(shopDomain) {
     if (value) _revenueYtdCache.set(shopDomain, { value, at: Date.now() });
     return value;
   } catch (error) {
-    if (isStoreFrozenError(error)) {
-      // Frozen store — expected and not actionable. Negative-cache so we
-      // don't re-query (and re-log) on every admin dashboard load.
+    if (isExpectedAdminApiMiss(error)) {
+      // Frozen (402) or gone (404, including scanner shops). Expected.
+      // Negative-cache so we don't re-query (and re-log) on every dashboard load.
       _revenueYtdCache.set(shopDomain, { value: null, at: Date.now() });
-      logger.debug(`[shopify-data] ${shopDomain} is frozen (402); skipping revenue YTD`);
+      logger.debug(`[shopify-data] ${shopDomain} skipped revenue YTD: ${error?.message || error}`);
       return null;
     }
     console.error(
@@ -255,11 +266,9 @@ export async function getStoreManagedTrial(shopDomain) {
     _trialCache.set(shopDomain, { value, at: Date.now() });
     return value;
   } catch (error) {
-    if (isStoreFrozenError(error)) {
-      // Frozen store — expected and not actionable. Negative-cache so we
-      // don't re-query (and re-log) on every admin dashboard load.
+    if (isExpectedAdminApiMiss(error)) {
       _trialCache.set(shopDomain, { value: null, at: Date.now() });
-      logger.debug(`[shopify-data] ${shopDomain} is frozen (402); skipping trial lookup`);
+      logger.debug(`[shopify-data] ${shopDomain} skipped trial lookup: ${error?.message || error}`);
       return null;
     }
     console.error(
@@ -384,6 +393,10 @@ export async function getShopifyStoreInfo(shopDomain) {
       products,
     };
   } catch (error) {
+    if (isExpectedAdminApiMiss(error)) {
+      logger.debug(`[shopify-data] store info skipped for ${shopDomain}: ${error?.message || error}`);
+      return null;
+    }
     console.error("[shopify-data] Error fetching store info:", error);
     return null;
   }

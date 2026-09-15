@@ -5,6 +5,7 @@ import { effectivePlan } from "./entitlements";
 import { getShopifyStoreInfo } from "./shopify-data.server";
 import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
+import { isShopifyAutomatedReviewShop } from "./shopify-review-shop";
 
 const STORE_CONTEXT_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
 
@@ -25,6 +26,7 @@ const _authCache = new WeakMap();
  */
 async function maybeRefreshStoreContext(shop, shopDomain) {
   if (!shop?.id || !shopDomain) return;
+  if (isShopifyAutomatedReviewShop(shopDomain)) return;
   try {
     // Check whether the cached value is still fresh (re-use the TTL-aware getter)
     const cached = await getStoredStoreContext(shop.id, STORE_CONTEXT_REFRESH_TTL_MS);
@@ -68,6 +70,13 @@ export async function getShopWithPlan(request) {
   try {
     shop = await cached(`shopplan:${shopDomain}`, SHOP_CACHE_TTL_MS, async () => {
       let s = await getShopByDomain(shopDomain);
+
+      if (isShopifyAutomatedReviewShop(shopDomain)) {
+        // Do not persist scanner shops. /app still needs a shop-shaped
+        // object so the review load does not 500; loaders already guard on shop.id.
+        if (!s) return ephemeralReviewShop(shopDomain);
+        return ensureUsageMonthCurrent(s);
+      }
 
       if (!s) {
         // Creation failures throw out of cached() so a miss is never stored.
@@ -126,6 +135,28 @@ export async function getShop(request) {
   const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
   const shop = await getShopByDomain(shopDomain);
+  if (!shop && isShopifyAutomatedReviewShop(shopDomain)) {
+    return ephemeralReviewShop(shopDomain);
+  }
   return shop ? await ensureUsageMonthCurrent(shop) : null;
+}
+
+function ephemeralReviewShop(shopDomain) {
+  const now = new Date();
+  const usageMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+  return {
+    id: null,
+    shopify_domain: shopDomain,
+    plan: "FREE",
+    monthly_cap: getPlanConfig("FREE").cap,
+    usage_count: 0,
+    usage_month: usageMonth,
+    active: true,
+    priority_support: false,
+    beta_trial_expires_at: null,
+    comment_trial_started_at: null,
+  };
 }
 

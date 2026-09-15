@@ -2,6 +2,7 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  LogSeverity,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
@@ -10,6 +11,10 @@ import { createOrUpdateShop, getShopByDomain } from "./lib/db.server";
 import { sendInstallAlert } from "./lib/install-alert.server";
 import { getPlanConfig } from "./lib/plans";
 import logger from "./lib/logger.server";
+import {
+  isMalformedShopifyHostError,
+  isShopifyAutomatedReviewShop,
+} from "./lib/shopify-review-shop";
 
 // Scopes must match shopify.app.toml and shopify.app.dev.toml [access_scopes].
 // Using env var with hardcoded fallback so it's never accidentally empty.
@@ -27,6 +32,11 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+  // Production: hide library INFO ("Creating new session", "Authenticating
+  // admin request"). Those are not failures. Keep Warning/Error.
+  logger: {
+    level: process.env.NODE_ENV === "production" ? LogSeverity.Warning : LogSeverity.Info,
+  },
   // Required for Shopify's offline-access-token deprecation. When this flag
   // is on the library:
   //   1. Requests new offline access tokens with expiring=1 (60-min TTL,
@@ -49,6 +59,11 @@ const shopify = shopifyApp({
     // reinstalls (where the shop is missing or was marked inactive by
     // the app/uninstalled webhook).
     logger.debug(`[afterAuth] OAuth completed for shop: ${session.shop}`);
+    if (isShopifyAutomatedReviewShop(session.shop)) {
+      // Scanner shops must still complete OAuth so the review loads, but
+      // they are not merchants: no shops row, no install email.
+      return;
+    }
     try {
       const existing = await getShopByDomain(session.shop);
       if (!existing) {
@@ -89,6 +104,19 @@ const shopify = shopifyApp({
 export default shopify;
 export const apiVersion = ApiVersion.October25;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
+
+const authenticateAdmin = shopify.authenticate.admin.bind(shopify.authenticate);
+shopify.authenticate.admin = async function wrappedAuthenticateAdmin(...args) {
+  try {
+    return await authenticateAdmin(...args);
+  } catch (error) {
+    if (isMalformedShopifyHostError(error)) {
+      throw new Response("Bad Request", { status: 400 });
+    }
+    throw error;
+  }
+};
+
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;

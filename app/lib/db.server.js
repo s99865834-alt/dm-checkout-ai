@@ -4,6 +4,7 @@ import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
+import { excludeAutomatedReviewShops } from "./shopify-review-shop";
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -2154,6 +2155,8 @@ export async function getProAnalytics(shopId, options = {}) {
  * active = false, so uninstalled stores drop off the admin automatically (and
  * their revoked tokens no longer trigger 401 lookups). Reinstalls set
  * active = true again via afterAuth, which brings the store back.
+ * Shopify automated review / security-scan shops are excluded even if a
+ * leftover row exists from before we stopped persisting them.
  * Returns: [{ shop_id, shopify_domain, created_at, active, plan, beta_trial,
  *   messages_sent, revenue, instagram_connected, ig_business_id }]
  */
@@ -2258,6 +2261,7 @@ export async function getOutboundQueueItems(filters = {}) {
 }
 
 async function buildAdminStoresResult(shops) {
+  shops = excludeAutomatedReviewShops(shops);
   const shopIds = shops.map((s) => s.id);
 
   const { data: metaAuthRows, error: metaAuthError } = shopIds.length
