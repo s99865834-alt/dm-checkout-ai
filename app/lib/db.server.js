@@ -5,6 +5,10 @@ import { commentTrialStatus, effectivePlan } from "./entitlements";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { excludeAutomatedReviewShops } from "./shopify-review-shop";
+import { warnIfTruncated } from "./row-cap";
+import { ADMIN_STORES_PAGE_SIZE, sanitizeAdminStoreSearch } from "./admin-stores";
+
+export { ADMIN_STORES_PAGE_SIZE, sanitizeAdminStoreSearch };
 
 
 export async function getShopByDomain(shopifyDomain) {
@@ -706,16 +710,22 @@ async function countInterceptedCommentReplies(shopId, sinceIso) {
  * conversations per app), for the admin dashboard. Returns a Map of
  * shop_id -> { appId, conversations }.
  */
-export async function getShopsWithToolDetections() {
+export async function getShopsWithToolDetections(shopIds = null) {
+  if (Array.isArray(shopIds) && shopIds.length === 0) return new Map();
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
+  let query = supabase
     .from("tool_detections")
     .select("shop_id, app_id, ig_user_id")
     .gte("last_seen_at", since);
+  if (Array.isArray(shopIds) && shopIds.length) {
+    query = query.in("shop_id", shopIds);
+  }
+  const { data, error } = await query;
   if (error) {
     console.warn("[db] getShopsWithToolDetections error:", error.message);
     return new Map();
   }
+  warnIfTruncated("admin tool_detections page", data);
   const byShopApp = new Map();
   for (const row of data || []) {
     const key = `${row.shop_id}|${row.app_id}`;
@@ -2150,84 +2160,138 @@ export async function getProAnalytics(shopId, options = {}) {
 }
 
 /**
- * Get all currently-installed stores with aggregates for admin dashboard.
- * Only shops with active = true are returned: the app/uninstalled webhook sets
- * active = false, so uninstalled stores drop off the admin automatically (and
- * their revoked tokens no longer trigger 401 lookups). Reinstalls set
- * active = true again via afterAuth, which brings the store back.
- * Shopify automated review / security-scan shops are excluded even if a
- * leftover row exists from before we stopped persisting them.
- * Returns: [{ shop_id, shopify_domain, created_at, active, plan, beta_trial,
- *   messages_sent, revenue, instagram_connected, ig_business_id }]
+ * One page of installed stores for /admin, plus global plan counts.
+ * Unbounded selects here hit PostgREST's 1,000-row cap and stampede Prisma
+ * (one Shopify session per store). Page in SQL, never in JS.
  */
-export async function getAdminDashboardStores() {
-  const { data: shops, error: shopsError } = await supabase
+
+function merchantShopsQuery(select, { count = undefined, head = false } = {}) {
+  return supabase
     .from("shops")
-    .select("id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
+    .select(select, { count, head })
     .eq("active", true)
-    .order("id", { ascending: true });
+    .not("shopify_domain", "ilike", "app-review-%")
+    .not("shopify_domain", "ilike", "cross-shop-%");
+}
+
+function applyStoreSearch(query, q) {
+  const search = sanitizeAdminStoreSearch(q);
+  if (!search) return query;
+  return query.or(
+    `shopify_domain.ilike.%${search}%,store_context_json->>name.ilike.%${search}%`,
+  );
+}
+
+async function getAdminPlanCounts() {
+  const countPlan = async (plan) => {
+    let query = merchantShopsQuery("id", { count: "exact", head: true });
+    if (plan) query = query.eq("plan", plan);
+    const { count, error } = await query;
+    if (error) {
+      console.error("getAdminPlanCounts error", error);
+      return 0;
+    }
+    return count || 0;
+  };
+  const { count: trialing, error: trialError } = await merchantShopsQuery("id", {
+    count: "exact",
+    head: true,
+  }).gt("beta_trial_expires_at", new Date().toISOString());
+  if (trialError) {
+    console.error("getAdminPlanCounts trial error", trialError);
+  }
+  const [FREE, GROWTH, PRO, total] = await Promise.all([
+    countPlan("FREE"),
+    countPlan("GROWTH"),
+    countPlan("PRO"),
+    countPlan(null),
+  ]);
+  return { FREE, GROWTH, PRO, trialing: trialing || 0, total };
+}
+
+export async function getAdminDashboardStores({
+  limit = ADMIN_STORES_PAGE_SIZE,
+  offset = 0,
+  q = "",
+} = {}) {
+  const pageSize = Math.min(Math.max(1, Number(limit) || ADMIN_STORES_PAGE_SIZE), 100);
+  const from = Math.max(0, Number(offset) || 0);
+  const to = from + pageSize - 1;
+  const select =
+    "id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name";
+
+  const run = (columns) =>
+    applyStoreSearch(
+      merchantShopsQuery(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to),
+      q,
+    );
+
+  const { data: shops, error: shopsError, count } = await run(select);
 
   if (shopsError) {
-    // If created_at column doesn't exist, retry without it
     if (shopsError.code === "42703" || shopsError.message?.includes("created_at")) {
-      const { data: shopsFallback, error: fallbackError } = await supabase
-        .from("shops")
-        .select("id, shopify_domain, active, plan, beta_trial_expires_at, review_prompt_count, review_prompt_last_at, review_prompt_result")
-        .eq("active", true)
-        .order("id", { ascending: true });
+      const { data: shopsFallback, error: fallbackError, count: fallbackCount } = await applyStoreSearch(
+        merchantShopsQuery(
+          "id, shopify_domain, active, plan, beta_trial_expires_at, review_prompt_count, review_prompt_last_at, review_prompt_result",
+          { count: "exact" },
+        ).order("id", { ascending: true }).range(from, to),
+        q,
+      );
       if (fallbackError) {
         console.error("getAdminDashboardStores shops error", fallbackError);
         throw fallbackError;
       }
       const withCreatedAt = (shopsFallback || []).map((s) => ({ ...s, created_at: null }));
-      return buildAdminStoresResult(withCreatedAt);
+      const stores = await buildAdminStoresResult(withCreatedAt);
+      const planCounts = await getAdminPlanCounts();
+      return { stores, total: fallbackCount || 0, planCounts };
     }
     console.error("getAdminDashboardStores shops error", shopsError);
     throw shopsError;
   }
 
-  return buildAdminStoresResult(shops || []);
+  warnIfTruncated("admin shops page", shops);
+  const stores = await buildAdminStoresResult(shops || []);
+  const planCounts = await getAdminPlanCounts();
+  return { stores, total: count || 0, planCounts };
 }
 
 export async function getOutboundQueueOverview(filters = {}) {
   const { shopId = null, status = null } = filters;
 
-  let query = supabase
-    .from("outbound_dm_queue")
-    .select("id, status, updated_at");
-
-  if (shopId) {
-    query = query.eq("shop_id", shopId);
-  }
-
-  if (status) {
-    query = query.eq("status", status);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error("getOutboundQueueOverview error", error);
-    throw error;
-  }
-
-  const counts = { pending: 0, processing: 0, sent: 0, failed: 0 };
-  let lastUpdatedAt = null;
-  (data || []).forEach((row) => {
-    if (row.status && counts[row.status] !== undefined) {
-      counts[row.status] += 1;
+  const countStatus = async (value) => {
+    let query = supabase
+      .from("outbound_dm_queue")
+      .select("id", { count: "exact", head: true })
+      .eq("status", value);
+    if (shopId) query = query.eq("shop_id", shopId);
+    const { count, error } = await query;
+    if (error) {
+      console.error("getOutboundQueueOverview error", error);
+      return 0;
     }
-    if (row.updated_at) {
-      if (!lastUpdatedAt || new Date(row.updated_at) > new Date(lastUpdatedAt)) {
-        lastUpdatedAt = row.updated_at;
-      }
-    }
-  });
-
-  return {
-    total: (data || []).length,
-    counts,
-    lastUpdatedAt,
+    return count || 0;
   };
+
+  const statuses = status ? [status] : ["pending", "processing", "sent", "failed"];
+  const counted = await Promise.all(statuses.map((s) => countStatus(s)));
+  const counts = { pending: 0, processing: 0, sent: 0, failed: 0 };
+  statuses.forEach((s, i) => {
+    counts[s] = counted[i];
+  });
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+  let latestQuery = supabase
+    .from("outbound_dm_queue")
+    .select("updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (shopId) latestQuery = latestQuery.eq("shop_id", shopId);
+  if (status) latestQuery = latestQuery.eq("status", status);
+  const { data: latestRows } = await latestQuery;
+  const lastUpdatedAt = latestRows?.[0]?.updated_at || null;
+
+  return { total, counts, lastUpdatedAt };
 }
 
 export async function getOutboundQueueItems(filters = {}) {
@@ -2297,6 +2361,9 @@ async function buildAdminStoresResult(shops) {
   }
 
   const storeNameByShop = new Map();
+  shops.forEach((row) => {
+    if (row.store_name) storeNameByShop.set(row.id, row.store_name);
+  });
   (nameRows || []).forEach((row) => {
     if (row.store_name) storeNameByShop.set(row.id, row.store_name);
   });
@@ -2330,6 +2397,7 @@ async function buildAdminStoresResult(shops) {
   if (mappingError) {
     console.error("getAdminDashboardStores post_product_map error", mappingError);
   }
+  warnIfTruncated("admin post_product_map page", mappingRows);
 
   const mappedPostsByShop = new Map();
   (mappingRows || []).forEach((row) => {
@@ -2348,10 +2416,23 @@ async function buildAdminStoresResult(shops) {
   //
   // Any number added to this dashboard belongs in admin_shop_stats, not in
   // another fetch-and-count. The trap is silent by design.
-  const { data: statRows, error: statsError } = await supabase.rpc("admin_shop_stats");
-
-  if (statsError) {
-    console.error("getAdminDashboardStores admin_shop_stats error", statsError);
+  let statRows = [];
+  if (shopIds.length) {
+    const { data: pageStats, error: statsError } = await supabase.rpc("admin_shop_stats_for", {
+      p_shop_ids: shopIds,
+    });
+    if (statsError) {
+      console.warn("getAdminDashboardStores admin_shop_stats_for error, falling back:", statsError.message);
+      const { data: allStats, error: allError } = await supabase.rpc("admin_shop_stats");
+      if (allError) {
+        console.error("getAdminDashboardStores admin_shop_stats error", allError);
+      } else {
+        const want = new Set(shopIds);
+        statRows = (allStats || []).filter((r) => want.has(r.shop_id));
+      }
+    } else {
+      statRows = pageStats || [];
+    }
   }
 
   const statsByShop = new Map(

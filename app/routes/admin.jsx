@@ -11,13 +11,29 @@ import {
 } from "../lib/admin-auth.server";
 import { COMMENT_TRIAL_DAYS } from "../lib/entitlements";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections } from "../lib/db.server";
+import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
 import { cached } from "../lib/loader-cache.server";
+import { mapWithConcurrency } from "../lib/concurrency";
 
 // Re-assert each connected account's Instagram webhook subscription at most
 // once a day (see ensureInstagramWebhookSubscription for why this matters).
 const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
+// Live Shopify lookups use Prisma sessions (pool of 1). Never fan out more
+// than this, and abandon the rest of the page when the budget expires so
+// /admin cannot block merchant auth. Cache hits in shopify-data are instant.
+const ADMIN_LIVE_CONCURRENCY = 2;
+const ADMIN_LIVE_BUDGET_MS = 8000;
+const ADMIN_META_CONCURRENCY = 3;
+
+function settleTimeout(ms) {
+  return new Promise((resolve) => setTimeout(() => resolve(null), Math.max(0, ms)));
+}
+
+function remainingBudget(startedAt, budgetMs) {
+  return Math.max(0, budgetMs - (Date.now() - startedAt));
+}
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -52,39 +68,37 @@ export const loader = async ({ request }) => {
     const url = new URL(request.url);
     const shopId = url.searchParams.get("queue_shop_id") || null;
     const status = url.searchParams.get("queue_status") || null;
-    const [stores, toolDetections] = await Promise.all([
-      getAdminDashboardStores(),
-      // Contested inboxes: shops where another automation tool has been
-      // replying (detected via outbound echo app_ids in the last 7 days).
-      getShopsWithToolDetections().catch(() => new Map()),
-    ]);
+    const q = url.searchParams.get("q") || "";
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+    const offset = (page - 1) * ADMIN_STORES_PAGE_SIZE;
 
-    // Self-heal: make sure every Instagram-Login account is subscribed to
-    // message/comment webhooks (accounts connected before the subscribe step
-    // existed never were — they look connected but receive nothing). Cached
-    // per shop for a day; best-effort so it can't slow down or break the table.
-    await Promise.allSettled(
-      stores.map((s) =>
-        s.instagram_connected
-          ? cached(`igsub:${s.shop_id}`, IG_SUBSCRIBE_TTL_MS, () =>
-              ensureInstagramWebhookSubscription(s.shop_id),
-            )
-          : Promise.resolve(null)
-      )
+    const { stores, total: storeTotal, planCounts } = await getAdminDashboardStores({
+      limit: ADMIN_STORES_PAGE_SIZE,
+      offset,
+      q,
+    });
+    const toolDetections = await getShopsWithToolDetections(stores.map((s) => s.shop_id)).catch(
+      () => new Map(),
     );
 
-    // Live-lookup Instagram usernames for connected shops in parallel.
-    // Falls back to null on failure so a single bad token doesn't break the table.
-    const igLookups = await Promise.allSettled(
-      stores.map((s) =>
-        s.instagram_connected
-          ? getInstagramAccountInfo(s.ig_business_id, s.shop_id)
-          : Promise.resolve(null)
-      )
+    // Self-heal Instagram webhook subscriptions for this page only. Do not
+    // await: a Meta round-trip per store must not hold /admin or Prisma.
+    mapWithConcurrency(
+      stores.filter((s) => s.instagram_connected),
+      ADMIN_META_CONCURRENCY,
+      (s) => cached(`igsub:${s.shop_id}`, IG_SUBSCRIBE_TTL_MS, () =>
+        ensureInstagramWebhookSubscription(s.shop_id),
+      ),
+    ).catch(() => {});
+
+    const igLookups = await mapWithConcurrency(stores, ADMIN_META_CONCURRENCY, (s) =>
+      s.instagram_connected
+        ? getInstagramAccountInfo(s.ig_business_id, s.shop_id)
+        : Promise.resolve(null),
     );
     const storesWithIg = stores.map((s, i) => {
       const result = igLookups[i];
-      const info = result.status === "fulfilled" ? result.value : null;
+      const info = result?.status === "fulfilled" ? result.value : null;
       return {
         ...s,
         instagram_username: info?.username || null,
@@ -92,61 +106,56 @@ export const loader = async ({ request }) => {
       };
     });
 
-    // Total Shopify sales YTD per store (live Admin API, cached 1h, best-effort).
-    // Each lookup is capped by a timeout so one slow/large store can't hang the
-    // whole dashboard; failures fall back to null and render as "—".
-    const revLookups = await Promise.allSettled(
-      storesWithIg.map((s) =>
-        Promise.race([
-          getStoreTotalRevenueYTD(s.shopify_domain),
-          new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
-        ])
-      )
-    );
-    const storesWithRevenue = storesWithIg.map((s, i) => {
-      const result = revLookups[i];
-      const rev = result.status === "fulfilled" ? result.value : null;
-      return {
-        ...s,
-        total_revenue_ytd: rev ? rev.amount : null,
-        total_revenue_currency: rev ? rev.currencyCode : null,
-        total_revenue_capped: rev ? rev.capped : false,
-      };
+    const liveStarted = Date.now();
+    const liveLookups = await mapWithConcurrency(storesWithIg, ADMIN_LIVE_CONCURRENCY, async (s) => {
+      const left = remainingBudget(liveStarted, ADMIN_LIVE_BUDGET_MS);
+      if (left < 250) return { rev: null, managedTrial: null };
+      const [rev, managedTrial] = await Promise.all([
+        Promise.race([getStoreTotalRevenueYTD(s.shopify_domain), settleTimeout(left)]),
+        Promise.race([getStoreManagedTrial(s.shopify_domain), settleTimeout(left)]),
+      ]);
+      return { rev, managedTrial };
     });
 
-    // Live Shopify Managed Pricing trial status per store. Best-effort and
-    // timeout-capped like the revenue lookup so one slow/bad token can't hang
-    // the dashboard. Merged with the legacy beta trial (from the DB) below.
-    const trialLookups = await Promise.allSettled(
-      storesWithRevenue.map((s) =>
-        Promise.race([
-          getStoreManagedTrial(s.shopify_domain),
-          new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
-        ])
-      )
-    );
-    const storesFinal = storesWithRevenue.map((s, i) => {
-      const result = trialLookups[i];
-      const managedTrial = result.status === "fulfilled" ? result.value : null;
-      // Prefer the live Managed Pricing trial; fall back to a legacy beta trial.
+    const storesFinal = storesWithIg.map((s, i) => {
+      const live = liveLookups[i]?.status === "fulfilled" ? liveLookups[i].value : null;
+      const rev = live?.rev || null;
+      const managedTrial = live?.managedTrial || null;
       const trial = managedTrial
         ? { ...managedTrial, source: "managed" }
         : s.beta_trial
           ? { daysLeft: s.beta_trial.daysLeft, trialEndsAt: s.beta_trial.expiresAt, source: "beta" }
           : null;
-      return { ...s, trial };
+      return {
+        ...s,
+        total_revenue_ytd: rev ? rev.amount : null,
+        total_revenue_currency: rev ? rev.currencyCode : null,
+        total_revenue_capped: rev ? rev.capped : false,
+        trial,
+      };
     });
 
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
     return data(
-      { authenticated: true, stores: storesFinal, queueOverview, queueItems, queueFilters: { shopId, status } },
+      {
+        authenticated: true,
+        stores: storesFinal,
+        storeTotal,
+        storePage: page,
+        storePageSize: ADMIN_STORES_PAGE_SIZE,
+        storeQuery: q,
+        planCounts,
+        queueOverview,
+        queueItems,
+        queueFilters: { shopId, status },
+      },
       { headers: sessionHeaders },
     );
   } catch (err) {
     console.error("Admin dashboard loader error:", err);
     return data(
-      { authenticated: true, stores: [], queueOverview: null, queueItems: [], error: String(err.message) },
+      { authenticated: true, stores: [], storeTotal: 0, storePage: 1, storePageSize: ADMIN_STORES_PAGE_SIZE, storeQuery: "", planCounts: { FREE: 0, GROWTH: 0, PRO: 0, trialing: 0, total: 0 }, queueOverview: null, queueItems: [], queueFilters: { shopId: null, status: null }, error: String(err.message) },
       { headers: sessionHeaders },
     );
   }
@@ -438,7 +447,19 @@ function CommentWindowBadge({ row }) {
 }
 
 export default function Admin() {
-  const { authenticated, stores, queueOverview, queueItems, queueFilters, error: loaderError } = useLoaderData() ?? {};
+  const {
+    authenticated,
+    stores,
+    storeTotal,
+    storePage,
+    storePageSize,
+    storeQuery,
+    planCounts: loaderPlanCounts,
+    queueOverview,
+    queueItems,
+    queueFilters,
+    error: loaderError,
+  } = useLoaderData() ?? {};
   const actionData = useActionData();
 
   const [sort, setSort] = useState({ key: null, dir: "desc" });
@@ -488,16 +509,7 @@ export default function Admin() {
     return map;
   }, [stores]);
 
-  const planCounts = useMemo(() => {
-    const counts = { FREE: 0, GROWTH: 0, PRO: 0, trialing: 0 };
-    (stores || []).forEach((s) => {
-      const p = (s.plan || "FREE").toUpperCase();
-      if (counts[p] === undefined) counts[p] = 0;
-      counts[p] += 1;
-      if (s.trial) counts.trialing += 1;
-    });
-    return counts;
-  }, [stores]);
+  const planCounts = loaderPlanCounts || { FREE: 0, GROWTH: 0, PRO: 0, trialing: 0, total: 0 };
 
   if (!authenticated) {
     return (
@@ -540,6 +552,23 @@ export default function Admin() {
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
+  const pageSize = storePageSize || ADMIN_STORES_PAGE_SIZE;
+  const currentPage = storePage || 1;
+  const pageCount = Math.max(1, Math.ceil((storeTotal || 0) / pageSize));
+  const adminHref = (overrides = {}) => {
+    const p = new URLSearchParams();
+    const nextQ = overrides.q !== undefined ? overrides.q : storeQuery;
+    const nextPage = overrides.page !== undefined ? overrides.page : currentPage;
+    const nextShop = overrides.queueShopId !== undefined ? overrides.queueShopId : queueFilters?.shopId;
+    const nextStatus = overrides.queueStatus !== undefined ? overrides.queueStatus : queueFilters?.status;
+    if (nextQ) p.set("q", nextQ);
+    if (nextPage && nextPage > 1) p.set("page", String(nextPage));
+    if (nextShop) p.set("queue_shop_id", nextShop);
+    if (nextStatus) p.set("queue_status", nextStatus);
+    const qs = p.toString();
+    return qs ? `/admin?${qs}` : "/admin";
+  };
+
   return (
     <div style={styles.page} className="adminPage">
       <ResponsiveStyles />
@@ -557,9 +586,9 @@ export default function Admin() {
         <p style={styles.error}>Error loading data: {loaderError}</p>
       )}
 
-      {stores && stores.length > 0 && (
+      {planCounts && planCounts.total > 0 && (
         <div style={styles.storeSummary}>
-          <span style={styles.summaryPill}>{stores.length} stores</span>
+          <span style={styles.summaryPill}>{planCounts.total} stores</span>
           <span style={styles.summaryPill}>{planCounts.FREE} Free</span>
           <span style={styles.summaryPill}>{planCounts.GROWTH} Growth</span>
           <span style={styles.summaryPill}>{planCounts.PRO} Pro</span>
@@ -568,8 +597,24 @@ export default function Admin() {
               {planCounts.trialing} on trial
             </span>
           )}
+          {storeQuery && (
+            <span style={styles.summaryPill}>{storeTotal} matching</span>
+          )}
         </div>
       )}
+
+      <Form method="get" style={styles.searchForm}>
+        <input type="hidden" name="queue_shop_id" value={queueFilters?.shopId || ""} />
+        <input type="hidden" name="queue_status" value={queueFilters?.status || ""} />
+        <input
+          type="search"
+          name="q"
+          defaultValue={storeQuery || ""}
+          placeholder="Search store name or domain"
+          style={styles.searchInput}
+        />
+        <button type="submit" style={styles.filterBtn}>Search</button>
+      </Form>
 
       <div style={styles.tableWrap} className="adminTableWrap">
         <table style={styles.table} className="adminTable">
@@ -666,7 +711,7 @@ export default function Admin() {
             ) : (
               <tr>
                 <td colSpan={9} style={styles.tdEmpty}>
-                  No stores yet.
+                  {storeQuery ? "No stores match that search." : "No stores yet."}
                 </td>
               </tr>
             )}
@@ -674,9 +719,28 @@ export default function Admin() {
         </table>
       </div>
 
+      {storeTotal > pageSize && (
+        <div style={styles.pager}>
+          {currentPage > 1 ? (
+            <a href={adminHref({ page: currentPage - 1 })} style={styles.pagerLink}>Previous</a>
+          ) : (
+            <span style={styles.pagerMuted}>Previous</span>
+          )}
+          <span>
+            Page {currentPage} of {pageCount}
+          </span>
+          {currentPage < pageCount ? (
+            <a href={adminHref({ page: currentPage + 1 })} style={styles.pagerLink}>Next</a>
+          ) : (
+            <span style={styles.pagerMuted}>Next</span>
+          )}
+        </div>
+      )}
+
       <div style={styles.sectionHeader}>
         <h2 style={styles.sectionTitle}>DM Queue</h2>
         <Form method="get" style={styles.filters} className="adminFilters">
+          <input type="hidden" name="q" value={storeQuery || ""} />
           <label style={styles.filterLabel} className="adminFilterLabel">
             Shop
             <select name="queue_shop_id" defaultValue={queueFilters?.shopId || ""} style={styles.select} className="adminSelect">
@@ -910,6 +974,37 @@ const styles = {
     border: "none",
     borderRadius: "6px",
     cursor: "pointer",
+  },
+  searchForm: {
+    display: "flex",
+    gap: "0.75rem",
+    alignItems: "center",
+    margin: "0 0 1rem 0",
+    flexWrap: "wrap",
+  },
+  searchInput: {
+    padding: "0.4rem 0.6rem",
+    borderRadius: "6px",
+    border: "1px solid #334155",
+    backgroundColor: "#0f172a",
+    color: "#e2e8f0",
+    minWidth: "240px",
+    fontSize: "0.875rem",
+  },
+  pager: {
+    display: "flex",
+    gap: "1rem",
+    alignItems: "center",
+    margin: "0.75rem 0 1.5rem 0",
+    fontSize: "0.875rem",
+    color: "#94a3b8",
+  },
+  pagerLink: {
+    color: "#e2e8f0",
+    fontWeight: 600,
+  },
+  pagerMuted: {
+    color: "#475569",
   },
   select: {
     padding: "0.35rem 0.5rem",
