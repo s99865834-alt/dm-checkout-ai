@@ -9,6 +9,7 @@ import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { expandSizeAliases } from "./variant-match";
 import { isShopNotFoundError, isShopifyAutomatedReviewShop } from "./shopify-review-shop";
+import { resolveCustomerFacingEmail } from "./contact-email";
 
 // ---------------------------------------------------------------------------
 // Background Admin API access
@@ -289,6 +290,53 @@ function stripHtml(html) {
 const PAGE_BODY_MAX_CHARS = 1800;
 /** Max number of pages to include body for in AI context. */
 const PAGE_BODY_MAX_PAGES = 5;
+/** Storefront HTML fetch for footer emails. Must not block a reply. */
+const STOREFRONT_EMAIL_FETCH_MS = 2000;
+const STOREFRONT_EMAIL_MAX_CHARS = 200000;
+
+function summarizePage(p, baseStoreUrl) {
+  if (!p) return p;
+  let bodySummary = null;
+  if (p.body) {
+    const plain = stripHtml(p.body);
+    if (plain) {
+      bodySummary = plain.length > PAGE_BODY_MAX_CHARS
+        ? plain.substring(0, PAGE_BODY_MAX_CHARS) + "..."
+        : plain;
+    }
+  }
+  const onlineStoreUrl = baseStoreUrl ? `${baseStoreUrl}/pages/${p.handle}` : null;
+  return { ...p, onlineStoreUrl, bodySummary };
+}
+
+function mergePagesByHandle(primary, extra) {
+  const byHandle = new Map();
+  for (const page of [...(extra || []), ...(primary || [])]) {
+    if (!page?.handle) continue;
+    if (!byHandle.has(page.handle)) byHandle.set(page.handle, page);
+  }
+  return [...byHandle.values()];
+}
+
+async function fetchStorefrontHtml(url) {
+  if (!url) return "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STOREFRONT_EMAIL_FETCH_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { "user-agent": "SocialReplAI/1.0 (+https://www.socialrepl.ai)" },
+    });
+    if (!res.ok) return "";
+    const text = await res.text();
+    return text.slice(0, STOREFRONT_EMAIL_MAX_CHARS);
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Get Shopify store information including policies using shop domain
@@ -313,6 +361,7 @@ export async function getShopifyStoreInfo(shopDomain) {
         shop {
           name
           email
+          contactEmail
           description
           primaryDomain {
             url
@@ -328,7 +377,14 @@ export async function getShopifyStoreInfo(shopDomain) {
         productsCount(limit: null) {
           count
         }
-        pages(first: 10) {
+        pages(first: 20) {
+          nodes {
+            title
+            handle
+            body
+          }
+        }
+        contactPages: pages(first: 10, query: "contact") {
           nodes {
             title
             handle
@@ -348,7 +404,10 @@ export async function getShopifyStoreInfo(shopDomain) {
 
     const shopData = response?.data?.shop;
     const productsCount = response?.data?.productsCount?.count ?? null;
-    const rawPages = response?.data?.pages?.nodes || [];
+    const rawPages = mergePagesByHandle(
+      response?.data?.pages?.nodes || [],
+      response?.data?.contactPages?.nodes || [],
+    );
     const products = response?.data?.products?.nodes || [];
     const primaryDomain = shopData?.primaryDomain || null;
     const baseStoreUrl = primaryDomain?.url ? primaryDomain.url.replace(/\/$/, "") : null;
@@ -362,25 +421,22 @@ export async function getShopifyStoreInfo(shopDomain) {
     const termsOfService = policyByType("TERMS_OF_SERVICE");
     const shippingPolicy = policyByType("SHIPPING_POLICY");
 
-    // Build page URLs and optional body summary (strip HTML, truncate; read_content only)
-    const pages = rawPages.map((p) => {
-      if (!p) return p;
-      let bodySummary = null;
-      if (p.body) {
-        const plain = stripHtml(p.body);
-        if (plain) {
-          bodySummary = plain.length > PAGE_BODY_MAX_CHARS
-            ? plain.substring(0, PAGE_BODY_MAX_CHARS) + "..."
-            : plain;
-        }
-      }
-      const onlineStoreUrl = baseStoreUrl ? `${baseStoreUrl}/pages/${p.handle}` : null;
-      return { ...p, onlineStoreUrl, bodySummary };
+    const pages = rawPages.map((p) => summarizePage(p, baseStoreUrl));
+    const homepageHtml = await fetchStorefrontHtml(baseStoreUrl);
+    const resolvedEmail = resolveCustomerFacingEmail({
+      pages,
+      homepageHtml,
+      contactEmail: shopData?.contactEmail || null,
+      shopEmail: shopData?.email || null,
+      storeHost: primaryDomain?.host || null,
     });
 
     return {
       name: shopData?.name || null,
-      email: shopData?.email || null,
+      email: resolvedEmail.email,
+      emailSource: resolvedEmail.source,
+      ownerEmail: shopData?.email || null,
+      contactEmail: shopData?.contactEmail || null,
       description: shopData?.description || null,
       primaryDomain,
       refundPolicy: refundPolicy || null,
@@ -616,6 +672,47 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
     return product;
   } catch (error) {
     console.error("[shopify-data] Error fetching product context:", error);
+    return null;
+  }
+}
+
+/**
+ * Title + featured image for DM link previews. Kept tiny so Instagram's
+ * crawler is not waiting on the full product-context query.
+ *
+ * @param {string} shopDomain
+ * @param {string} productId
+ * @returns {Promise<{title: string|null, imageUrl: string|null}|null>}
+ */
+export async function getProductOgPreview(shopDomain, productId) {
+  try {
+    if (!shopDomain || !productId) return null;
+    productId = toAdminGid(productId, "Product");
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) return null;
+    const response = await shopGraphql(
+      admin,
+      `query ProductOgPreview($productId: ID!) {
+        product(id: $productId) {
+          title
+          featuredImage {
+            url
+          }
+        }
+      }`,
+      { productId },
+    );
+    const product = response?.data?.product;
+    if (!product) return null;
+    return {
+      title: product.title || null,
+      imageUrl: product.featuredImage?.url || null,
+    };
+  } catch (error) {
+    if (isExpectedAdminApiMiss(error)) return null;
+    logger.debug(
+      `[shopify-data] product OG preview failed for ${shopDomain}: ${error?.message || error}`,
+    );
     return null;
   }
 }

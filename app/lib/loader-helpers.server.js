@@ -30,7 +30,7 @@ async function maybeRefreshStoreContext(shop, shopDomain) {
   try {
     // Check whether the cached value is still fresh (re-use the TTL-aware getter)
     const cached = await getStoredStoreContext(shop.id, STORE_CONTEXT_REFRESH_TTL_MS);
-    if (cached) return; // fresh — nothing to do
+    if (cached?.emailSource) return; // fresh and already customer-facing email
     const storeInfo = await getShopifyStoreInfo(shopDomain);
     if (storeInfo) {
       await saveStoredStoreContext(shop.id, storeInfo);

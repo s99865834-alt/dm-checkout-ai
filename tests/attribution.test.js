@@ -35,7 +35,7 @@ vi.mock("../app/lib/shopify-data.server", () => ({
 
 import { buildCheckoutLink, extractLinkIdFromNoteAttributes } from "../app/lib/links.server";
 import { isCheckoutLinkId } from "../app/lib/checkout-link-id";
-import { resolveTrackedLink } from "../app/lib/click-redirect.server";
+import { resolveTrackedLink, serveTrackedLink } from "../app/lib/click-redirect.server";
 import { logClick } from "../app/lib/db.server";
 
 const shop = { id: "shop-1", shopify_domain: "test-store.myshopify.com" };
@@ -115,6 +115,29 @@ describe("click logging by link type", () => {
     logClick.mockRejectedValueOnce(new Error("db down"));
     const url = await resolveTrackedLink("info_236a994b49a0", request(BROWSER_UA));
     expect(url).toBe("https://store.example.com/products/x");
+  });
+
+  it("serves Open Graph HTML to preview crawlers instead of Redirecting", async () => {
+    const res = await serveTrackedLink("mEs7Sicv", request("facebookexternalhit/1.1"));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("og:title");
+    expect(html).not.toMatch(/Redirecting/);
+    expect(html).toContain("Continue to checkout");
+  });
+
+  it("302s a real browser on the short-link host", async () => {
+    const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://store.example.com/products/x");
+  });
+
+  it("returns HTML for a real browser on the app proxy so cart cookies survive", async () => {
+    const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA), { alwaysHtml: true });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("window.location.replace");
+    expect(html).not.toMatch(/Redirecting/);
   });
 });
 
