@@ -28,8 +28,8 @@ const { getStoredStoreContextWithAge, saveStoredStoreContext } = await import(
 const { getShopifyStoreInfo } = await import("../app/lib/shopify-data.server");
 
 const shop = { id: "shop-1", shopify_domain: "test-store.myshopify.com" };
-const CACHED = { name: "Test Store", email: "owner@test.com" };
-const FRESH = { name: "Test Store", email: "new-owner@test.com" };
+const CACHED = { name: "Test Store", email: "owner@test.com", emailSource: "shopEmail" };
+const FRESH = { name: "Test Store", email: "info@test.com", emailSource: "page" };
 
 /** Let the un-awaited refresh run. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -62,6 +62,32 @@ describe("getStoreContextForReply", () => {
 
     expect(context).toBe(CACHED);
     expect(getShopifyStoreInfo).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a fresh cache that still has the owner email and no emailSource", async () => {
+    const legacy = { name: "Test Store", email: "katie@lovebyluna.co" };
+    getStoredStoreContextWithAge.mockResolvedValue({ context: legacy, stale: false });
+
+    await getStoreContextForReply(shop);
+    await settle();
+
+    expect(getShopifyStoreInfo).toHaveBeenCalledWith(shop.shopify_domain);
+  });
+
+  it("uses a contact-page email from the cached snapshot immediately", async () => {
+    const legacy = {
+      name: "Love By Luna",
+      email: "katie@lovebyluna.co",
+      primaryDomain: { host: "lovebyluna.co" },
+      pages: [
+        { title: "Contact", handle: "contact", bodySummary: "Email info@lovebyluna.co" },
+      ],
+    };
+    getStoredStoreContextWithAge.mockResolvedValue({ context: legacy, stale: false });
+
+    const context = await getStoreContextForReply(shop);
+    expect(context.email).toBe("info@lovebyluna.co");
+    expect(context.emailSource).toBe("page");
   });
 
   it("refreshes when there is no cache at all", async () => {

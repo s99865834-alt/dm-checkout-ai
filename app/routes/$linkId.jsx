@@ -5,16 +5,14 @@
  * srai.link, socialrepl.ai). Merchant-domain links go through the app proxy
  * route (proxy.go.$linkId.jsx) instead.
  * c.$linkId.jsx remains for backward compatibility with /c/{id}.
+ *
+ * Preview crawlers get the HTML bounce (Open Graph tags) instead of a 302,
+ * because Instagram reads the first response body for the DM card.
  */
-import { redirect } from "react-router";
-import { resolveTrackedLink } from "../lib/click-redirect.server";
+import { serveTrackedLink } from "../lib/click-redirect.server";
 
 export async function loader({ params, request }) {
-  const url = await resolveTrackedLink(params.linkId, request);
-  if (!url) {
-    return new Response("Not Found", { status: 404 });
-  }
-  return redirect(url, 302);
+  return serveTrackedLink(params.linkId, request);
 }
 
 export async function action() {
