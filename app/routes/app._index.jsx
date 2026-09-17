@@ -10,6 +10,9 @@ import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
 import { PLANS } from "../lib/plans";
+import { shouldRevalidate } from "../lib/home-should-revalidate";
+
+export { shouldRevalidate };
 
 // Comments in a week before the unmapped-posts warning is worth showing. A
 // store with a handful of comments has little to gain and doesn't need nagging;
@@ -92,25 +95,6 @@ async function loadHomeFeed({ shopId, admin, igBusinessId, hasIg }) {
       : Promise.resolve(null),
   ]);
   return { shopifyProducts, instagramInfo, mediaData };
-}
-
-// Read-only home actions must not re-run the loader. The first-load
-// message-access re-check used to POST, revalidate, and abandon the in-flight
-// Instagram feed. Pagination and product search have the same problem.
-const HOME_FEED_ACTIONS_NO_REVALIDATE = new Set([
-  "load-home-feed",
-  "load-more-media",
-  "search-products",
-  "check-message-access",
-  "record-review-prompt",
-]);
-
-export function shouldRevalidate({ formData, defaultShouldRevalidate }) {
-  const actionType = formData?.get?.("action");
-  if (actionType && HOME_FEED_ACTIONS_NO_REVALIDATE.has(actionType)) {
-    return false;
-  }
-  return defaultShouldRevalidate;
 }
 
 export const loader = async ({ request }) => {
