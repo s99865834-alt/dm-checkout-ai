@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldRevalidate } from "../app/routes/app._index.jsx";
+import { shouldRevalidate } from "../app/lib/home-should-revalidate.js";
 
 function formDataWith(action) {
   return {
