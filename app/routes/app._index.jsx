@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useState, useRef } from "react";
-import { Await, useFetcher, useSearchParams, useNavigate, useLoaderData, useRouteError } from "react-router";
+import { useEffect, useState, useRef } from "react";
+import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
@@ -43,13 +43,76 @@ const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
 // again" action busts this cache for instant feedback.
 const MSG_ACCESS_TTL_MS = 10 * 60 * 1000;
 
-// The loader is split for Core Web Vitals (LCP < 2.5s):
-//   - Awaited: everything the shell + banners need — cheap DB reads plus the
-//     (cached) trial status. Banners MUST come from awaited data so they're in
-//     the first paint and never pop in later (CLS).
-//   - Streamed (`deferred`): the slow external calls — Shopify product catalog
-//     and Instagram account/media. The page renders immediately with a
-//     skeleton grid and these stream in when ready.
+// Product catalog + Instagram media are slow external calls. They used to
+// stream via a deferred loader promise and <Await>, but that hangs in the
+// Shopify admin iframe on first load: the shell paints, the stream never
+// settles, and the skeleton stays up until a refresh (when the cache is warm
+// and the data is inlined). The loader still warms the cache; the grid loads
+// through a POST after hydrate, which App Bridge handles reliably.
+async function loadHomeFeed({ shopId, admin, igBusinessId, hasIg }) {
+  if (!shopId) return { shopifyProducts: [], instagramInfo: null, mediaData: null };
+  const [shopifyProducts, instagramInfo, mediaData] = await Promise.all([
+    cached(`products:${shopId}`, PRODUCTS_TTL_MS, async () => {
+      try {
+        const response = await admin.graphql(`
+          query getProducts($first: Int!) {
+            products(first: $first) {
+              nodes {
+                id
+                title
+                handle
+                variants(first: 100) {
+                  nodes {
+                    id
+                    title
+                    price
+                    selectedOptions { name value }
+                  }
+                }
+              }
+            }
+          }
+        `, { variables: { first: 50 } });
+        const json = await response.json();
+        return json.data?.products?.nodes || [];
+      } catch (err) {
+        console.error("[home] Error fetching Shopify products:", err.message);
+        return [];
+      }
+    }),
+    igBusinessId
+      ? cached(`iginfo:${shopId}`, IG_TTL_MS, () =>
+          getInstagramAccountInfo(igBusinessId, shopId),
+        ).catch(() => null)
+      : Promise.resolve(null),
+    hasIg
+      ? cached(`igmedia:${shopId}`, IG_TTL_MS, () =>
+          getInstagramMedia(igBusinessId || "", shopId, { limit: 25 }),
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  return { shopifyProducts, instagramInfo, mediaData };
+}
+
+// Read-only home actions must not re-run the loader. The first-load
+// message-access re-check used to POST, revalidate, and abandon the in-flight
+// Instagram feed. Pagination and product search have the same problem.
+const HOME_FEED_ACTIONS_NO_REVALIDATE = new Set([
+  "load-home-feed",
+  "load-more-media",
+  "search-products",
+  "check-message-access",
+  "record-review-prompt",
+]);
+
+export function shouldRevalidate({ formData, defaultShouldRevalidate }) {
+  const actionType = formData?.get?.("action");
+  if (actionType && HOME_FEED_ACTIONS_NO_REVALIDATE.has(actionType)) {
+    return false;
+  }
+  return defaultShouldRevalidate;
+}
+
 export const loader = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
 
@@ -158,14 +221,10 @@ export const loader = async ({ request }) => {
     }
   }
 
-  // Slow externals, streamed to the client as one promise (not awaited here).
-  // Each leg is failure-safe and cached so repeat loads inside the TTL are
-  // instant. Bundled into a single promise so the posts section renders once.
   const shopId = shop?.id;
   const igBusinessId = metaAuth?.ig_business_id || null;
   const hasIg = !!metaAuth && (!!igBusinessId || metaAuth.auth_type === "instagram");
-  const deferred = (async () => {
-    if (!shopId) return { shopifyProducts: [], instagramInfo: null, mediaData: null };
+  if (shopId) {
     // Self-heal the per-account webhook subscription (daily, best-effort,
     // off the critical path). Result is unused; failures resolve to null.
     if (hasIg) {
@@ -173,50 +232,12 @@ export const loader = async ({ request }) => {
         ensureInstagramWebhookSubscription(shopId),
       ).catch(() => null);
     }
-    const [shopifyProducts, instagramInfo, mediaData] = await Promise.all([
-      cached(`products:${shopId}`, PRODUCTS_TTL_MS, async () => {
-        try {
-          const response = await admin.graphql(`
-            query getProducts($first: Int!) {
-              products(first: $first) {
-                nodes {
-                  id
-                  title
-                  handle
-                  variants(first: 100) {
-                    nodes {
-                      id
-                      title
-                      price
-                      selectedOptions { name value }
-                    }
-                  }
-                }
-              }
-            }
-          `, { variables: { first: 50 } });
-          const json = await response.json();
-          return json.data?.products?.nodes || [];
-        } catch (err) {
-          console.error("[home] Error fetching Shopify products:", err.message);
-          return [];
-        }
-      }),
-      igBusinessId
-        ? cached(`iginfo:${shopId}`, IG_TTL_MS, () =>
-            getInstagramAccountInfo(igBusinessId, shopId),
-          ).catch(() => null)
-        : Promise.resolve(null),
-      hasIg
-        ? cached(`igmedia:${shopId}`, IG_TTL_MS, () =>
-            getInstagramMedia(igBusinessId || "", shopId, { limit: 25 }),
-          ).catch(() => null)
-        : Promise.resolve(null),
-    ]);
-    return { shopifyProducts, instagramInfo, mediaData };
-  })();
+    // Warm the feed cache while the shell ships. Same keys the client
+    // load-home-feed action reads, so the grid usually hits cache.
+    void loadHomeFeed({ shopId, admin, igBusinessId, hasIg });
+  }
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, deferred };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments };
 };
 
 export const action = async ({ request }) => {
@@ -414,6 +435,21 @@ export const action = async ({ request }) => {
       }
     }
 
+    // ── First page of Instagram posts + product catalog (home grid) ──
+    if (actionType === "load-home-feed") {
+      if (!shop?.id) return { error: "Shop not found" };
+      try {
+        const metaAuthRow = await getMetaAuthWithRefresh(shop.id);
+        const igBusinessId = metaAuthRow?.ig_business_id || null;
+        const hasIg = !!metaAuthRow && (!!igBusinessId || metaAuthRow.auth_type === "instagram");
+        const data = await loadHomeFeed({ shopId: shop.id, admin, igBusinessId, hasIg });
+        return { success: true, actionType: "load-home-feed", ...data };
+      } catch (err) {
+        console.error("[home] Error loading Instagram feed:", err);
+        return { error: "Failed to load your Instagram posts. Reload the page to try again." };
+      }
+    }
+
     // ── Load more Instagram posts (cursor pagination) ──────────────────────
     if (actionType === "load-more-media") {
       if (!shop?.id) return { error: "Shop not found" };
@@ -524,7 +560,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, deferred } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -557,6 +593,17 @@ export default function Index() {
   const automationFetcher = useFetcher();   // Automation settings + brand voice
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
   const defaultProductFetcher = useFetcher(); // Default product picker (PRO)
+  const feedFetcher = useFetcher(); // Instagram grid + product catalog
+  const feedKickoff = useRef(false);
+
+  // Instagram posts + products load after hydrate. Streaming them from the
+  // document hangs in the Shopify admin iframe on first visit.
+  useEffect(() => {
+    if (!isConnected || feedKickoff.current) return;
+    feedKickoff.current = true;
+    feedFetcher.submit({ action: "load-home-feed" }, { method: "post" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
 
   // Which half of the Instagram section is showing (Pro only; see showStories).
   const [igTab, setIgTab] = useState("posts");
@@ -691,51 +738,44 @@ export default function Index() {
   // instead, which is the honest place to make that argument.
   const showStories = isConnected && plan?.defaultProduct;
 
-  // Both panels await the same deferred promise, so mounting both costs one
-  // fetch. The skeleton is fixed-size to keep first paint fast (LCP) with no
-  // layout shift when the real grid arrives (CLS).
-  const postsPanel = (
-    <Suspense fallback={<PostsSectionSkeleton />}>
-      <Await
-        resolve={deferred}
-        errorElement={
-          <span className="srCardDesc">
-            Couldn&apos;t load your Instagram posts. Reload the page to try again.
-          </span>
-        }
-      >
-        {(resolved) => (
-          <PostsSection
-            mediaData={resolved?.mediaData}
-            shopifyProducts={resolved?.shopifyProducts || []}
-            productMappings={productMappings}
-            disabledPostIds={settings?.disabled_post_ids || []}
-            postFetcher={postFetcher}
-          />
-        )}
-      </Await>
-    </Suspense>
+  const homeFeed = feedFetcher.data?.actionType === "load-home-feed" && feedFetcher.data.success
+    ? feedFetcher.data
+    : null;
+  const homeFeedError = feedFetcher.data?.error;
+  const retryHomeFeed = () => {
+    feedKickoff.current = true;
+    feedFetcher.submit({ action: "load-home-feed" }, { method: "post" });
+  };
+
+  const postsPanel = homeFeedError && !homeFeed ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <span className="srCardDesc">{homeFeedError}</span>
+      <s-button variant="secondary" size="small" onClick={retryHomeFeed} disabled={feedFetcher.state !== "idle"}>
+        {feedFetcher.state !== "idle" ? "Loading…" : "Retry"}
+      </s-button>
+    </div>
+  ) : homeFeed ? (
+    <PostsSection
+      mediaData={homeFeed.mediaData ?? { data: [], paging: {} }}
+      shopifyProducts={homeFeed.shopifyProducts || []}
+      productMappings={productMappings}
+      disabledPostIds={settings?.disabled_post_ids || []}
+      postFetcher={postFetcher}
+    />
+  ) : (
+    <PostsSectionSkeleton />
   );
 
-  const storiesPanel = (
-    <Suspense fallback={<span className="srCardDesc">Loading your products…</span>}>
-      <Await
-        resolve={deferred}
-        errorElement={
-          <span className="srCardDesc">
-            Couldn&apos;t load your products. Reload the page to try again.
-          </span>
-        }
-      >
-        {(resolved) => (
-          <DefaultProductSection
-            settings={settings}
-            shopifyProducts={resolved?.shopifyProducts || []}
-            fetcher={defaultProductFetcher}
-          />
-        )}
-      </Await>
-    </Suspense>
+  const storiesPanel = homeFeedError && !homeFeed ? (
+    <span className="srCardDesc">Couldn&apos;t load your products. Reload the page to try again.</span>
+  ) : homeFeed ? (
+    <DefaultProductSection
+      settings={settings}
+      shopifyProducts={homeFeed.shopifyProducts || []}
+      fetcher={defaultProductFetcher}
+    />
+  ) : (
+    <span className="srCardDesc">Loading your products…</span>
   );
 
   return (
@@ -1087,13 +1127,7 @@ export default function Index() {
                     <div className="srIGConnectedInfo">
                       <span className="srCardTitle">
                         Connected
-                        {/* Username streams in with the deferred data; the row
-                            height is fixed so it appends without layout shift. */}
-                        <Suspense fallback={null}>
-                          <Await resolve={deferred} errorElement={null}>
-                            {(d) => (d?.instagramInfo?.username ? ` · @${d.instagramInfo.username}` : "")}
-                          </Await>
-                        </Suspense>
+                        {homeFeed?.instagramInfo?.username ? ` · @${homeFeed.instagramInfo.username}` : ""}
                       </span>
                     </div>
                     <s-button
@@ -1370,7 +1404,7 @@ export default function Index() {
         /* Pro: posts and stories are two halves of "which product does this
            message mean", so they share one section. Both panels mount and one
            is hidden rather than swapped out, so switching tabs keeps an open
-           product picker and costs no refetch (they await the same promise). */
+           product picker and costs no refetch (they share one home-feed load). */
         <s-section heading="Your Instagram">
           <div className="srTabs" role="tablist" aria-label="Instagram automation">
             <button

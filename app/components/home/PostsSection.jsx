@@ -5,8 +5,8 @@ import { useFetcher, useRevalidator } from "react-router";
  * "Your Instagram Posts" section of the app home page.
  *
  * Split out of app/routes/app._index.jsx for two reasons:
- * 1. Streaming: media + products arrive via a deferred loader promise, so this
- *    whole section renders inside <Suspense> after the page shell is visible.
+ * 1. The media + products load after the page shell, so this section shows a
+ *    skeleton until that POST returns.
  * 2. INP: the product-search input state lives in <ProductPicker>, so typing
  *    re-renders only the open picker instead of the entire home page.
  */
@@ -30,9 +30,9 @@ const variantIdMatch = (stored, nodes) => {
 };
 
 /**
- * Fixed-dimension placeholder rendered while the deferred media/products data
- * streams in. Mirrors the real grid (same CSS classes, square image slots) so
- * the swap to real content causes no layout shift.
+ * Fixed-dimension placeholder rendered while Instagram media and products
+ * load. Mirrors the real grid (same CSS classes, square image slots) so the
+ * swap to real content causes no layout shift.
  */
 export function PostsSectionSkeleton() {
   return (

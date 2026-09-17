@@ -9,6 +9,7 @@
  */
 
 const _store = new Map(); // key -> { value, at, ttlMs }
+const _inflight = new Map(); // key -> Promise (coalesce concurrent misses)
 
 // Drop expired entries occasionally so long-lived processes don't accumulate
 // stale keys (e.g. uninstalled shops). Cheap: runs at most once a minute.
@@ -34,9 +35,21 @@ export async function cached(key, ttlMs, fn) {
   if (entry && Date.now() - entry.at < entry.ttlMs) {
     return entry.value;
   }
-  const value = await fn();
-  _store.set(key, { value, at: Date.now(), ttlMs });
-  return value;
+  const pending = _inflight.get(key);
+  if (pending) return pending;
+  const request = Promise.resolve()
+    .then(() => fn())
+    .then((value) => {
+      _store.set(key, { value, at: Date.now(), ttlMs });
+      _inflight.delete(key);
+      return value;
+    })
+    .catch((err) => {
+      _inflight.delete(key);
+      throw err;
+    });
+  _inflight.set(key, request);
+  return request;
 }
 
 /**
@@ -47,5 +60,8 @@ export async function cached(key, ttlMs, fn) {
 export function invalidateCached(prefix) {
   for (const key of _store.keys()) {
     if (key.startsWith(prefix)) _store.delete(key);
+  }
+  for (const key of _inflight.keys()) {
+    if (key.startsWith(prefix)) _inflight.delete(key);
   }
 }
