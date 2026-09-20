@@ -18,6 +18,7 @@
 
 import { getStoredStoreContextWithAge, saveStoredStoreContext } from "./db.server";
 import { getShopifyStoreInfo } from "./shopify-data.server";
+import { resolveCustomerFacingEmail } from "./contact-email";
 import logger from "./logger.server";
 
 const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -35,6 +36,29 @@ const refreshing = new Set();
 const lastChecked = new Map();
 
 /**
+ * Cached snapshots from before we resolved customer-facing emails still have
+ * shop.email (the owner inbox) and no emailSource. Re-score from page bodies
+ * already in the snapshot so this reply can use info@ without waiting, and
+ * treat missing emailSource as stale so the next refresh picks up footer /
+ * contactEmail too.
+ */
+export function withResolvedContactEmail(context) {
+  if (!context || context.emailSource) return context;
+  const resolved = resolveCustomerFacingEmail({
+    pages: context.pages || [],
+    contactEmail: context.contactEmail || null,
+    shopEmail: context.ownerEmail || context.email || null,
+    storeHost: context.primaryDomain?.host || null,
+  });
+  if (!resolved.email) return context;
+  return { ...context, email: resolved.email, emailSource: resolved.source };
+}
+
+function shouldRefreshStoreContext(context, stale) {
+  return stale || !context || !context.emailSource;
+}
+
+/**
  * The store context to answer with, refreshing in the background when stale.
  *
  * @param {{id: string, shopify_domain?: string}} shop
@@ -47,9 +71,9 @@ export async function getStoreContextForReply(shop) {
 
   // No cache at all is also worth a refresh. Callers keep their own live
   // fallback for answering the message in hand.
-  if (stale || !context) startRefresh(shop);
+  if (shouldRefreshStoreContext(context, stale)) startRefresh(shop);
 
-  return context;
+  return withResolvedContactEmail(context);
 }
 
 /**
@@ -77,7 +101,7 @@ export function ensureStoreContextFresh(shop) {
   (async () => {
     try {
       const { context, stale } = await getStoredStoreContextWithAge(shop.id, REFRESH_AFTER_MS);
-      if (stale || !context) startRefresh(shop);
+      if (shouldRefreshStoreContext(context, stale)) startRefresh(shop);
     } catch (err) {
       logger.debug(`[store-context] Freshness check failed for ${shop.shopify_domain}: ${err?.message || err}`);
     }
