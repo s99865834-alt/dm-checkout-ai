@@ -34,6 +34,11 @@ describe("isLinkPreviewCrawler", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not treat Node fetch or GitHub Actions as crawlers", () => {
+    expect(isLinkPreviewCrawler(requestWithUa("node"))).toBe(false);
+    expect(isLinkPreviewCrawler(requestWithUa("undici"))).toBe(false);
+  });
 });
 
 describe("buildTrackedLinkPageHtml", () => {
