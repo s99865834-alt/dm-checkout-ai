@@ -8,15 +8,22 @@
  * Same HTML for humans and crawlers: OG tags plus an instant meta-refresh.
  * Different HTML for the crawler would be cloaking. We only *fetch* extra
  * product title/image when the UA is a preview bot, so real clicks stay fast.
+ *
+ * Do not use the generic isbot() list here. That flags Node, curl, and
+ * GitHub Actions fetch, which would serve OG HTML instead of a 302 and
+ * break the production smoke test. Only named unfurl crawlers need the card.
  */
 
-import { isbot } from "isbot";
-
-const META_PREVIEW_UA = [
+const LINK_PREVIEW_UA = [
   "facebookexternalhit",
   "facebot",
   "meta-externalagent",
   "meta-externalfetcher",
+  "twitterbot",
+  "linkedinbot",
+  "slackbot",
+  "whatsapp",
+  "discordbot",
 ];
 
 export const DEFAULT_LINK_PREVIEW = {
@@ -29,8 +36,7 @@ export function isLinkPreviewCrawler(request) {
   const ua = request?.headers?.get?.("user-agent") || "";
   if (!ua.trim()) return false;
   const lower = ua.toLowerCase();
-  if (META_PREVIEW_UA.some((p) => lower.includes(p))) return true;
-  return isbot(ua);
+  return LINK_PREVIEW_UA.some((p) => lower.includes(p));
 }
 
 export function escapeHtml(s) {

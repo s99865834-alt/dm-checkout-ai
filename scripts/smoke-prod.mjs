@@ -55,10 +55,32 @@ await check("app-proxy link serves a real redirect page (blank-page guard)", asy
 });
 
 await check("root short link 302-redirects to destination", async () => {
-  const res = await fetch(`${BASE}/${CANARY}`, { redirect: "manual" });
+  const res = await fetch(`${BASE}/${CANARY}`, {
+    redirect: "manual",
+    headers: {
+      // Must look like a browser. After the OG preview change, unfurl bots
+      // (and Node's default fetch UA, if treated as a bot) get HTML 200.
+      "user-agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+  });
   assert(res.status === 302 || res.status === 301, `status ${res.status}`);
   const loc = res.headers.get("location") || "";
   assert(loc.startsWith(CANARY_DEST), `location: ${loc}`);
+});
+
+await check("preview crawler gets Open Graph HTML instead of a bare 302", async () => {
+  const res = await fetch(`${BASE}/${CANARY}`, {
+    redirect: "manual",
+    headers: {
+      "user-agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    },
+  });
+  assert(res.status === 200, `status ${res.status}`);
+  const html = await res.text();
+  assert(html.includes("og:title"), "missing og:title");
+  assert(html.includes(CANARY_DEST), "missing canary destination URL");
+  assert(!html.includes("Redirecting"), "old Redirecting title leaked back");
 });
 
 await check("unknown link returns 404 (not a rendered page)", async () => {
