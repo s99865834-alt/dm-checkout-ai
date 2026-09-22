@@ -1344,6 +1344,12 @@ export async function updateSettings(shopId, settings = {}) {
         discount_percentage: Number.isInteger(settings.discount_percentage)
           ? settings.discount_percentage
           : current.discount_percentage,
+        // The column default only fires on insert, so every update since this
+        // table was created has left updated_at at the original value. It read
+        // as ten months stale while the row was being changed several times an
+        // hour, which is worse than having no timestamp: it actively misleads
+        // anyone trying to work out when a setting changed.
+        updated_at: new Date().toISOString(),
       },
       {
         onConflict: "shop_id",
