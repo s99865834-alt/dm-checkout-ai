@@ -124,8 +124,12 @@ async function mintCodeNow({ shopId, shopDomain, variantKey, linkId, percentage,
       .single();
 
     // Two replies for the same new variant can race here. The unique index on
-    // (shop_id, variant_id) means one loses; it drops its just-created Shopify
-    // discount rather than leaving an orphan the reaper would never find.
+    // (shop_id, variant_id, percentage) means one loses; it drops its
+    // just-created Shopify discount rather than leaving an orphan the reaper
+    // would never find. The rate is part of that key on purpose: a merchant
+    // changing 20% to 5% leaves the old pool in place until it is reaped, and
+    // keying on the variant alone made the new pool collide with it, which
+    // killed discounts for every product that had ever been linked.
     if (poolError || !pool) {
       await deleteDiscount(shopDomain, created.discountNodeId).catch(() => {});
       logger.debug(`[discount-pool] Lost the mint race for ${variantKey}`);
