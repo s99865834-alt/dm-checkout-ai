@@ -31,6 +31,27 @@ const ADD_CODES = `
   }
 `;
 
+const BULK_CODE_STATUS = `
+  query BulkCodeStatus($id: ID!) {
+    discountRedeemCodeBulkCreation(id: $id) {
+      done
+      importedCount
+      failedCount
+      codes(first: 250) {
+        nodes {
+          discountRedeemCode { code }
+          errors { message }
+        }
+      }
+    }
+  }
+`;
+
+// Off the reply path, so waiting is cheap. Bulk adds of a handful of codes
+// normally finish well inside the first poll.
+const BULK_POLL_ATTEMPTS = 6;
+const BULK_POLL_DELAY_MS = 800;
+
 const DELETE_DISCOUNT = `
   mutation DeleteDiscount($id: ID!) {
     discountCodeDelete(id: $id) {
@@ -132,20 +153,28 @@ export async function createVariantDiscount({
 }
 
 /**
- * Attach more codes to an existing discount.
+ * Attach more codes to an existing discount, and wait for Shopify to confirm
+ * which ones actually landed.
  *
- * Asynchronous on Shopify's side: this returns as soon as the bulk creation is
- * queued, so a caller cannot assume the codes exist yet. That is the reason
- * the pool keeps a buffer instead of minting on demand, and the reason nothing
- * on the reply path ever waits for this.
+ * The bulk add is queued rather than applied, so the mutation returning
+ * cleanly does not mean the codes exist. Recording an unconfirmed code is not
+ * a harmless optimism: the code goes into a checkout link, and a code Shopify
+ * never created makes that link fail rather than merely arrive without a
+ * discount. Polling is free here because this only runs from the maintenance
+ * pass, never from a reply.
  *
- * @returns {Promise<boolean>} whether the batch was accepted
+ * Codes that don't get confirmed in time are simply not recorded. They may
+ * still exist at Shopify, unused and unreachable, and go away when the pool
+ * is eventually reaped.
+ *
+ * @returns {Promise<string[]>} the codes Shopify confirmed
  */
 export async function addDiscountCodes(shopDomain, discountNodeId, codes) {
   const admin = await adminFor(shopDomain);
-  if (!admin) return false;
-  if (!discountNodeId || !Array.isArray(codes) || codes.length === 0) return false;
+  if (!admin) return [];
+  if (!discountNodeId || !Array.isArray(codes) || codes.length === 0) return [];
 
+  let bulkId = null;
   try {
     const response = await admin.graphql(ADD_CODES, {
       variables: { discountId: discountNodeId, codes: codes.map((code) => ({ code })) },
@@ -154,13 +183,41 @@ export async function addDiscountCodes(shopDomain, discountNodeId, codes) {
     const error = firstUserError(body, "discountRedeemCodeBulkAdd");
     if (error) {
       console.error(`[discounts] Bulk add failed for ${shopDomain}: ${error}`);
-      return false;
+      return [];
     }
-    return !!body?.data?.discountRedeemCodeBulkAdd?.bulkCreation?.id;
+    bulkId = body?.data?.discountRedeemCodeBulkAdd?.bulkCreation?.id || null;
   } catch (err) {
     console.error(`[discounts] Bulk add threw for ${shopDomain}: ${err?.message || err}`);
-    return false;
+    return [];
   }
+  if (!bulkId) return [];
+
+  for (let attempt = 0; attempt < BULK_POLL_ATTEMPTS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, BULK_POLL_DELAY_MS));
+    try {
+      const response = await admin.graphql(BULK_CODE_STATUS, { variables: { id: bulkId } });
+      const body = await response.json();
+      const creation = body?.data?.discountRedeemCodeBulkCreation;
+      if (!creation?.done) continue;
+
+      const confirmed = (creation.codes?.nodes || [])
+        .filter((node) => !(node?.errors || []).length && node?.discountRedeemCode?.code)
+        .map((node) => node.discountRedeemCode.code);
+
+      if (creation.failedCount > 0) {
+        console.warn(
+          `[discounts] ${creation.failedCount} of ${codes.length} codes failed for ${shopDomain}`,
+        );
+      }
+      return confirmed;
+    } catch (err) {
+      console.error(`[discounts] Bulk poll threw for ${shopDomain}: ${err?.message || err}`);
+      return [];
+    }
+  }
+
+  console.warn(`[discounts] Bulk add for ${shopDomain} did not confirm in time; not recording`);
+  return [];
 }
 
 /**

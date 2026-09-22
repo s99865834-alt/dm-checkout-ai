@@ -34,6 +34,17 @@ export const DISCOUNT_TOPUP_BATCH = 10;
  */
 export const POOL_REAP_AFTER_DAYS = 60;
 
+/**
+ * How long a pool survives after its shop stops being eligible, or after the
+ * merchant changes the rate.
+ *
+ * Deleting a discount also invalidates every code issued under it, and those
+ * codes are in customers' DMs. A week is longer than anyone leaves a message
+ * unopened, and the stale pool hands nothing new out meanwhile because the
+ * claim re-checks eligibility and the rate on every call.
+ */
+export const POOL_REAP_GRACE_DAYS = 7;
+
 export const MIN_DISCOUNT_PERCENTAGE = 1;
 export const MAX_DISCOUNT_PERCENTAGE = 50;
 
