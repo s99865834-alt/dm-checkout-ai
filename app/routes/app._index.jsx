@@ -5,6 +5,7 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
+import { isValidDiscountPercentage, MIN_DISCOUNT_PERCENTAGE, MAX_DISCOUNT_PERCENTAGE } from "../lib/discount-rules";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
@@ -270,17 +271,26 @@ export const action = async ({ request }) => {
       const dmAutomationEnabled = formData.get("dm_automation_enabled") === "true";
       const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
       const followupEnabled = formData.get("followup_enabled") === "true";
+      const discountEnabled = formData.get("discount_enabled") === "true";
+      const discountPercentage = parseInt(formData.get("discount_percentage"), 10);
+      if (discountEnabled && !isValidDiscountPercentage(discountPercentage)) {
+        return {
+          error: `Pick a discount between ${MIN_DISCOUNT_PERCENTAGE}% and ${MAX_DISCOUNT_PERCENTAGE}%`,
+        };
+      }
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       const brandVoiceReplyLang = formData.get("brand_voice_reply_language") || "auto";
       try {
         await Promise.all([
-          // Only the three toggles this form owns. The per-post deny-list is
-          // left alone rather than read and written back.
+          // Only the toggles this form owns. The per-post deny-list is left
+          // alone rather than read and written back.
           updateSettings(shop.id, {
             dm_automation_enabled: dmAutomationEnabled,
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
+            discount_enabled: discountEnabled,
+            ...(Number.isInteger(discountPercentage) ? { discount_percentage: discountPercentage } : {}),
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -602,6 +612,8 @@ export default function Index() {
   const [dmAutomationEnabled, setDmAutomationEnabled] = useState(settings?.dm_automation_enabled ?? true);
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? true);
+  const [discountEnabled, setDiscountEnabled] = useState(settings?.discount_enabled ?? false);
+  const [discountPercentage, setDiscountPercentage] = useState(settings?.discount_percentage ?? 10);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
   const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
@@ -614,6 +626,8 @@ export default function Index() {
       setDmAutomationEnabled(settings.dm_automation_enabled ?? true);
       setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
       setFollowupEnabled(settings.followup_enabled ?? true);
+      setDiscountEnabled(settings.discount_enabled ?? false);
+      setDiscountPercentage(settings.discount_percentage ?? 10);
     }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
@@ -1238,6 +1252,8 @@ export default function Index() {
           <input type="hidden" name="dm_automation_enabled" value={dmAutomationEnabled ? "true" : "false"} />
           <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
           <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
+          <input type="hidden" name="discount_enabled" value={discountEnabled ? "true" : "false"} />
+          <input type="hidden" name="discount_percentage" value={String(discountPercentage ?? 10)} />
           <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
           <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
           <input type="hidden" name="brand_voice_reply_language" value={brandVoiceReplyLang || "auto"} />
@@ -1281,6 +1297,46 @@ export default function Index() {
                         checked={plan?.comments ? commentAutomationEnabled : false}
                         onChange={(e) => setCommentAutomationEnabled(e.target.checked)}
                         disabled={!plan?.comments}
+                      />
+                      <span className="srToggleTrack"><span className="srToggleThumb" /></span>
+                    </label>
+                  </div>
+                </div>
+                {/* Discounts. The code is unique per link and dies after one
+                    order, so it can't be screenshotted and passed around, and
+                    it only applies to the item in that link rather than the
+                    whole cart. It is also the sturdiest attribution signal we
+                    have: Shopify records the code on the order, so a sale gets
+                    credited even when the customer buys days later on another
+                    device. */}
+                <div className="srToggleRow">
+                  <div className="srToggleRowInner">
+                    <div className="srToggleRowText">
+                      <span className="srCardTitle">Checkout discount</span>
+                      <span className="srCardDesc">
+                        {plan?.discounts
+                          ? "Add a one-time discount to the checkout links we send. Each code works once, applies only to the product in that link, and tells you exactly which reply earned the sale."
+                          : "Upgrade to Growth to add one-time discounts to checkout links"}
+                      </span>
+                      {plan?.discounts && discountEnabled && (
+                        <select
+                          value={discountPercentage}
+                          onChange={(e) => setDiscountPercentage(parseInt(e.target.value, 10))}
+                          className="srSelect srInputRow"
+                          aria-label="Discount percentage"
+                        >
+                          {[5, 10, 15, 20, 25].map((pct) => (
+                            <option key={pct} value={pct}>{pct}% off</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <label className="srToggle" aria-label="Checkout discount">
+                      <input
+                        type="checkbox"
+                        checked={plan?.discounts ? discountEnabled : false}
+                        onChange={(e) => setDiscountEnabled(e.target.checked)}
+                        disabled={!plan?.discounts}
                       />
                       <span className="srToggleTrack"><span className="srToggleThumb" /></span>
                     </label>

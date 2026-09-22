@@ -347,7 +347,19 @@ export async function generateAgentReply({
         const shortUrl = await getTrackedLinkUrl(shop, link.linkId);
         linksCreated.push({ productId: gid, variantId: variantGid, url: link.url, linkId: link.linkId });
         allowedUrls.add(shortUrl);
-        return { checkout_url: shortUrl, note: "Paste this URL into your reply exactly as-is." };
+        return {
+          checkout_url: shortUrl,
+          note: "Paste this URL into your reply exactly as-is.",
+          // The code is already inside the URL, so the customer never needs to
+          // see or type it, and printing it would let them pass it on. The
+          // model is told the discount exists so the offer is stated, not so
+          // the code is published.
+          ...(link.discountCode
+            ? {
+                discount_applied: `${link.discountPercentage}% off this item is already built into that link. Say that you have included it and that it works on one order. Never write out a discount code.`,
+              }
+            : {}),
+        };
       }
       case "get_product_page_link": {
         const gid = toProductGid(args.product_id);

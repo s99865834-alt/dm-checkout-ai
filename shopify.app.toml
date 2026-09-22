@@ -38,7 +38,11 @@ api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,read_orders,read_legal_policies,read_content"
+# write_discounts and read_discounts back the single-use codes attached to
+# checkout links: the app creates one variant-scoped discount per linked
+# product and mints the codes under it. Both are required by
+# discountCodeBasicCreate and discountRedeemCodeBulkAdd.
+scopes = "read_products,read_orders,read_legal_policies,read_content,read_discounts,write_discounts"
 
 # Serves DM tracking links on the merchant's own storefront domain:
 # https://{store-domain}/a/go/{linkId} → forwarded to /proxy/go/{linkId}.

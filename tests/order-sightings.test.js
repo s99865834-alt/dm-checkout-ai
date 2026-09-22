@@ -79,10 +79,32 @@ describe("recordOrderSighting", () => {
       "attributed",
       "currency",
       "had_cart_ref",
+      "had_discount_code",
       "had_landing_ref",
       "order_id",
       "shop_id",
     ]);
+  });
+
+  it("flags which signal carried the attribution, including a discount code", async () => {
+    // The three booleans are how "nobody bought" is told apart from "we lost
+    // the reference". A discount code is the sturdiest of the three because
+    // Shopify puts it on the order itself, so an order credited by code with
+    // neither ref present is the expected shape for a cross-device purchase,
+    // not a bug.
+    await recordOrderSighting({
+      shopId: SHOP,
+      orderId: "555",
+      attributed: true,
+      hadDiscountCode: true,
+    });
+
+    expect(upserted[0].row).toMatchObject({
+      attributed: true,
+      had_discount_code: true,
+      had_cart_ref: false,
+      had_landing_ref: false,
+    });
   });
 
   it("coerces a numeric order id, since Shopify sends both shapes", async () => {

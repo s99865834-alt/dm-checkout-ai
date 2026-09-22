@@ -36,6 +36,11 @@ export const PLANS = {
     followup: false,
     stories: false,
     defaultProduct: false,
+    // Single-use discount codes on checkout links. Gated in
+    // discount-pool.server.js -> eligibleShops(), which is the only thing that
+    // creates pools; no pool means claimDiscountCode returns null and the
+    // reply goes out without a code.
+    discounts: false,
     prioritySupport: false, // not gated: a human promise
   },
   GROWTH: {
@@ -48,6 +53,7 @@ export const PLANS = {
     followup: false,
     stories: false,
     defaultProduct: false,
+    discounts: true,
     prioritySupport: false, // not gated: a human promise
   },
   PRO: {
@@ -63,6 +69,7 @@ export const PLANS = {
     // stories: a story isn't in post_product_map and can't be, so without a
     // default there is nothing for a story reply to sell.
     defaultProduct: true,
+    discounts: true,
     prioritySupport: true, // not gated: a human promise
   },
 };

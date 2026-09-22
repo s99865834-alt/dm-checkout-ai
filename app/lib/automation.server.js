@@ -6,6 +6,7 @@
 import OpenAI from "openai";
 import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, markReplyUndelivered, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
 import { getProductMappings } from "./db.server";
+import { appendDiscountLine } from "./discount-rules";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
@@ -699,7 +700,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             const linkId = checkoutLink.linkId;
             const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
 
-            const replyText = await generateReplyMessage(
+            let replyText = await generateReplyMessage(
               brandVoiceData,
               productInfo.productName,
               checkoutUrlForMessage,
@@ -719,6 +720,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
                   .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
               }
             );
+
+            replyText = appendDiscountLine(replyText, checkoutLink, productInfo.productName);
 
             if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
               return { sent: false, reason: "Already replied to this message" };
@@ -831,7 +834,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
 
         const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
         const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
-        const replyText = await generateReplyMessage(
+        let replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
           checkoutUrlForMessage,
@@ -857,6 +860,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           },
           productContextForReply
         );
+
+        replyText = appendDiscountLine(replyText, checkoutLink, productName);
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
@@ -1031,7 +1036,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
         const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
         const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
 
-        const replyText = await generateReplyMessage(
+        let replyText = await generateReplyMessage(
           brandVoiceData,
           productName,
           checkoutUrlForMessage,
@@ -1052,6 +1057,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           },
           productContextForReply
         );
+
+        replyText = appendDiscountLine(replyText, checkoutLink, productName);
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           return { sent: false, reason: "Already replied to this message" };
@@ -1501,7 +1508,7 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
     const checkoutUrlForMessage =
       (await getTrackedLinkUrl(shop, checkoutLink.linkId)) || checkoutLink.url;
 
-    const replyText = await generateReplyMessage(
+    let replyText = await generateReplyMessage(
       brandVoiceData,
       productInfo.productName,
       checkoutUrlForMessage,
@@ -1521,6 +1528,8 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
         storyReply: kind === "story_reply",
       }
     );
+
+    replyText = appendDiscountLine(replyText, checkoutLink, productInfo.productName);
 
     if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
       return { sent: false, reason: "Already replied to this message" };
@@ -1886,7 +1895,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     }
     const checkoutUrlForMessage = (await getTrackedLinkUrl(shop, linkId)) || checkoutUrl;
     const productPageUrlForMessage = pdpLinkId ? await getTrackedLinkUrl(shop, pdpLinkId) : null;
-    const replyText = await generateReplyMessage(
+    let replyText = await generateReplyMessage(
       brandVoiceData,
       productName,
       checkoutUrlForMessage,
@@ -1909,6 +1918,8 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       },
       productContextForReply
     );
+
+    replyText = appendDiscountLine(replyText, checkoutLinkResult, productName);
 
     const claimed = commentExternalId
       ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)

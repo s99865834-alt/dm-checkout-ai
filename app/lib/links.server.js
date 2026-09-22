@@ -18,6 +18,7 @@ import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 import { getShopifyProductContextForReply, getShopPrimaryDomainHost } from "./shopify-data.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
+import { claimDiscountCode } from "./discount-pool.server";
 
 export { isCheckoutLinkId };
 
@@ -338,12 +339,33 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     utm_campaign: "dm_to_buy",
   });
 
+  // A single-use code for this exact variant, if the shop has discounts on and
+  // a pool with something in it. One indexed Postgres call, no Shopify round
+  // trip, and a null means the link simply goes out without a discount: the
+  // reply must never wait on this, because Instagram allows one private reply
+  // per comment and other tools are racing us for it.
+  //
+  // Scoped to the variant rather than the cart on purpose, so a customer who
+  // arrives with items already in their cart, or adds more after clicking,
+  // only gets the discount on the item we linked.
+  let discount = null;
+  if (variantNumericId) {
+    discount = await claimDiscountCode({
+      shopId: shop?.id,
+      variantId: finalVariantId,
+      linkId,
+    });
+    if (discount?.code) params.set("discount", discount.code);
+  }
+
   const separator = checkoutUrl.includes("?") ? "&" : "?";
   const finalUrl = `${checkoutUrl}${separator}${params.toString()}`;
 
   return {
     url: finalUrl,
     linkId: linkId,
+    discountCode: discount?.code || null,
+    discountPercentage: discount?.percentage || null,
   };
 }
 

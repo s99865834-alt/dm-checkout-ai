@@ -13,6 +13,8 @@ if (typeof global.crypto === "undefined") {
 import { authenticate } from "../shopify.server";
 import { getShopByDomain, recordAttribution, recordOrderSighting } from "../lib/db.server";
 import { extractLinkIdFromNoteAttributes } from "../lib/links.server";
+import { looksLikeOurDiscountCode } from "../lib/discount-rules";
+import { findLinkIdForDiscountCodes } from "../lib/discount-pool.server";
 import logger from "../lib/logger.server";
 
 /**
@@ -141,12 +143,35 @@ export const action = async ({ request }) => {
       referring_site: referringSite,
     });
 
-    // Attribution sources, most reliable first: cart attributes survive
-    // cross-session purchases, landing_site/referring_site only cover
-    // same-session ones.
+    // Attribution sources, most reliable first. A single-use discount code we
+    // minted is the strongest of the three: Shopify records it on the order
+    // itself, so it survives a different device, a cleared cookie, a week of
+    // delay, or the customer typing the code in by hand. Cart attributes only
+    // survive while the cart does, and landing_site only covers a purchase in
+    // the same session.
     let attributionData = null;
+
+    const ourCodes = Array.isArray(payload.discount_codes)
+      ? payload.discount_codes
+          .map((d) => d?.code)
+          .filter((code) => looksLikeOurDiscountCode(code))
+      : [];
+    let discountLinkId = null;
+    if (ourCodes.length > 0) {
+      discountLinkId = await findLinkIdForDiscountCodes(shopData.id, ourCodes).catch(() => null);
+      if (discountLinkId) {
+        attributionData = {
+          linkId: discountLinkId,
+          utmSource: "instagram",
+          utmMedium: "ig_dm",
+          utmCampaign: "dm_to_buy",
+        };
+        logger.debug(`[webhook] Attribution from discount code: link_${discountLinkId}`);
+      }
+    }
+
     const noteAttrLinkId = extractLinkIdFromNoteAttributes(payload.note_attributes);
-    if (noteAttrLinkId) {
+    if (!attributionData?.linkId && noteAttrLinkId) {
       attributionData = {
         linkId: noteAttrLinkId,
         utmSource: "instagram",
@@ -178,7 +203,8 @@ export const action = async ({ request }) => {
       amount: totalPrice,
       currency,
       hadCartRef: !!noteAttrLinkId,
-      hadLandingRef: !noteAttrLinkId && !!attributionData?.linkId,
+      hadLandingRef: !discountLinkId && !noteAttrLinkId && !!attributionData?.linkId,
+      hadDiscountCode: !!discountLinkId,
     });
 
     // If we found a link_id, record attribution
