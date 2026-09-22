@@ -32,9 +32,15 @@ create table if not exists discount_pools (
   percentage integer not null,
   discount_node_id text not null,
   created_at timestamptz not null default now(),
-  last_used_at timestamptz,
-  unique (shop_id, variant_id)
+  last_used_at timestamptz
 );
+
+-- Keyed on the rate as well as the variant. A merchant changing 20% to 5%
+-- leaves the old pool in place until it is reaped, so keying on the variant
+-- alone made the new pool collide with the old one and killed discounts for
+-- every product that had already been linked.
+create unique index if not exists discount_pools_shop_variant_rate_key
+  on discount_pools (shop_id, variant_id, percentage);
 
 create table if not exists discount_codes (
   id uuid primary key default gen_random_uuid(),
