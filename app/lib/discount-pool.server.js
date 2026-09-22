@@ -14,22 +14,16 @@
 
 import supabase from "./supabase.server";
 import logger from "./logger.server";
-import { getPlanConfig } from "./plans";
-import { effectivePlan } from "./entitlements";
-import { warnIfTruncated } from "./row-cap";
 import {
   DISCOUNT_BUFFER_SIZE,
   DISCOUNT_TOPUP_BATCH,
   POOL_REAP_AFTER_DAYS,
+  POOL_REAP_GRACE_DAYS,
   codesNeeded,
   generateDiscountCode,
-  isValidDiscountPercentage,
   toVariantKey,
 } from "./discount-rules";
 import { addDiscountCodes, createVariantDiscount, deleteDiscount } from "./discounts.server";
-
-/** How far back to look for variants that should have a pool. */
-const WARM_LOOKBACK_DAYS = 14;
 
 /**
  * Budget for minting a discount inline on the reply path.
@@ -194,126 +188,13 @@ export async function findLinkIdForDiscountCodes(shopId, codes) {
   }
 }
 
-/** Shops whose plan, rollout flag and settings all say discounts are on. */
-async function eligibleShops() {
-  const { data, error } = await supabase
-    .from("shops")
-    .select("id, shopify_domain, plan, beta_trial_expires_at, comment_trial_started_at, discounts_rollout_enabled, settings(discount_enabled, discount_percentage)")
-    .eq("active", true)
-    .eq("discounts_rollout_enabled", true)
-    .limit(500);
-
-  if (error) {
-    console.error(`[discount-pool] Eligible shop lookup failed: ${error.message}`);
-    return [];
-  }
-  warnIfTruncated("discount-pool eligible shops", data, logger);
-
-  return (data || [])
-    .map((shop) => {
-      const settings = Array.isArray(shop.settings) ? shop.settings[0] : shop.settings;
-      const percentage = settings?.discount_percentage;
-      if (!settings?.discount_enabled || !isValidDiscountPercentage(percentage)) return null;
-
-      const betaActive =
-        shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date();
-      const plan = effectivePlan(
-        betaActive ? getPlanConfig("PRO") : getPlanConfig(shop.plan),
-        shop,
-      );
-      if (!plan.discounts) return null;
-
-      return { id: shop.id, shopify_domain: shop.shopify_domain, percentage };
-    })
-    .filter(Boolean);
-}
-
 /**
- * Create pools for variants this shop has linked recently but has no pool for.
+ * Bring every pool that has dropped below the buffer back up to it.
  *
- * Pools cannot be created at reply time without putting a Shopify call on the
- * critical path, so the first link to a new variant simply goes out without a
- * discount and this fills the gap before the next one. Working from
- * links_sent means the warm-up and the steady state are the same code path.
+ * Bounded by an RPC rather than a select, because PostgREST truncates at 1000
+ * rows without saying so and a half-read queue would look like a healthy
+ * short one.
  */
-async function ensurePoolsForShop(shop) {
-  const since = new Date(Date.now() - WARM_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-
-  const { data: links, error } = await supabase
-    .from("links_sent")
-    .select("product_id, variant_id")
-    .eq("shop_id", shop.id)
-    .gte("sent_at", since)
-    .not("variant_id", "is", null)
-    .limit(500);
-
-  if (error) {
-    console.error(`[discount-pool] Link lookup failed for ${shop.shopify_domain}: ${error.message}`);
-    return 0;
-  }
-  warnIfTruncated(`discount-pool links for ${shop.shopify_domain}`, links, logger);
-
-  const wanted = new Map();
-  for (const row of links || []) {
-    const key = toVariantKey(row.variant_id);
-    if (key) wanted.set(key, row.product_id || null);
-  }
-  if (wanted.size === 0) return 0;
-
-  const { data: existing } = await supabase
-    .from("discount_pools")
-    .select("variant_id, percentage")
-    .eq("shop_id", shop.id)
-    .in("variant_id", [...wanted.keys()]);
-
-  // A pool minted at a percentage the merchant has since changed would hand
-  // out the old rate, so treat it as missing and let the reaper remove it.
-  const usable = new Set(
-    (existing || []).filter((p) => p.percentage === shop.percentage).map((p) => p.variant_id),
-  );
-
-  let created = 0;
-  for (const [variantId, productId] of wanted) {
-    if (usable.has(variantId)) continue;
-
-    const code = generateDiscountCode();
-    const result = await createVariantDiscount({
-      shopDomain: shop.shopify_domain,
-      variantId,
-      percentage: shop.percentage,
-      productTitle: null,
-      firstCode: code,
-    });
-    if (!result) continue;
-
-    const { data: pool, error: poolError } = await supabase
-      .from("discount_pools")
-      .insert({
-        shop_id: shop.id,
-        variant_id: variantId,
-        product_id: productId,
-        percentage: shop.percentage,
-        discount_node_id: result.discountNodeId,
-      })
-      .select("id")
-      .single();
-
-    if (poolError || !pool) {
-      console.error(`[discount-pool] Pool insert failed for ${variantId}: ${poolError?.message}`);
-      continue;
-    }
-
-    await supabase.from("discount_codes").insert({
-      shop_id: shop.id,
-      pool_id: pool.id,
-      code: result.code,
-    });
-    created += 1;
-  }
-  return created;
-}
-
-/** Bring every pool that has dropped below the buffer back up to it. */
 async function topUpPools() {
   const { data, error } = await supabase.rpc("discount_pools_needing_topup", {
     p_buffer: DISCOUNT_BUFFER_SIZE,
@@ -329,82 +210,55 @@ async function topUpPools() {
     const need = Math.min(codesNeeded(pool.available), DISCOUNT_TOPUP_BATCH);
     if (need <= 0) continue;
 
-    const codes = Array.from({ length: need }, () => generateDiscountCode());
-    const accepted = await addDiscountCodes(pool.shopify_domain, pool.discount_node_id, codes);
-    if (!accepted) continue;
+    const requested = Array.from({ length: need }, () => generateDiscountCode());
+    // Only codes Shopify confirms get recorded. An unconfirmed code in a
+    // checkout link breaks the link rather than quietly omitting a discount.
+    const confirmed = await addDiscountCodes(pool.shopify_domain, pool.discount_node_id, requested);
+    if (!confirmed.length) continue;
 
-    // Shopify queues the bulk add, so the codes may not be live the instant
-    // this returns. Recording them now is still right: a code that failed to
-    // land just fails at checkout for one customer, whereas not recording
-    // them would mint the same batch again on every pass.
-    const rows = codes.map((code) => ({ shop_id: pool.shop_id, pool_id: pool.pool_id, code }));
+    const rows = confirmed.map((code) => ({
+      shop_id: pool.shop_id,
+      pool_id: pool.pool_id,
+      code,
+    }));
     const { error: insertError } = await supabase.from("discount_codes").insert(rows);
     if (insertError) {
       console.error(`[discount-pool] Code insert failed for ${pool.pool_id}: ${insertError.message}`);
       continue;
     }
-    minted += need;
+    minted += confirmed.length;
   }
   return minted;
 }
 
 /**
- * Pools that should no longer exist at all: the shop downgraded off Growth,
- * turned the setting off, left the rollout, or changed the percentage so every
- * code under the old pool would hand out the wrong rate.
+ * Delete discounts that should no longer exist.
  *
- * Without this a shop that stops paying keeps handing out live discount codes
- * from the pool it filled while it was eligible.
+ * Covers all three reasons in one bounded query: the variant has gone quiet,
+ * the shop stopped being eligible (downgraded, left the rollout, switched the
+ * setting off), or the merchant changed the rate so the pool would hand out
+ * the old one. The eligibility part matters most: without it a shop that
+ * stops paying keeps handing out live codes from the pool it filled while it
+ * was on Growth.
+ *
+ * A recently used pool is left alone whatever the reason, because deleting a
+ * discount also kills the codes already sitting in customers' DMs. Stale
+ * pools hand nothing new out in the meantime: the claim re-checks eligibility
+ * and the current rate every time.
  */
-async function findOrphanedPools(eligible) {
-  const byShop = new Map(eligible.map((s) => [s.id, s]));
-
-  const { data, error } = await supabase
-    .from("discount_pools")
-    .select("id, shop_id, percentage, discount_node_id, shops(shopify_domain)")
-    .limit(1000);
-
-  if (error) {
-    console.error(`[discount-pool] Orphan lookup failed: ${error.message}`);
-    return [];
-  }
-  warnIfTruncated("discount-pool orphan scan", data, logger);
-
-  return (data || [])
-    .filter((pool) => {
-      const shop = byShop.get(pool.shop_id);
-      return !shop || shop.percentage !== pool.percentage;
-    })
-    .map((pool) => ({
-      pool_id: pool.id,
-      shopify_domain: Array.isArray(pool.shops)
-        ? pool.shops[0]?.shopify_domain
-        : pool.shops?.shopify_domain,
-      discount_node_id: pool.discount_node_id,
-    }));
-}
-
-/** Delete discounts for variants nobody has linked in a long time. */
-async function reapPools(eligible) {
+async function reapPools() {
   const { data, error } = await supabase.rpc("discount_pools_to_reap", {
     p_days: POOL_REAP_AFTER_DAYS,
     p_limit: 200,
+    p_grace_days: POOL_REAP_GRACE_DAYS,
   });
   if (error) {
     console.error(`[discount-pool] Reap lookup failed: ${error.message}`);
     return 0;
   }
 
-  const orphaned = await findOrphanedPools(eligible);
-  const seen = new Set();
-  const all = [...(data || []), ...orphaned].filter((pool) => {
-    if (!pool?.pool_id || seen.has(pool.pool_id)) return false;
-    seen.add(pool.pool_id);
-    return true;
-  });
-
   let reaped = 0;
-  for (const pool of all) {
+  for (const pool of data || []) {
     const deleted = await deleteDiscount(pool.shopify_domain, pool.discount_node_id);
     // Only drop our rows once Shopify has actually let go of the discount,
     // otherwise the node id is lost and the discount lives in the merchant's
@@ -423,21 +277,32 @@ async function reapPools(eligible) {
   return reaped;
 }
 
+// setInterval does not wait for the previous run, and a pass that talks to
+// Shopify once per pool can outlast its own interval once there are enough
+// shops. Two overlapping passes would both see the same thin pools and mint
+// two batches for each.
+let maintenanceRunning = false;
+
 /**
- * One maintenance pass: create missing pools, top up thin ones, reap dead ones.
- * Called from the cron route; never from a request handler.
+ * One maintenance pass: top up thin pools, reap dead ones.
+ *
+ * Deliberately does not create pools. The reply path mints the first code for
+ * a variant itself, so pre-creating from links_sent would duplicate that work
+ * while adding a per-shop scan and a burst of Shopify calls that grows with
+ * the number of merchants.
  */
 export async function runDiscountPoolMaintenance() {
-  const shops = await eligibleShops();
-  let created = 0;
-  for (const shop of shops) {
-    created += await ensurePoolsForShop(shop);
+  if (maintenanceRunning) {
+    logger.debug("[discount-pool] Maintenance already running; skipping this tick");
+    return { skipped: true, minted: 0, reaped: 0 };
   }
-  const minted = await topUpPools();
-  const reaped = await reapPools(shops);
-
-  logger.debug(
-    `[discount-pool] Maintenance done: ${shops.length} shops, ${created} pools created, ${minted} codes minted, ${reaped} pools reaped`,
-  );
-  return { shops: shops.length, created, minted, reaped };
+  maintenanceRunning = true;
+  try {
+    const minted = await topUpPools();
+    const reaped = await reapPools();
+    logger.debug(`[discount-pool] Maintenance done: ${minted} codes minted, ${reaped} pools reaped`);
+    return { skipped: false, minted, reaped };
+  } finally {
+    maintenanceRunning = false;
+  }
 }
