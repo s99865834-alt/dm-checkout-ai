@@ -86,7 +86,11 @@ export async function createVariantDiscount({
     basicCodeDiscount: {
       title: discountTitle(percentage, productTitle),
       code: firstCode,
-      startsAt: new Date().toISOString(),
+      // Backdated a minute. The code goes into a link that can be clicked
+      // seconds later, and "starts now" leaves a window where Shopify has the
+      // discount but has not started honouring it yet, which surfaces to the
+      // customer as a dead checkout link rather than as a missing discount.
+      startsAt: new Date(Date.now() - 60 * 1000).toISOString(),
       usageLimit: 1,
       appliesOncePerCustomer: true,
       // Deprecated in favour of `context`, which currently models markets
