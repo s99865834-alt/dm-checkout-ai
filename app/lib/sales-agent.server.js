@@ -350,13 +350,15 @@ export async function generateAgentReply({
         return {
           checkout_url: shortUrl,
           note: "Paste this URL into your reply exactly as-is.",
-          // The code is already inside the URL, so the customer never needs to
-          // see or type it, and printing it would let them pass it on. The
-          // model is told the discount exists so the offer is stated, not so
-          // the code is published.
+          // The code is printed on purpose. Most customers open these links
+          // in Instagram's in-app browser and then leave it to pay, which
+          // discards the cart along with the applied discount and the
+          // tracking attribute. A code they can read and type is the only
+          // thing that survives that jump, and it is single use, so passing
+          // it on costs one redemption.
           ...(link.discountCode
             ? {
-                discount_applied: `${link.discountPercentage}% off this item is already built into that link. Say that you have included it and that it works on one order. Never write out a discount code.`,
+                discount_applied: `${link.discountPercentage}% off this item is built into that link, and the code is ${link.discountCode}. State the discount and give them the code so they can enter it at checkout if they open the store separately. Say it works on one order.`,
               }
             : {}),
         };

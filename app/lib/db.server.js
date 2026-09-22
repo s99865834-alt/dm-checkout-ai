@@ -148,6 +148,45 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
  * discounts inside the merchant's Shopify store, so it is rolled out
  * deliberately rather than by a merchant flipping a switch.
  */
+/**
+ * Store one shop's year-to-date revenue figure.
+ *
+ * Written by the background refresh, read by /admin. Keeping it here rather
+ * than fetching live is what makes the dashboard report the same numbers on
+ * every refresh: the live version raced a page-load budget and silently
+ * dropped whichever shops it didn't reach in time.
+ */
+export async function saveStoreRevenue(shopId, revenue) {
+  if (!shopId) return;
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      store_revenue_ytd: revenue?.amount ?? null,
+      store_revenue_currency: revenue?.currencyCode ?? null,
+      store_revenue_capped: !!revenue?.capped,
+      store_revenue_updated_at: new Date().toISOString(),
+    })
+    .eq("id", shopId);
+
+  if (error) console.warn("[db] saveStoreRevenue error:", error.message);
+}
+
+/** Active shops the revenue refresh should visit, oldest figure first. */
+export async function getShopsForRevenueRefresh(limit = 25) {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("id, shopify_domain, store_revenue_updated_at")
+    .eq("active", true)
+    .order("store_revenue_updated_at", { ascending: true, nullsFirst: true })
+    .limit(limit);
+
+  if (error) {
+    console.error("[db] getShopsForRevenueRefresh error:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 export async function setDiscountsRollout(shopId, enabled) {
   if (!shopId) throw new Error("setDiscountsRollout requires a shopId");
 
@@ -2526,7 +2565,22 @@ async function buildAdminStoresResult(shops) {
       created_at: s.created_at,
       active: s.active,
       plan: s.plan || "FREE",
+      // Two different things that both get called "discounts": whether we
+      // have rolled the feature out to this shop, and whether the merchant
+      // has switched it on. Showing only the first made a store with
+      // discounts actively running read as "off".
       discounts_rollout_enabled: !!s.discounts_rollout_enabled,
+      merchant_discount: (() => {
+        const st = Array.isArray(s.settings) ? s.settings[0] : s.settings;
+        if (!st?.discount_enabled) return null;
+        return { percentage: st.discount_percentage ?? null };
+      })(),
+      // Refreshed in the background rather than fetched while the page loads,
+      // so the figure is the same on every refresh. Null means never fetched.
+      total_revenue_ytd: s.store_revenue_ytd == null ? null : Number(s.store_revenue_ytd),
+      total_revenue_currency: s.store_revenue_currency || null,
+      total_revenue_capped: !!s.store_revenue_capped,
+      total_revenue_updated_at: s.store_revenue_updated_at || null,
       beta_trial: betaTrial,
       // Free comment-to-DM window. Computed here, like beta_trial above, so
       // the dashboard renders it without repeating the date arithmetic.
