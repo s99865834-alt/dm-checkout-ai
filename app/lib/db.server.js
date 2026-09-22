@@ -1182,6 +1182,7 @@ export async function recordOrderSighting({
   currency = null,
   hadCartRef = false,
   hadLandingRef = false,
+  hadDiscountCode = false,
 }) {
   if (!shopId || !orderId) return;
   const { error } = await supabase.from("order_sightings").upsert(
@@ -1193,6 +1194,7 @@ export async function recordOrderSighting({
       currency: currency ?? null,
       had_cart_ref: hadCartRef,
       had_landing_ref: hadLandingRef,
+      had_discount_code: hadDiscountCode,
     },
     { onConflict: "shop_id,order_id" }
   );
@@ -1315,6 +1317,10 @@ export async function updateSettings(shopId, settings = {}) {
         disabled_post_ids: Array.isArray(settings.disabled_post_ids)
           ? settings.disabled_post_ids
           : current.disabled_post_ids,
+        discount_enabled: bool(settings.discount_enabled, current.discount_enabled),
+        discount_percentage: Number.isInteger(settings.discount_percentage)
+          ? settings.discount_percentage
+          : current.discount_percentage,
       },
       {
         onConflict: "shop_id",
