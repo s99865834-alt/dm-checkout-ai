@@ -32,6 +32,15 @@ import { addDiscountCodes, createVariantDiscount, deleteDiscount } from "./disco
 const WARM_LOOKBACK_DAYS = 14;
 
 /**
+ * Budget for minting a discount inline on the reply path.
+ *
+ * Generous relative to a Shopify mutation and small relative to the reply it
+ * sits in, which already makes several model and Shopify calls. Past this the
+ * reply ships without a discount.
+ */
+const MINT_TIMEOUT_MS = 2500;
+
+/**
  * Take one unused code for this variant and bind it to the link.
  *
  * Returns null for every "not today" case: feature off, no pool yet, pool
@@ -40,23 +49,110 @@ const WARM_LOOKBACK_DAYS = 14;
  *
  * @returns {Promise<{code: string, percentage: number}|null>}
  */
-export async function claimDiscountCode({ shopId, variantId, linkId }) {
+export async function claimDiscountCode({ shopId, shopDomain, variantId, linkId, productTitle }) {
   const key = toVariantKey(variantId);
   if (!shopId || !key || !linkId) return null;
+
+  let data;
   try {
-    const { data, error } = await supabase.rpc("claim_discount_code", {
+    const result = await supabase.rpc("claim_discount_code", {
       p_shop_id: shopId,
       p_variant_id: key,
       p_link_id: linkId,
     });
-    if (error) {
-      logger.debug(`[discount-pool] Claim failed for ${key}: ${error.message}`);
+    if (result.error) {
+      logger.debug(`[discount-pool] Claim failed for ${key}: ${result.error.message}`);
       return null;
     }
-    if (!data?.code) return null;
-    return { code: data.code, percentage: data.percentage };
+    data = result.data;
   } catch (err) {
     logger.debug(`[discount-pool] Claim threw for ${key}: ${err?.message || err}`);
+    return null;
+  }
+
+  if (data?.code) return { code: data.code, percentage: data.percentage };
+  if (!data?.needs_mint || !shopDomain) return null;
+
+  // First link to this variant, so there is nothing pooled yet. Minting here
+  // rather than waiting for the maintenance pass is the difference between the
+  // merchant turning the setting on and it working, and the merchant turning
+  // it on and watching the next few replies go out without a discount. The
+  // resolved product moves around on stores with unmapped posts, so "first
+  // link to this variant" keeps happening rather than being a one-off.
+  return mintCodeNow({
+    shopId,
+    shopDomain,
+    variantKey: key,
+    linkId,
+    percentage: data.percentage,
+    productTitle,
+  });
+}
+
+/**
+ * Create the discount for a variant and reserve its first code, inline.
+ *
+ * Bounded by a timeout because this is the one piece of the feature that
+ * touches Shopify from the reply path. Past the budget the reply goes out
+ * with no discount rather than late: Instagram allows a single private reply
+ * per comment and other tools are racing for it, so a missed discount is
+ * cheap and a missed reply is not. The abandoned request still completes at
+ * Shopify, and the pool it creates gets picked up on the next pass.
+ */
+async function mintCodeNow({ shopId, shopDomain, variantKey, linkId, percentage, productTitle }) {
+  const work = (async () => {
+    const code = generateDiscountCode();
+    const created = await createVariantDiscount({
+      shopDomain,
+      variantId: variantKey,
+      percentage,
+      productTitle,
+      firstCode: code,
+    });
+    if (!created) return null;
+
+    const { data: pool, error: poolError } = await supabase
+      .from("discount_pools")
+      .insert({
+        shop_id: shopId,
+        variant_id: variantKey,
+        product_title: productTitle || null,
+        percentage,
+        discount_node_id: created.discountNodeId,
+      })
+      .select("id")
+      .single();
+
+    // Two replies for the same new variant can race here. The unique index on
+    // (shop_id, variant_id) means one loses; it drops its just-created Shopify
+    // discount rather than leaving an orphan the reaper would never find.
+    if (poolError || !pool) {
+      await deleteDiscount(shopDomain, created.discountNodeId).catch(() => {});
+      logger.debug(`[discount-pool] Lost the mint race for ${variantKey}`);
+      return null;
+    }
+
+    const { error: codeError } = await supabase.from("discount_codes").insert({
+      shop_id: shopId,
+      pool_id: pool.id,
+      code: created.code,
+      link_id: linkId,
+      claimed_at: new Date().toISOString(),
+    });
+    if (codeError) {
+      logger.debug(`[discount-pool] Code insert failed for ${variantKey}: ${codeError.message}`);
+      return null;
+    }
+
+    return { code: created.code, percentage };
+  })();
+
+  try {
+    return await Promise.race([
+      work.catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), MINT_TIMEOUT_MS)),
+    ]);
+  } catch {
     return null;
   }
 }
