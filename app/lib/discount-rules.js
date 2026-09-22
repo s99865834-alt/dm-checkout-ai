@@ -116,12 +116,16 @@ export function discountTitle(percentage, productTitle) {
  * Names the product on purpose. The discount is scoped to one variant, so a
  * customer who swaps to something else gets nothing, and a bare "we included
  * a discount" would read as a broken promise at checkout.
+ *
+ * Does not print the code. The code is in the link and applies itself; asking
+ * someone to copy one into a checkout field is the manual step this product
+ * exists to remove, and almost nobody does it. Attribution has to be solved
+ * by carrying the reference, not by delegating it to the customer.
  */
 export function discountOfferLine(percentage, productTitle) {
   const item = (productTitle || "").trim();
-  return item
-    ? `I've added ${percentage}% off the ${item} to that link, and it's good for one order.`
-    : `I've added ${percentage}% off to that link, and it's good for one order.`;
+  const subject = item ? `the ${item}` : "it";
+  return `I've added ${percentage}% off ${subject} to that link, and it's good for one order.`;
 }
 
 /**

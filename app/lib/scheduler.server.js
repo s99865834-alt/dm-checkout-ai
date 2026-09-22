@@ -21,6 +21,10 @@ const FOLLOWUPS_INTERVAL_MS = 60 * 60 * 1000;    // every 1 hour
 // its buffer sends links without a discount until the next pass rather than
 // making anyone wait.
 const DISCOUNT_POOLS_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
+// Store revenue for /admin. Read in the background so the dashboard renders
+// stored figures instead of racing a per-page-load budget, which used to
+// leave most shops blank and a different set of them blank on each refresh.
+const STORE_REVENUE_INTERVAL_MS = 10 * 60 * 1000;  // every 10 minutes
 const STARTUP_DELAY_MS = 10 * 1000;              // wait 10s after boot
 
 let started = false;
@@ -59,6 +63,32 @@ async function tickDiscountPools() {
   }
 }
 
+let revenueRefreshRunning = false;
+
+async function tickStoreRevenue() {
+  if (revenueRefreshRunning) return;
+  revenueRefreshRunning = true;
+  try {
+    const [{ getShopsForRevenueRefresh, saveStoreRevenue }, { getStoreTotalRevenueYTD }] =
+      await Promise.all([import("./db.server"), import("./shopify-data.server")]);
+
+    // A slice per tick, oldest figure first, so every shop comes round
+    // without one pass having to walk the whole install base.
+    const shops = await getShopsForRevenueRefresh(25);
+    for (const shop of shops) {
+      const revenue = await getStoreTotalRevenueYTD(shop.shopify_domain).catch(() => null);
+      // Stamped even when the lookup fails, so a shop with a dead token does
+      // not sit at the front of the queue forever and starve the rest.
+      await saveStoreRevenue(shop.id, revenue);
+    }
+    if (shops.length) logger.debug(`[scheduler] store-revenue tick refreshed ${shops.length} shops`);
+  } catch (err) {
+    console.error("[scheduler] store-revenue tick error:", err?.message || err);
+  } finally {
+    revenueRefreshRunning = false;
+  }
+}
+
 /**
  * Start the in-process scheduler. Idempotent — calling twice is a no-op.
  * Returns false if scheduling is disabled by environment.
@@ -85,9 +115,11 @@ export function startScheduler() {
     tickDmQueue();
     tickFollowups();
     tickDiscountPools();
+    tickStoreRevenue();
     setInterval(tickDmQueue, DM_QUEUE_INTERVAL_MS);
     setInterval(tickFollowups, FOLLOWUPS_INTERVAL_MS);
     setInterval(tickDiscountPools, DISCOUNT_POOLS_INTERVAL_MS);
+    setInterval(tickStoreRevenue, STORE_REVENUE_INTERVAL_MS);
   }, STARTUP_DELAY_MS);
 
   return true;

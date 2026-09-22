@@ -350,13 +350,12 @@ export async function generateAgentReply({
         return {
           checkout_url: shortUrl,
           note: "Paste this URL into your reply exactly as-is.",
-          // The code is already inside the URL, so the customer never needs to
-          // see or type it, and printing it would let them pass it on. The
-          // model is told the discount exists so the offer is stated, not so
-          // the code is published.
+          // The code applies itself from the link, so the customer never has
+          // to type it. Telling them the code would add a manual step this
+          // product exists to remove.
           ...(link.discountCode
             ? {
-                discount_applied: `${link.discountPercentage}% off this item is already built into that link. Say that you have included it and that it works on one order. Never write out a discount code.`,
+                discount_applied: `${link.discountPercentage}% off this item is already built into that link. Say you have included it and that it works on one order. Never write out a discount code.`,
               }
             : {}),
         };

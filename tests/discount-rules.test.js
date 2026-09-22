@@ -162,9 +162,12 @@ describe("appendDiscountLine", () => {
     expect(appendDiscountLine(null, withCode, "Thing")).toBeNull();
   });
 
-  it("never leaks the code into the message", () => {
+  it("never writes the code into the message", () => {
+    // The code applies itself from the link. Printing it would add the manual
+    // copy-paste step the product exists to remove.
     const out = appendDiscountLine("Here's the link.", withCode, "Aries Nail Polish");
     expect(out).not.toContain(withCode.discountCode);
+    expect(looksLikeOurDiscountCode(out)).toBe(false);
   });
 });
 
@@ -189,9 +192,11 @@ describe("copy", () => {
     expect(discountTitle(10, null)).toBe("SocialRepl.ai 10% off");
   });
 
-  it("never writes out a code, which would make it shareable", () => {
+  it("states the offer without exposing a code", () => {
     const line = discountOfferLine(10, "Aries Nail Polish");
-    expect(looksLikeOurDiscountCode(line)).toBe(false);
+    expect(line).toContain("10%");
+    expect(line).toContain("Aries Nail Polish");
     expect(line).not.toContain(CODE_PREFIX);
+    expect(line).not.toContain("undefined");
   });
 });

@@ -13,7 +13,7 @@ import { COMMENT_TRIAL_DAYS } from "../lib/entitlements";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections, setDiscountsRollout } from "../lib/db.server";
 import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
-import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
+import { getStoreManagedTrial } from "../lib/shopify-data.server";
 import { cached } from "../lib/loader-cache.server";
 import { mapWithConcurrency } from "../lib/concurrency";
 
@@ -106,33 +106,34 @@ export const loader = async ({ request }) => {
       };
     });
 
+    // Store revenue is no longer fetched here. It used to race an 8 second
+    // budget at concurrency 2 across every shop on the page, so most of them
+    // came back empty and a different subset came back empty on each refresh,
+    // which made the column impossible to trust. It is now refreshed in the
+    // background and read from the shops table with the rest of the row.
+    //
+    // The trial lookup stays live because it has no stored equivalent, and it
+    // keeps the budget so /admin cannot block on Shopify.
     const liveStarted = Date.now();
     const liveLookups = await mapWithConcurrency(storesWithIg, ADMIN_LIVE_CONCURRENCY, async (s) => {
       const left = remainingBudget(liveStarted, ADMIN_LIVE_BUDGET_MS);
-      if (left < 250) return { rev: null, managedTrial: null };
-      const [rev, managedTrial] = await Promise.all([
-        Promise.race([getStoreTotalRevenueYTD(s.shopify_domain), settleTimeout(left)]),
-        Promise.race([getStoreManagedTrial(s.shopify_domain), settleTimeout(left)]),
+      if (left < 250) return { managedTrial: null };
+      const managedTrial = await Promise.race([
+        getStoreManagedTrial(s.shopify_domain),
+        settleTimeout(left),
       ]);
-      return { rev, managedTrial };
+      return { managedTrial };
     });
 
     const storesFinal = storesWithIg.map((s, i) => {
       const live = liveLookups[i]?.status === "fulfilled" ? liveLookups[i].value : null;
-      const rev = live?.rev || null;
       const managedTrial = live?.managedTrial || null;
       const trial = managedTrial
         ? { ...managedTrial, source: "managed" }
         : s.beta_trial
           ? { daysLeft: s.beta_trial.daysLeft, trialEndsAt: s.beta_trial.expiresAt, source: "beta" }
           : null;
-      return {
-        ...s,
-        total_revenue_ytd: rev ? rev.amount : null,
-        total_revenue_currency: rev ? rev.currencyCode : null,
-        total_revenue_capped: rev ? rev.capped : false,
-        trial,
-      };
+      return { ...s, trial };
     });
 
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
@@ -408,13 +409,25 @@ function AutomationCell({ row }) {
 // made no sales this year) and is shown as such; null means we couldn't read
 // it (no/expired token) and renders as "—". A trailing "+" marks a capped
 // lower bound for very high-volume stores.
-function formatStoreRevenue(value, currencyCode, capped) {
-  if (value == null) return "—";
+// "Not read yet" and "no revenue" have to look different. They used to both
+// render as a dash, which is how a column that was mostly unfetched passed
+// for a column that was mostly zero.
+function formatStoreRevenue(value, currencyCode, capped, updatedAt) {
+  if (value == null) return updatedAt ? "—" : "not read yet";
   const formatted = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currencyCode || "USD",
   }).format(value);
   return capped ? `${formatted}+` : formatted;
+}
+
+function formatAge(iso) {
+  if (!iso) return null;
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
 }
 
 // Stores are identified by name rather than domain: Shopify hands out opaque
@@ -694,9 +707,21 @@ export default function Admin() {
                             : "Discount codes are off for this shop. Click to roll out: the app will start creating variant-scoped discounts in their Shopify store."
                         }
                       >
-                        {row.discounts_rollout_enabled ? "Discounts on" : "Discounts off"}
+                        {row.discounts_rollout_enabled ? "Rollout on" : "Rollout off"}
                       </button>
                     </Form>
+                    {/* What the merchant has actually switched on, which is a
+                        different thing from whether we have rolled the
+                        feature out to them. Showing only the rollout flag
+                        made a store running discounts read as "off". */}
+                    {row.merchant_discount && (
+                      <span
+                        style={styles.ordersSeen}
+                        title="The merchant has discounts switched on at this rate. It only takes effect if the rollout is on too."
+                      >
+                        {row.merchant_discount.percentage}% set
+                      </span>
+                    )}
                     {row.trial && (
                       <span
                         style={styles.trialBadge}
@@ -757,7 +782,18 @@ export default function Admin() {
                     )}
                   </td>
                   <td style={styles.td}>
-                    {formatStoreRevenue(row.total_revenue_ytd, row.total_revenue_currency, row.total_revenue_capped)}
+                    <span title={
+                      row.total_revenue_updated_at
+                        ? `Read from Shopify ${formatAge(row.total_revenue_updated_at)}`
+                        : "Not read yet. The background refresh visits every shop in turn."
+                    }>
+                      {formatStoreRevenue(
+                        row.total_revenue_ytd,
+                        row.total_revenue_currency,
+                        row.total_revenue_capped,
+                        row.total_revenue_updated_at,
+                      )}
+                    </span>
                   </td>
                   <td style={styles.td}>
                     <ReviewPromptCell reviewPrompt={row.review_prompt} />
