@@ -61,6 +61,46 @@ function parseAttributionUrl(url) {
 }
 
 /**
+ * Where an order came from, in the smallest form that answers one question:
+ * when a sighting has no reference, was it our traffic or somebody else's?
+ *
+ * Without this the two cases are indistinguishable, and "nobody who clicked
+ * bought" reads exactly like "they bought and the reference was lost between
+ * the click and the order". Only the host and utm_source are kept; the full
+ * URLs carry more than the question needs.
+ */
+function describeTrafficSource(landingSite, referringSite) {
+  const hostOf = (value) => {
+    if (!value) return null;
+    try {
+      return new URL(value, "https://shopify-attribution.local").hostname || null;
+    } catch {
+      return null;
+    }
+  };
+
+  let utmSource = null;
+  let landingIsCart = null;
+  if (landingSite) {
+    try {
+      const url = new URL(landingSite, "https://shopify-attribution.local");
+      utmSource = url.searchParams.get("utm_source");
+      landingIsCart = url.pathname.startsWith("/cart");
+    } catch {
+      // Unparseable landing site tells us nothing; leave the fields null
+      // rather than guessing, so the data stays trustworthy.
+    }
+  }
+
+  const referrerHost = hostOf(referringSite);
+  return {
+    referrerHost: referrerHost && referrerHost !== "shopify-attribution.local" ? referrerHost : null,
+    utmSource,
+    landingIsCart,
+  };
+}
+
+/**
  * Infer channel from UTM parameters
  * @param {string} utmMedium - UTM medium parameter
  * @param {string} utmSource - UTM source parameter
@@ -205,6 +245,7 @@ export const action = async ({ request }) => {
       hadCartRef: !!noteAttrLinkId,
       hadLandingRef: !discountLinkId && !noteAttrLinkId && !!attributionData?.linkId,
       hadDiscountCode: !!discountLinkId,
+      ...describeTrafficSource(landingSite, referringSite),
     });
 
     // If we found a link_id, record attribution

@@ -1245,6 +1245,9 @@ export async function recordOrderSighting({
   hadCartRef = false,
   hadLandingRef = false,
   hadDiscountCode = false,
+  referrerHost = null,
+  utmSource = null,
+  landingIsCart = null,
 }) {
   if (!shopId || !orderId) return;
   const { error } = await supabase.from("order_sightings").upsert(
@@ -1257,6 +1260,12 @@ export async function recordOrderSighting({
       had_cart_ref: hadCartRef,
       had_landing_ref: hadLandingRef,
       had_discount_code: hadDiscountCode,
+      // Where the order came from, so a sighting with no ref can be read as
+      // either "not our traffic" or "our traffic, reference lost". Host and
+      // utm_source only: the full URLs are more than this question needs.
+      referrer_host: referrerHost,
+      utm_source: utmSource,
+      landing_is_cart: landingIsCart,
     },
     { onConflict: "shop_id,order_id" }
   );

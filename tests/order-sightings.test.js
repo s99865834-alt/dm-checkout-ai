@@ -74,6 +74,10 @@ describe("recordOrderSighting", () => {
     // review, so the row is asserted to carry only these keys.
     await recordOrderSighting({ shopId: SHOP, orderId: "1", attributed: true });
 
+    // referrer_host, utm_source and landing_is_cart are traffic shape, not
+    // customer identity: a hostname, a campaign tag and a boolean. The full
+    // landing and referring URLs are deliberately not stored, since they can
+    // carry more than this question needs.
     expect(Object.keys(upserted[0].row).sort()).toEqual([
       "amount",
       "attributed",
@@ -81,8 +85,11 @@ describe("recordOrderSighting", () => {
       "had_cart_ref",
       "had_discount_code",
       "had_landing_ref",
+      "landing_is_cart",
       "order_id",
+      "referrer_host",
       "shop_id",
+      "utm_source",
     ]);
   });
 

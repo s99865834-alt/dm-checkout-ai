@@ -162,12 +162,12 @@ describe("appendDiscountLine", () => {
     expect(appendDiscountLine(null, withCode, "Thing")).toBeNull();
   });
 
-  it("prints the code, because it is the only part that survives a browser change", () => {
-    // Most clicks come from Instagram's in-app browser and many customers
-    // leave it to pay. The cart, its applied discount and its tracking
-    // attribute all die at that point; a code they can type does not.
+  it("never writes the code into the message", () => {
+    // The code applies itself from the link. Printing it would add the manual
+    // copy-paste step the product exists to remove.
     const out = appendDiscountLine("Here's the link.", withCode, "Aries Nail Polish");
-    expect(out).toContain(withCode.discountCode);
+    expect(out).not.toContain(withCode.discountCode);
+    expect(looksLikeOurDiscountCode(out)).toBe(false);
   });
 });
 
@@ -192,16 +192,11 @@ describe("copy", () => {
     expect(discountTitle(10, null)).toBe("SocialRepl.ai 10% off");
   });
 
-  it("includes the code when there is one, and reads correctly without", () => {
-    const withCode = discountOfferLine(10, "Aries Nail Polish", "SRABCDEFGHJ");
-    expect(withCode).toContain("SRABCDEFGHJ");
-    expect(withCode).toContain("10%");
-
-    // The pool can hand back a percentage with no code in odd paths; the
-    // sentence must not then say "use code undefined at checkout".
-    const noCode = discountOfferLine(10, "Aries Nail Polish", null);
-    expect(noCode).not.toContain("undefined");
-    expect(noCode).not.toContain(CODE_PREFIX);
-    expect(noCode).toContain("10%");
+  it("states the offer without exposing a code", () => {
+    const line = discountOfferLine(10, "Aries Nail Polish");
+    expect(line).toContain("10%");
+    expect(line).toContain("Aries Nail Polish");
+    expect(line).not.toContain(CODE_PREFIX);
+    expect(line).not.toContain("undefined");
   });
 });

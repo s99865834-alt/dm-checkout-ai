@@ -117,21 +117,15 @@ export function discountTitle(percentage, productTitle) {
  * customer who swaps to something else gets nothing, and a bare "we included
  * a discount" would read as a broken promise at checkout.
  *
- * Prints the code, which an earlier version deliberately did not. Hiding it
- * looked like it protected the discount from being passed around, but the
- * code is single use, so sharing it costs one redemption and nothing more.
- * Meanwhile hiding it cost everything: 69 of 81 real clicks in a month came
- * from Instagram's in-app browser, people routinely leave it for Safari or
- * Chrome to actually pay, and the cart (with its applied discount and its
- * tracking attribute) does not survive that jump. A code the customer can
- * read and type is the only part of this that crosses a browser boundary,
- * which makes it both the discount and the attribution.
+ * Does not print the code. The code is in the link and applies itself; asking
+ * someone to copy one into a checkout field is the manual step this product
+ * exists to remove, and almost nobody does it. Attribution has to be solved
+ * by carrying the reference, not by delegating it to the customer.
  */
-export function discountOfferLine(percentage, productTitle, code) {
+export function discountOfferLine(percentage, productTitle) {
   const item = (productTitle || "").trim();
   const subject = item ? `the ${item}` : "it";
-  const withCode = code ? ` or use code ${code} at checkout` : "";
-  return `I've added ${percentage}% off ${subject} to that link${withCode}. It's good for one order.`;
+  return `I've added ${percentage}% off ${subject} to that link, and it's good for one order.`;
 }
 
 /**
@@ -160,11 +154,7 @@ export function appendDiscountLine(replyText, link, productName) {
   // one) must not get a second, contradictory sentence.
   if (replyText.includes(`${link.discountPercentage}%`)) return replyText;
 
-  const combined = `${replyText.trimEnd()} ${discountOfferLine(
-    link.discountPercentage,
-    productName,
-    link.discountCode,
-  )}`;
+  const combined = `${replyText.trimEnd()} ${discountOfferLine(link.discountPercentage, productName)}`;
   return combined.length > MAX_REPLY_LENGTH ? replyText : combined;
 }
 
