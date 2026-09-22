@@ -352,6 +352,7 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   if (variantNumericId) {
     discount = await claimDiscountCode({
       shopId: shop?.id,
+      shopDomain: shop?.shopify_domain,
       variantId: finalVariantId,
       linkId,
     });
