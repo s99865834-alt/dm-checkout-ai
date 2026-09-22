@@ -113,6 +113,36 @@ export function discountOfferLine(percentage, productTitle) {
     : `I've added ${percentage}% off to that link, and it's good for one order.`;
 }
 
+/**
+ * Instagram rejects messages over 1000 characters. The discount line is an
+ * enhancement, so it is dropped rather than risk turning a good reply into a
+ * failed send.
+ */
+const MAX_REPLY_LENGTH = 1000;
+
+/**
+ * Append the discount sentence to a reply, if a code was actually attached.
+ *
+ * The legacy per-intent branches compose their reply before they know whether
+ * a code was claimed, so the sentence is added afterwards. The sales agent
+ * doesn't use this: it is told about the discount in the tool result and
+ * writes the offer in its own voice.
+ *
+ * @param {string} replyText
+ * @param {{discountCode?: string|null, discountPercentage?: number|null}|null} link
+ * @param {string|null} productName
+ */
+export function appendDiscountLine(replyText, link, productName) {
+  if (!replyText || !link?.discountCode || !link?.discountPercentage) return replyText;
+
+  // A reply that already talks about the discount (brand voice can produce
+  // one) must not get a second, contradictory sentence.
+  if (replyText.includes(`${link.discountPercentage}%`)) return replyText;
+
+  const combined = `${replyText.trimEnd()} ${discountOfferLine(link.discountPercentage, productName)}`;
+  return combined.length > MAX_REPLY_LENGTH ? replyText : combined;
+}
+
 /** How many codes to mint to bring a pool back to the buffer size. */
 export function codesNeeded(availableCount, bufferSize = DISCOUNT_BUFFER_SIZE) {
   const have = Number.isFinite(availableCount) ? Math.max(0, availableCount) : 0;

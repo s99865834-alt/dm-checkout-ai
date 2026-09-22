@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import {
   CODE_PREFIX,
   DISCOUNT_BUFFER_SIZE,
+  appendDiscountLine,
   codesNeeded,
   discountOfferLine,
   discountTitle,
@@ -121,6 +122,49 @@ describe("codesNeeded", () => {
     expect(codesNeeded(undefined)).toBe(DISCOUNT_BUFFER_SIZE);
     expect(codesNeeded(null)).toBe(DISCOUNT_BUFFER_SIZE);
     expect(codesNeeded(-3)).toBe(DISCOUNT_BUFFER_SIZE);
+  });
+});
+
+describe("appendDiscountLine", () => {
+  const withCode = { discountCode: "SRABCDEFGHJ", discountPercentage: 10 };
+
+  it("announces the discount when a code was actually attached", () => {
+    const out = appendDiscountLine("Here's the link.", withCode, "Aries Nail Polish");
+    expect(out).toContain("Here's the link.");
+    expect(out).toContain("10%");
+    expect(out).toContain("Aries Nail Polish");
+  });
+
+  it("says nothing when no code was claimed", () => {
+    // The pool being empty is a normal outcome, not an error. The reply still
+    // goes out, it just must not promise a discount that isn't in the link.
+    const text = "Here's the link.";
+    expect(appendDiscountLine(text, null, "Thing")).toBe(text);
+    expect(appendDiscountLine(text, {}, "Thing")).toBe(text);
+    expect(appendDiscountLine(text, { discountCode: "SRABCDEFGHJ" }, "Thing")).toBe(text);
+    expect(appendDiscountLine(text, { discountPercentage: 10 }, "Thing")).toBe(text);
+  });
+
+  it("does not promise the discount twice", () => {
+    const already = "Grab 10% off here: https://example.com";
+    expect(appendDiscountLine(already, withCode, "Thing")).toBe(already);
+  });
+
+  it("drops the line rather than pushing a reply past Instagram's limit", () => {
+    // Over 1000 characters Instagram rejects the send outright, so losing the
+    // sentence is strictly better than losing the whole reply.
+    const long = "x".repeat(980);
+    expect(appendDiscountLine(long, withCode, "Aries Nail Polish")).toBe(long);
+  });
+
+  it("leaves an empty reply alone", () => {
+    expect(appendDiscountLine("", withCode, "Thing")).toBe("");
+    expect(appendDiscountLine(null, withCode, "Thing")).toBeNull();
+  });
+
+  it("never leaks the code into the message", () => {
+    const out = appendDiscountLine("Here's the link.", withCode, "Aries Nail Polish");
+    expect(out).not.toContain(withCode.discountCode);
   });
 });
 
