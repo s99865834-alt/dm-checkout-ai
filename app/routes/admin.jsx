@@ -10,7 +10,7 @@ import {
   getAdminAuthDebug,
 } from "../lib/admin-auth.server";
 import { COMMENT_TRIAL_DAYS } from "../lib/entitlements";
-import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections } from "../lib/db.server";
+import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections, setDiscountsRollout } from "../lib/db.server";
 import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreTotalRevenueYTD, getStoreManagedTrial } from "../lib/shopify-data.server";
@@ -196,6 +196,30 @@ export const action = async ({ request }) => {
     const response = new Response(null, { status: 302, headers: { Location: "/admin" } });
     setAdminSessionCookie(response);
     return response;
+  }
+
+  // Everything below mutates a merchant's store, so it needs a live admin
+  // session rather than just a configured password.
+  if (!getAdminSession(request)) {
+    return { error: "Not signed in." };
+  }
+
+  // Per-shop rollout for discount codes. Deliberately not exposed to
+  // merchants: switching it on lets the app create discounts in their Shopify
+  // store, so it reaches shops one at a time and on purpose. It lived only in
+  // the database until now, which meant the feature looked configured from
+  // the merchant side while being switched off behind them.
+  if (intent === "toggle-discounts") {
+    const shopId = formData.get("shop_id");
+    const next = formData.get("next") === "true";
+    if (!shopId) return { error: "Missing shop id." };
+    try {
+      await setDiscountsRollout(shopId, next);
+      return { ok: `Discount rollout ${next ? "enabled" : "disabled"}.` };
+    } catch (err) {
+      console.error("[admin] toggle-discounts failed:", err?.message || err);
+      return { error: "Could not change discount rollout." };
+    }
   }
 
   return { error: "Unknown action." };
@@ -641,6 +665,38 @@ export default function Admin() {
                   <td style={styles.td}>
                     <span style={planBadgeStyle(row.plan)}>{formatPlan(row.plan)}</span>
                     <CommentWindowBadge row={row} />
+                    {/* Per-shop rollout for discount codes. Operator-only:
+                        switching it on lets the app create and delete
+                        discounts inside the merchant's Shopify store. */}
+                    <Form method="post" style={{ display: "inline" }}>
+                      <input type="hidden" name="intent" value="toggle-discounts" />
+                      <input type="hidden" name="shop_id" value={row.shop_id} />
+                      <input
+                        type="hidden"
+                        name="next"
+                        value={row.discounts_rollout_enabled ? "false" : "true"}
+                      />
+                      <button
+                        type="submit"
+                        style={{
+                          marginLeft: 6,
+                          padding: "1px 6px",
+                          fontSize: 11,
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          border: "1px solid #444",
+                          background: row.discounts_rollout_enabled ? "#14532d" : "transparent",
+                          color: row.discounts_rollout_enabled ? "#bbf7d0" : "#888",
+                        }}
+                        title={
+                          row.discounts_rollout_enabled
+                            ? "Discount codes are rolled out to this shop. Click to stop; existing pools get reaped on the next maintenance pass."
+                            : "Discount codes are off for this shop. Click to roll out: the app will start creating variant-scoped discounts in their Shopify store."
+                        }
+                      >
+                        {row.discounts_rollout_enabled ? "Discounts on" : "Discounts off"}
+                      </button>
+                    </Form>
                     {row.trial && (
                       <span
                         style={styles.trialBadge}

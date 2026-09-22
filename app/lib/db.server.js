@@ -141,6 +141,29 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
   }
 }
 
+/**
+ * Turn the discount-code rollout on or off for one shop.
+ *
+ * Operator-only on purpose: enabling it lets the app create and delete
+ * discounts inside the merchant's Shopify store, so it is rolled out
+ * deliberately rather than by a merchant flipping a switch.
+ */
+export async function setDiscountsRollout(shopId, enabled) {
+  if (!shopId) throw new Error("setDiscountsRollout requires a shopId");
+
+  const { error } = await supabase
+    .from("shops")
+    .update({ discounts_rollout_enabled: !!enabled })
+    .eq("id", shopId);
+
+  if (error) {
+    console.error("setDiscountsRollout error", error);
+    throw error;
+  }
+
+  invalidateCached("shopplan:");
+}
+
 export async function updateShopPlan(shopId, plan) {
   const config = getPlanConfig(plan);
 
@@ -2497,6 +2520,7 @@ async function buildAdminStoresResult(shops) {
       created_at: s.created_at,
       active: s.active,
       plan: s.plan || "FREE",
+      discounts_rollout_enabled: !!s.discounts_rollout_enabled,
       beta_trial: betaTrial,
       // Free comment-to-DM window. Computed here, like beta_trial above, so
       // the dashboard renders it without repeating the date arithmetic.
