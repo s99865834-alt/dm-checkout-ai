@@ -16,12 +16,11 @@ alter table settings
   add column if not exists discount_enabled boolean not null default false,
   add column if not exists discount_percentage integer;
 
--- Rollout control that is independent of plan. The capability is a Growth
--- feature in plans.js, but writes to a merchant's store should reach shops one
--- at a time first, and gating that on the plan would put the feature in the
--- wrong tier permanently.
-alter table shops
-  add column if not exists discounts_rollout_enabled boolean not null default false;
+-- There is deliberately no operator rollout flag. An earlier version had one,
+-- a second switch that had to agree with the merchant's own setting, and it
+-- meant a merchant could enable discounts, save, and silently get nothing.
+-- The plan capability already limits this to Growth and Pro, and unlike a
+-- hidden column that limit is visible to the person it applies to.
 
 create table if not exists discount_pools (
   id uuid primary key default gen_random_uuid(),

@@ -2,6 +2,7 @@ import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan } from "./entitlements";
+import { DISCOUNT_TYPES } from "./discount-rules";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { excludeAutomatedReviewShops } from "./shopify-review-shop";
@@ -185,22 +186,6 @@ export async function getShopsForRevenueRefresh(limit = 25) {
     return [];
   }
   return data || [];
-}
-
-export async function setDiscountsRollout(shopId, enabled) {
-  if (!shopId) throw new Error("setDiscountsRollout requires a shopId");
-
-  const { error } = await supabase
-    .from("shops")
-    .update({ discounts_rollout_enabled: !!enabled })
-    .eq("id", shopId);
-
-  if (error) {
-    console.error("setDiscountsRollout error", error);
-    throw error;
-  }
-
-  invalidateCached("shopplan:");
 }
 
 export async function updateShopPlan(shopId, plan) {
@@ -1389,9 +1374,12 @@ export async function updateSettings(shopId, settings = {}) {
           ? settings.disabled_post_ids
           : current.disabled_post_ids,
         discount_enabled: bool(settings.discount_enabled, current.discount_enabled),
-        discount_percentage: Number.isInteger(settings.discount_percentage)
-          ? settings.discount_percentage
-          : current.discount_percentage,
+        discount_type: DISCOUNT_TYPES.includes(settings.discount_type)
+          ? settings.discount_type
+          : current.discount_type || "percentage",
+        discount_value: Number.isFinite(settings.discount_value)
+          ? settings.discount_value
+          : current.discount_value,
         // The column default only fires on insert, so every update since this
         // table was created has left updated_at at the original value. It read
         // as ten months stale while the row was being changed several times an
@@ -2574,15 +2562,14 @@ async function buildAdminStoresResult(shops) {
       created_at: s.created_at,
       active: s.active,
       plan: s.plan || "FREE",
-      // Two different things that both get called "discounts": whether we
-      // have rolled the feature out to this shop, and whether the merchant
-      // has switched it on. Showing only the first made a store with
-      // discounts actively running read as "off".
-      discounts_rollout_enabled: !!s.discounts_rollout_enabled,
       merchant_discount: (() => {
         const st = Array.isArray(s.settings) ? s.settings[0] : s.settings;
-        if (!st?.discount_enabled) return null;
-        return { percentage: st.discount_percentage ?? null };
+        if (!st?.discount_enabled || st.discount_value == null) return null;
+        return {
+          type: st.discount_type || "percentage",
+          value: Number(st.discount_value),
+          currency: s.store_revenue_currency || "USD",
+        };
       })(),
       // Refreshed in the background rather than fetched while the page loads,
       // so the figure is the same on every refresh. Null means never fetched.

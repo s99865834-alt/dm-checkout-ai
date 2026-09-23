@@ -41,7 +41,7 @@ const MINT_TIMEOUT_MS = 2500;
  * empty, database unhappy. The caller sends its reply either way, so a null
  * costs one customer a discount rather than costing the merchant a reply.
  *
- * @returns {Promise<{code: string, percentage: number}|null>}
+ * @returns {Promise<{code: string, type: string, value: number, currency: string}|null>}
  */
 export async function claimDiscountCode({ shopId, shopDomain, variantId, linkId, productTitle }) {
   const key = toVariantKey(variantId);
@@ -64,7 +64,9 @@ export async function claimDiscountCode({ shopId, shopDomain, variantId, linkId,
     return null;
   }
 
-  if (data?.code) return { code: data.code, percentage: data.percentage };
+  if (data?.code) {
+    return { code: data.code, type: data.type, value: Number(data.value), currency: data.currency };
+  }
   if (!data?.needs_mint || !shopDomain) return null;
 
   // First link to this variant, so there is nothing pooled yet. Minting here
@@ -78,7 +80,9 @@ export async function claimDiscountCode({ shopId, shopDomain, variantId, linkId,
     shopDomain,
     variantKey: key,
     linkId,
-    percentage: data.percentage,
+    discountType: data.type,
+    discountValue: Number(data.value),
+    currency: data.currency,
     productTitle,
   });
 }
@@ -93,13 +97,24 @@ export async function claimDiscountCode({ shopId, shopDomain, variantId, linkId,
  * cheap and a missed reply is not. The abandoned request still completes at
  * Shopify, and the pool it creates gets picked up on the next pass.
  */
-async function mintCodeNow({ shopId, shopDomain, variantKey, linkId, percentage, productTitle }) {
+async function mintCodeNow({
+  shopId,
+  shopDomain,
+  variantKey,
+  linkId,
+  discountType,
+  discountValue,
+  currency,
+  productTitle,
+}) {
   const work = (async () => {
     const code = generateDiscountCode();
     const created = await createVariantDiscount({
       shopDomain,
       variantId: variantKey,
-      percentage,
+      discountType,
+      discountValue,
+      currency,
       productTitle,
       firstCode: code,
     });
@@ -111,14 +126,15 @@ async function mintCodeNow({ shopId, shopDomain, variantKey, linkId, percentage,
         shop_id: shopId,
         variant_id: variantKey,
         product_title: productTitle || null,
-        percentage,
+        discount_type: discountType,
+        discount_value: discountValue,
         discount_node_id: created.discountNodeId,
       })
       .select("id")
       .single();
 
     // Two replies for the same new variant can race here. The unique index on
-    // (shop_id, variant_id, percentage) means one loses; it drops its
+    // (shop_id, variant_id, discount_type, discount_value) means one loses; it drops its
     // just-created Shopify discount rather than leaving an orphan the reaper
     // would never find. The rate is part of that key on purpose: a merchant
     // changing 20% to 5% leaves the old pool in place until it is reaped, and
@@ -142,7 +158,7 @@ async function mintCodeNow({ shopId, shopDomain, variantKey, linkId, percentage,
       return null;
     }
 
-    return { code: created.code, percentage };
+    return { code: created.code, type: discountType, value: discountValue, currency };
   })();
 
   try {

@@ -366,7 +366,9 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     url: finalUrl,
     linkId: linkId,
     discountCode: discount?.code || null,
-    discountPercentage: discount?.percentage || null,
+    discountType: discount?.type || null,
+    discountValue: discount?.value || null,
+    discountCurrency: discount?.currency || null,
   };
 }
 

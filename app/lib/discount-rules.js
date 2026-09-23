@@ -9,7 +9,13 @@
  * form and the server agree on what a valid percentage is.
  */
 
-import { randomBytes } from "crypto";
+// Web Crypto rather than node:crypto. The settings form and the admin
+// dashboard both import the validation bounds and the offer formatting from
+// this file, so it ends up in the browser bundle, and a node builtin import
+// fails the build there. getRandomValues exists in both runtimes.
+function randomBytes(length) {
+  return globalThis.crypto.getRandomValues(new Uint8Array(length));
+}
 
 /**
  * How many unused codes to keep ready per variant.
@@ -47,6 +53,32 @@ export const POOL_REAP_GRACE_DAYS = 7;
 
 export const MIN_DISCOUNT_PERCENTAGE = 1;
 export const MAX_DISCOUNT_PERCENTAGE = 50;
+
+/** A fixed amount off, in the shop's own currency. */
+export const MIN_DISCOUNT_AMOUNT = 1;
+export const MAX_DISCOUNT_AMOUNT = 10000;
+
+export const DISCOUNT_TYPES = ["percentage", "amount"];
+
+/** Money for reply copy. Falls back to the code when the symbol is unknown. */
+function formatMoney(value, currency) {
+  const code = (currency || "USD").toUpperCase();
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    }).format(value);
+  } catch {
+    return `${value} ${code}`;
+  }
+}
+
+/** "20% off" or "$5 off", for both merchant-facing and customer-facing copy. */
+export function describeOffer(type, value, currency) {
+  if (type === "amount") return `${formatMoney(value, currency)} off`;
+  return `${value}% off`;
+}
 
 /**
  * Alphabet for generated codes. Excludes 0/O/1/I/L so a customer reading the
@@ -102,12 +134,25 @@ export function isValidDiscountPercentage(value) {
   return value >= MIN_DISCOUNT_PERCENTAGE && value <= MAX_DISCOUNT_PERCENTAGE;
 }
 
+/**
+ * Whether a type and value make a usable offer.
+ *
+ * Percentages stay whole numbers and capped at 50, because a code discount
+ * above that is far more likely to be a typo than an intention. Amounts allow
+ * cents and are capped high enough not to get in the way of a real store.
+ */
+export function isValidDiscountOffer(type, value) {
+  if (!DISCOUNT_TYPES.includes(type)) return false;
+  if (typeof value !== "number" || !Number.isFinite(value)) return false;
+  if (type === "percentage") return isValidDiscountPercentage(value);
+  return value >= MIN_DISCOUNT_AMOUNT && value <= MAX_DISCOUNT_AMOUNT;
+}
+
 /** Title for the discount as the merchant will see it in their Shopify admin. */
-export function discountTitle(percentage, productTitle) {
+export function discountTitle(type, value, currency, productTitle) {
   const item = (productTitle || "").trim();
-  return item
-    ? `SocialRepl.ai ${percentage}% off ${item}`
-    : `SocialRepl.ai ${percentage}% off`;
+  const offer = describeOffer(type, value, currency);
+  return item ? `SocialRepl.ai ${offer} ${item}` : `SocialRepl.ai ${offer}`;
 }
 
 /**
@@ -122,10 +167,10 @@ export function discountTitle(percentage, productTitle) {
  * exists to remove, and almost nobody does it. Attribution has to be solved
  * by carrying the reference, not by delegating it to the customer.
  */
-export function discountOfferLine(percentage, productTitle) {
+export function discountOfferLine(type, value, currency, productTitle) {
   const item = (productTitle || "").trim();
   const subject = item ? `the ${item}` : "it";
-  return `I've added ${percentage}% off ${subject} to that link, and it's good for one order.`;
+  return `I've added ${describeOffer(type, value, currency)} ${subject} to that link, and it's good for one order.`;
 }
 
 /**
@@ -144,17 +189,24 @@ const MAX_REPLY_LENGTH = 1000;
  * writes the offer in its own voice.
  *
  * @param {string} replyText
- * @param {{discountCode?: string|null, discountPercentage?: number|null}|null} link
+ * @param {{discountCode?: string|null, discountType?: string|null, discountValue?: number|null, discountCurrency?: string|null}|null} link
  * @param {string|null} productName
  */
 export function appendDiscountLine(replyText, link, productName) {
-  if (!replyText || !link?.discountCode || !link?.discountPercentage) return replyText;
+  if (!replyText || !link?.discountCode || !link?.discountValue) return replyText;
+
+  const offer = describeOffer(link.discountType, link.discountValue, link.discountCurrency);
 
   // A reply that already talks about the discount (brand voice can produce
   // one) must not get a second, contradictory sentence.
-  if (replyText.includes(`${link.discountPercentage}%`)) return replyText;
+  if (replyText.includes(offer)) return replyText;
 
-  const combined = `${replyText.trimEnd()} ${discountOfferLine(link.discountPercentage, productName)}`;
+  const combined = `${replyText.trimEnd()} ${discountOfferLine(
+    link.discountType,
+    link.discountValue,
+    link.discountCurrency,
+    productName,
+  )}`;
   return combined.length > MAX_REPLY_LENGTH ? replyText : combined;
 }
 
