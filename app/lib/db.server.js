@@ -187,22 +187,6 @@ export async function getShopsForRevenueRefresh(limit = 25) {
   return data || [];
 }
 
-export async function setDiscountsRollout(shopId, enabled) {
-  if (!shopId) throw new Error("setDiscountsRollout requires a shopId");
-
-  const { error } = await supabase
-    .from("shops")
-    .update({ discounts_rollout_enabled: !!enabled })
-    .eq("id", shopId);
-
-  if (error) {
-    console.error("setDiscountsRollout error", error);
-    throw error;
-  }
-
-  invalidateCached("shopplan:");
-}
-
 export async function updateShopPlan(shopId, plan) {
   const config = getPlanConfig(plan);
 
@@ -2574,11 +2558,6 @@ async function buildAdminStoresResult(shops) {
       created_at: s.created_at,
       active: s.active,
       plan: s.plan || "FREE",
-      // Two different things that both get called "discounts": whether we
-      // have rolled the feature out to this shop, and whether the merchant
-      // has switched it on. Showing only the first made a store with
-      // discounts actively running read as "off".
-      discounts_rollout_enabled: !!s.discounts_rollout_enabled,
       merchant_discount: (() => {
         const st = Array.isArray(s.settings) ? s.settings[0] : s.settings;
         if (!st?.discount_enabled) return null;
