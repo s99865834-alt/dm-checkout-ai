@@ -37,6 +37,7 @@ import {
 } from "./shopify-data.server";
 import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE } from "./reply-rules";
+import { describeOffer } from "./discount-rules";
 import {
   buildCheckoutLink,
   buildProductPageLink,
@@ -355,7 +356,7 @@ export async function generateAgentReply({
           // product exists to remove.
           ...(link.discountCode
             ? {
-                discount_applied: `${link.discountPercentage}% off this item is already built into that link. Say you have included it and that it works on one order. Never write out a discount code.`,
+                discount_applied: `${describeOffer(link.discountType, link.discountValue, link.discountCurrency)} this item is already built into that link. Say you have included it and that it works on one order. Never write out a discount code.`,
               }
             : {}),
         };

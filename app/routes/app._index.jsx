@@ -5,7 +5,13 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
-import { isValidDiscountPercentage, MIN_DISCOUNT_PERCENTAGE, MAX_DISCOUNT_PERCENTAGE } from "../lib/discount-rules";
+import {
+  isValidDiscountOffer,
+  MIN_DISCOUNT_PERCENTAGE,
+  MAX_DISCOUNT_PERCENTAGE,
+  MIN_DISCOUNT_AMOUNT,
+  MAX_DISCOUNT_AMOUNT,
+} from "../lib/discount-rules";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
@@ -272,10 +278,16 @@ export const action = async ({ request }) => {
       const commentAutomationEnabled = formData.get("comment_automation_enabled") === "true";
       const followupEnabled = formData.get("followup_enabled") === "true";
       const discountEnabled = formData.get("discount_enabled") === "true";
-      const discountPercentage = parseInt(formData.get("discount_percentage"), 10);
-      if (discountEnabled && !isValidDiscountPercentage(discountPercentage)) {
+      const discountType = formData.get("discount_type") === "amount" ? "amount" : "percentage";
+      const rawValue = parseFloat(formData.get("discount_value"));
+      // Percentages stay whole numbers; amounts keep cents.
+      const discountValue = discountType === "percentage" ? Math.round(rawValue) : rawValue;
+      if (discountEnabled && !isValidDiscountOffer(discountType, discountValue)) {
         return {
-          error: `Pick a discount between ${MIN_DISCOUNT_PERCENTAGE}% and ${MAX_DISCOUNT_PERCENTAGE}%`,
+          error:
+            discountType === "percentage"
+              ? `Pick a discount between ${MIN_DISCOUNT_PERCENTAGE}% and ${MAX_DISCOUNT_PERCENTAGE}%`
+              : `Pick an amount between ${MIN_DISCOUNT_AMOUNT} and ${MAX_DISCOUNT_AMOUNT}`,
         };
       }
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
@@ -290,7 +302,8 @@ export const action = async ({ request }) => {
             comment_automation_enabled: commentAutomationEnabled,
             followup_enabled: followupEnabled,
             discount_enabled: discountEnabled,
-            ...(Number.isInteger(discountPercentage) ? { discount_percentage: discountPercentage } : {}),
+            discount_type: discountType,
+            ...(Number.isFinite(discountValue) ? { discount_value: discountValue } : {}),
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -613,7 +626,8 @@ export default function Index() {
   const [commentAutomationEnabled, setCommentAutomationEnabled] = useState(settings?.comment_automation_enabled ?? true);
   const [followupEnabled, setFollowupEnabled] = useState(settings?.followup_enabled ?? true);
   const [discountEnabled, setDiscountEnabled] = useState(settings?.discount_enabled ?? false);
-  const [discountPercentage, setDiscountPercentage] = useState(settings?.discount_percentage ?? 10);
+  const [discountType, setDiscountType] = useState(settings?.discount_type || "percentage");
+  const [discountValue, setDiscountValue] = useState(settings?.discount_value ?? 10);
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
   const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
@@ -627,7 +641,8 @@ export default function Index() {
       setCommentAutomationEnabled(settings.comment_automation_enabled ?? true);
       setFollowupEnabled(settings.followup_enabled ?? true);
       setDiscountEnabled(settings.discount_enabled ?? false);
-      setDiscountPercentage(settings.discount_percentage ?? 10);
+      setDiscountType(settings.discount_type || "percentage");
+      setDiscountValue(settings.discount_value ?? 10);
     }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
@@ -1253,7 +1268,8 @@ export default function Index() {
           <input type="hidden" name="comment_automation_enabled" value={commentAutomationEnabled ? "true" : "false"} />
           <input type="hidden" name="followup_enabled" value={followupEnabled ? "true" : "false"} />
           <input type="hidden" name="discount_enabled" value={discountEnabled ? "true" : "false"} />
-          <input type="hidden" name="discount_percentage" value={String(discountPercentage ?? 10)} />
+          <input type="hidden" name="discount_type" value={discountType || "percentage"} />
+          <input type="hidden" name="discount_value" value={String(discountValue ?? "")} />
           <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
           <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
           <input type="hidden" name="brand_voice_reply_language" value={brandVoiceReplyLang || "auto"} />
@@ -1319,16 +1335,28 @@ export default function Index() {
                           : "Upgrade to Growth to add one-time discounts to checkout links"}
                       </span>
                       {plan?.discounts && discountEnabled && (
-                        <select
-                          value={discountPercentage}
-                          onChange={(e) => setDiscountPercentage(parseInt(e.target.value, 10))}
-                          className="srSelect srInputRow"
-                          aria-label="Discount percentage"
-                        >
-                          {[5, 10, 15, 20, 25].map((pct) => (
-                            <option key={pct} value={pct}>{pct}% off</option>
-                          ))}
-                        </select>
+                        <div className="srHStack srInputRow" style={{ gap: "8px" }}>
+                          <input
+                            type="number"
+                            min={discountType === "percentage" ? MIN_DISCOUNT_PERCENTAGE : MIN_DISCOUNT_AMOUNT}
+                            max={discountType === "percentage" ? MAX_DISCOUNT_PERCENTAGE : MAX_DISCOUNT_AMOUNT}
+                            step={discountType === "percentage" ? 1 : 0.01}
+                            value={discountValue}
+                            onChange={(e) => setDiscountValue(e.target.value)}
+                            className="srInput"
+                            style={{ width: "90px" }}
+                            aria-label="Discount amount"
+                          />
+                          <select
+                            value={discountType}
+                            onChange={(e) => setDiscountType(e.target.value)}
+                            className="srSelect"
+                            aria-label="Discount type"
+                          >
+                            <option value="percentage">% off</option>
+                            <option value="amount">off the price</option>
+                          </select>
+                        </div>
                       )}
                     </div>
                     <label className="srToggle" aria-label="Checkout discount">

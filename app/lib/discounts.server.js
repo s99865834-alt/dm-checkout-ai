@@ -95,17 +95,27 @@ function firstUserError(payload, key) {
 export async function createVariantDiscount({
   shopDomain,
   variantId,
-  percentage,
+  discountType,
+  discountValue,
+  currency,
   productTitle,
   firstCode,
 }) {
   const admin = await adminFor(shopDomain);
   if (!admin) return null;
-  if (!variantId || !firstCode || !percentage) return null;
+  if (!variantId || !firstCode || !discountValue) return null;
+
+  // Percentage is a fraction, so 10% is 0.1. A fixed amount is a money value
+  // in the shop's own currency, which Shopify infers, and applies once to the
+  // line rather than per unit so a quantity of five does not multiply it.
+  const value =
+    discountType === "amount"
+      ? { discountAmount: { amount: discountValue, appliesOnEachItem: false } }
+      : { percentage: discountValue / 100 };
 
   const variables = {
     basicCodeDiscount: {
-      title: discountTitle(percentage, productTitle),
+      title: discountTitle(discountType, discountValue, currency, productTitle),
       code: firstCode,
       // Backdated a minute. The code goes into a link that can be clicked
       // seconds later, and "starts now" leaves a window where Shopify has the
@@ -119,8 +129,7 @@ export async function createVariantDiscount({
       // "anyone with the code".
       customerSelection: { all: true },
       customerGets: {
-        // DiscountPercentage is a fraction, so 10% is 0.1.
-        value: { percentage: percentage / 100 },
+        value,
         items: { products: { productVariantsToAdd: [variantId] } },
       },
       // Stack with order-level and shipping promotions, but not with another

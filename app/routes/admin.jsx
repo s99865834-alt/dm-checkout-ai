@@ -15,6 +15,7 @@ import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreManagedTrial } from "../lib/shopify-data.server";
 import { cached } from "../lib/loader-cache.server";
+import { describeOffer } from "../lib/discount-rules";
 import { mapWithConcurrency } from "../lib/concurrency";
 
 // Re-assert each connected account's Instagram webhook subscription at most
@@ -662,7 +663,11 @@ export default function Admin() {
                         style={styles.ordersSeen}
                         title="Checkout discounts are on for this store at this rate."
                       >
-                        {row.merchant_discount.percentage}% discount
+                        {describeOffer(
+                          row.merchant_discount.type,
+                          row.merchant_discount.value,
+                          row.merchant_discount.currency,
+                        )}
                       </span>
                     )}
                     {row.trial && (
