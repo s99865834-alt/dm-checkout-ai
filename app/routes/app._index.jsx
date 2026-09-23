@@ -1331,7 +1331,7 @@ export default function Index() {
                       <span className="srCardTitle">Product discount</span>
                       <span className="srCardDesc">
                         {plan?.discounts
-                          ? "Discounts only the product in the link we send, never the rest of the cart, so anything else the customer adds stays full price. Each code works on one order. A fixed amount comes off that line once; a percentage applies to each unit of that product."
+                          ? "Discounts one unit of the product in the link we send, and nothing else in the cart. Anything else the customer adds, including more of the same product, stays full price. Each code works on a single order."
                           : "Upgrade to Growth to add one-time product discounts to the links you send"}
                       </span>
                       {plan?.discounts && discountEnabled && (
