@@ -105,9 +105,14 @@ export async function createVariantDiscount({
   if (!admin) return null;
   if (!variantId || !firstCode || !discountValue) return null;
 
-  // Percentage is a fraction, so 10% is 0.1. A fixed amount is a money value
-  // in the shop's own currency, which Shopify infers, and applies once to the
-  // line rather than per unit so a quantity of five does not multiply it.
+  // Percentage is a fraction, so 10% is 0.1, and it applies to every unit of
+  // the variant in the cart. Capping it at one unit is not available here:
+  // discountOnQuantity exists on this input but Shopify rejects it outside
+  // BXGY discounts ("discountOnQuantity field is only permitted with bxgy
+  // discounts"), verified against a live store.
+  //
+  // A fixed amount is once per line via appliesOnEachItem, so a quantity of
+  // five does not multiply it.
   const value =
     discountType === "amount"
       ? { discountAmount: { amount: discountValue, appliesOnEachItem: false } }
