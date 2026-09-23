@@ -72,6 +72,26 @@ async function adminFor(shopDomain) {
   }
 }
 
+const VARIANT_PRICE = `
+  query VariantPrice($id: ID!) {
+    productVariant(id: $id) { price }
+  }
+`;
+
+/** The variant's current price, or null if it can't be read. */
+async function variantPrice(admin, variantId) {
+  try {
+    const response = await admin.graphql(VARIANT_PRICE, { variables: { id: variantId } });
+    const body = await response.json();
+    const raw = body?.data?.productVariant?.price;
+    const price = raw == null ? NaN : Number(raw);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  } catch (err) {
+    console.error(`[discounts] Variant price lookup failed for ${variantId}: ${err?.message || err}`);
+    return null;
+  }
+}
+
 function firstUserError(payload, key) {
   const errors = payload?.data?.[key]?.userErrors || [];
   return errors.length ? errors.map((e) => e.message).join("; ") : null;
@@ -105,13 +125,34 @@ export async function createVariantDiscount({
   if (!admin) return null;
   if (!variantId || !firstCode || !discountValue) return null;
 
-  // Percentage is a fraction, so 10% is 0.1. A fixed amount is a money value
-  // in the shop's own currency, which Shopify infers, and applies once to the
-  // line rather than per unit so a quantity of five does not multiply it.
-  const value =
-    discountType === "amount"
-      ? { discountAmount: { amount: discountValue, appliesOnEachItem: false } }
-      : { percentage: discountValue / 100 };
+  // Everything is created as a fixed amount off one line, so the customer is
+  // discounted on a single unit no matter how many they end up buying.
+  //
+  // A percentage is resolved to cash here rather than sent as a percentage.
+  // Shopify's `percentage` applies to every matching unit in the cart, and
+  // the obvious cap, discountOnQuantity, is rejected on a basic code discount
+  // ("discountOnQuantity field is only permitted with bxgy discounts",
+  // verified against a live store). Converting at mint time is the only way
+  // to honour what the merchant agreed to when they typed a rate.
+  //
+  // The trade is that the cash value is fixed when the code is minted, so a
+  // price change afterwards leaves outstanding codes on the old figure.
+  // Pools hold five codes and get reaped, so the window is small.
+  let amount = discountValue;
+  if (discountType === "percentage") {
+    const price = await variantPrice(admin, variantId);
+    if (price == null) {
+      // Falling back to a raw percentage here would quietly discount every
+      // unit, which is the behaviour this exists to prevent. No discount is
+      // the safer miss.
+      console.error(`[discounts] No price for ${variantId} on ${shopDomain}; skipping discount`);
+      return null;
+    }
+    amount = Math.round(price * discountValue) / 100;
+    if (!(amount > 0)) return null;
+  }
+
+  const value = { discountAmount: { amount, appliesOnEachItem: false } };
 
   const variables = {
     basicCodeDiscount: {

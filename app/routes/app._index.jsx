@@ -1328,14 +1328,17 @@ export default function Index() {
                 <div className="srToggleRow">
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
-                      <span className="srCardTitle">Checkout discount</span>
+                      <span className="srCardTitle">Product discount</span>
                       <span className="srCardDesc">
                         {plan?.discounts
-                          ? "Add a one-time discount to the checkout links we send. Each code works once, applies only to the product in that link, and tells you exactly which reply earned the sale."
-                          : "Upgrade to Growth to add one-time discounts to checkout links"}
+                          ? "Discounts one unit of the product in the link we send, and nothing else in the cart. Anything else the customer adds, including more of the same product, stays full price. Each code works on a single order."
+                          : "Upgrade to Growth to add one-time product discounts to the links you send"}
                       </span>
                       {plan?.discounts && discountEnabled && (
-                        <div className="srHStack srInputRow" style={{ gap: "8px" }}>
+                        <div
+                          className="srInputRow"
+                          style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                        >
                           <input
                             type="number"
                             min={discountType === "percentage" ? MIN_DISCOUNT_PERCENTAGE : MIN_DISCOUNT_AMOUNT}
@@ -1344,22 +1347,23 @@ export default function Index() {
                             value={discountValue}
                             onChange={(e) => setDiscountValue(e.target.value)}
                             className="srInput"
-                            style={{ width: "90px" }}
+                            style={{ width: "90px", flex: "0 0 auto" }}
                             aria-label="Discount amount"
                           />
                           <select
                             value={discountType}
                             onChange={(e) => setDiscountType(e.target.value)}
                             className="srSelect"
+                            style={{ flex: "0 0 auto", width: "auto" }}
                             aria-label="Discount type"
                           >
-                            <option value="percentage">% off</option>
-                            <option value="amount">off the price</option>
+                            <option value="percentage">percentage</option>
+                            <option value="amount">fixed amount</option>
                           </select>
                         </div>
                       )}
                     </div>
-                    <label className="srToggle" aria-label="Checkout discount">
+                    <label className="srToggle" aria-label="Product discount">
                       <input
                         type="checkbox"
                         checked={plan?.discounts ? discountEnabled : false}
