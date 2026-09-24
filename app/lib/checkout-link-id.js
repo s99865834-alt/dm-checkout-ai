@@ -1,10 +1,11 @@
 /**
  * Checkout / add-to-cart links use a bare 8-char base62 id (generateLinkId).
- * Everything else in links_sent is bookkeeping or a non-checkout destination
- * and must not count toward analytics or attribution:
+ * Analytics CTR only counts those. Revenue attribution is wider: any
+ * link_id that was last-clicked (or used via a discount code) inside 30 days
+ * can credit a sale, including info_ and pdp_ destinations.
  *   dm_reply_*  claim slot (no URL)
- *   info_*      homepage / browse-the-store
- *   pdp_*       product page (no cart attribute)
+ *   info_*      homepage / collection / browse
+ *   pdp_*       product page
  *   size_q_*    size-question reply
  *   followup_*  check-in DM
  */

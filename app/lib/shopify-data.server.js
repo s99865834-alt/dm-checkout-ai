@@ -717,6 +717,70 @@ export async function getProductOgPreview(shopDomain, productId) {
   }
 }
 
+// Published collections, cached because the comment fallback reads this on
+// every unmapped post and the list changes about as often as the catalogue.
+const _shopCollectionsCache = new Map(); // shopDomain -> { value, at }
+const SHOP_COLLECTIONS_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Published collections for matching a caption or comment to a real
+ * collection page. Title + handle + image only: the comment path just needs
+ * enough to pick a URL and fill the preview card.
+ *
+ * @param {string} shopDomain
+ * @returns {Promise<Array<{title: string, handle: string, imageUrl: string|null}>>}
+ */
+export async function getShopCollections(shopDomain) {
+  if (!shopDomain) return [];
+
+  const cached = _shopCollectionsCache.get(shopDomain);
+  if (cached && Date.now() - cached.at < SHOP_COLLECTIONS_TTL_MS) return cached.value;
+
+  try {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) return [];
+    const response = await shopGraphql(
+      admin,
+      `query ShopCollections {
+        collections(first: 150, query: "published_status:published") {
+          nodes {
+            title
+            handle
+            image { url }
+          }
+        }
+      }`,
+    );
+    const nodes = response?.data?.collections?.nodes || [];
+    const value = nodes
+      .filter((node) => node?.handle && node?.title)
+      .map((node) => ({
+        title: node.title,
+        handle: node.handle,
+        imageUrl: node.image?.url || null,
+      }));
+    _shopCollectionsCache.set(shopDomain, { value, at: Date.now() });
+    return value;
+  } catch (error) {
+    if (isExpectedAdminApiMiss(error)) return [];
+    logger.debug(
+      `[shopify-data] collections lookup failed for ${shopDomain}: ${error?.message || error}`,
+    );
+    return [];
+  }
+}
+
+export function collectionOgPreview(collections, handle) {
+  if (!handle || !Array.isArray(collections)) return null;
+  const wanted = String(handle).trim().toLowerCase();
+  const match = collections.find((c) => (c.handle || "").toLowerCase() === wanted);
+  if (!match) return null;
+  return {
+    title: match.title || null,
+    imageUrl: match.imageUrl || null,
+  };
+}
+
 // Store-level preview image, cached because it is the same for every browse
 // link a shop ever sends and it changes about as often as the catalogue does.
 const _shopOgCache = new Map(); // shopDomain -> { value, at }

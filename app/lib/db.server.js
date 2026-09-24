@@ -1078,6 +1078,34 @@ export async function getRecentConversationContext(shopId, fromUserId, options =
 }
 
 /**
+ * Latest send or click for this link, used as the start of the 30-day
+ * last-click window. Clicks win when both exist.
+ */
+export async function getLinkLastTouchAt(shopId, linkId) {
+  if (!shopId || !linkId) return null;
+
+  const { data: click } = await supabase
+    .from("clicks")
+    .select("clicked_at")
+    .eq("link_id", linkId)
+    .order("clicked_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: sent } = await supabase
+    .from("links_sent")
+    .select("sent_at")
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId)
+    .maybeSingle();
+
+  const clickAt = click?.clicked_at ? new Date(click.clicked_at).getTime() : 0;
+  const sentAt = sent?.sent_at ? new Date(sent.sent_at).getTime() : 0;
+  const latest = Math.max(clickAt, sentAt);
+  return latest ? new Date(latest).toISOString() : null;
+}
+
+/**
  * Record a click on a link_id (string from URL).
  */
 export async function logClick(params) {
@@ -1677,7 +1705,7 @@ export async function getStoryMessageCount(shopId) {
 
 /**
  * Revenue attributed to the app this calendar month (sum of attribution
- * rows). Powers the honest ROI upgrade pitch ("drove $X — Growth costs
+ * rows). Powers the honest ROI upgrade pitch ("attributed $X, Growth costs
  * $39"). Currency is taken from the first row; stores bill in a single
  * currency in practice. Failure-safe (zero).
  *

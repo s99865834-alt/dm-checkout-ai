@@ -94,6 +94,7 @@ vi.mock("../app/lib/shopify-data.server", () => ({
   detectSizeOption: vi.fn(() => null),
   resolveVariantBySize: vi.fn(() => null),
   getShopPrimaryDomainHost: vi.fn(async () => null),
+  getShopCollections: vi.fn(async () => []),
 }));
 
 vi.mock("../app/lib/storefront-mcp.server", () => ({
@@ -143,6 +144,7 @@ import {
   resolveVariantBySize,
   getShopPrimaryDomainHost,
   searchProductsByDomain,
+  getShopCollections,
 } from "../app/lib/shopify-data.server";
 import { canSendForShop, sendDmNow } from "../app/lib/queue.server";
 import { getPlanConfig } from "../app/lib/plans";
@@ -207,6 +209,7 @@ beforeEach(() => {
   resolveVariantBySize.mockReturnValue(null);
   getShopPrimaryDomainHost.mockResolvedValue(null);
   searchProductsByDomain.mockResolvedValue([]);
+  getShopCollections.mockResolvedValue([]);
   canSendForShop.mockResolvedValue(true);
   sendDmNow.mockResolvedValue({ sent: true });
   sendInstagramPrivateReply.mockResolvedValue({ message_id: "sent-1" });
@@ -588,6 +591,34 @@ describe("comment reply paths", () => {
 
     expect(res.sent).toBe(true);
     expect(sentReplyText()).toContain("https://short.test/");
+  });
+
+  it("unmapped post whose caption names a collection: still replies with a real link", async () => {
+    getProductMappings.mockResolvedValue([]);
+    searchCatalogNormalized.mockResolvedValue([]);
+    getShopCollections.mockResolvedValue([
+      { title: "Aries", handle: "aries" },
+      { title: "Nail Polish", handle: "nail-polish" },
+      { title: "Zodiac Shades", handle: "zodiac-shades" },
+    ]);
+    getInstagramMediaByIds.mockResolvedValue([
+      {
+        id: "media-luna-aries",
+        caption:
+          "Under the upcoming full moon in Aries. Swipe to the end to check out our Aries Nail Polish. Comment MANI for a link to shop all of our crystal-infused shades.",
+      },
+    ]);
+
+    const res = await handleIncomingComment(
+      comment("annoyingly accurate, every single one 😂"),
+      "media-luna-aries",
+      shop,
+      growthPlan
+    );
+
+    expect(res.sent).toBe(true);
+    expect(getShopCollections).toHaveBeenCalledWith("test-store.myshopify.com");
+    expect(sentReplyText()).toMatch(/https?:\/\//);
   });
 
   it("caption with nothing searchable in it: no wasted second search", async () => {

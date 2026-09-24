@@ -134,7 +134,7 @@ export const loader = async ({ request }) => {
         // window comments are being answered, so nothing is being missed.
         plan?.name === "FREE" && !plan?.comments ? getMissedCommentCount(shop.id) : Promise.resolve(0),
         // This month's attributed revenue, for the honest ROI banner
-        // ("drove $X — Growth costs $39"). Only shown when it's in the
+        // ("attributed $X, Growth costs $39"). Only shown when it's in the
         // merchant's favor, so fetching for FREE/GROWTH is enough.
         plan?.name !== "PRO"
           ? getAttributedRevenueThisMonth(shop.id).catch(() => ({ total: 0, currency: "USD" }))
@@ -899,7 +899,7 @@ export default function Index() {
           <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">
-                SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month.
+                SocialRepl.ai attributed {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in sales this month.
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 {(monthRevenue.total || 0) >= 39
@@ -914,10 +914,10 @@ export default function Index() {
       {plan && plan.name === "GROWTH" && (monthRevenue?.total || 0) >= 78 && (
         <s-banner tone="success">
           <span className="srTextStrong">
-            SocialRepl.ai drove {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in tracked sales this month
+            SocialRepl.ai attributed {new Intl.NumberFormat("en-US", { style: "currency", currency: monthRevenue.currency || "USD" }).format(monthRevenue.total)} in sales this month
           </span>
           <span className="srCardDesc">
-            {" "}— {Math.round((monthRevenue.total / 39) * 10) / 10}x its $39/mo cost.
+            {", "}{Math.round((monthRevenue.total / 39) * 10) / 10}x its $39/mo cost.
           </span>
         </s-banner>
       )}

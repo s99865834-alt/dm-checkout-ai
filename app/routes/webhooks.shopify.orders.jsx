@@ -11,8 +11,9 @@ if (typeof global.crypto === "undefined") {
 }
 
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, recordAttribution, recordOrderSighting } from "../lib/db.server";
+import { getShopByDomain, getLinkLastTouchAt, recordAttribution, recordOrderSighting } from "../lib/db.server";
 import { extractLinkIdFromNoteAttributes } from "../lib/links.server";
+import { extractLinkIdFromRef, shouldCreditLink } from "../lib/link-attribution";
 import { looksLikeOurDiscountCode } from "../lib/discount-rules";
 import { findLinkIdForDiscountCodes } from "../lib/discount-pool.server";
 import logger from "../lib/logger.server";
@@ -31,17 +32,12 @@ function parseAttributionUrl(url) {
     // usually an absolute URL. `new URL(relativePath)` throws "Invalid URL"
     // without a base, which previously made this function return null for
     // every landing_site and silently skip attribution. Supplying a base
-    // resolves relative paths and is ignored for absolute URLs — we only
+    // resolves relative paths and is ignored for absolute URLs. We only
     // read query params, so the placeholder host is irrelevant.
     const urlObj = new URL(url, "https://shopify-attribution.local");
     const params = urlObj.searchParams;
 
-    // Extract link_id from ref parameter (format: ref=link_{link_id})
-    const ref = params.get("ref");
-    let linkId = null;
-    if (ref && ref.startsWith("link_")) {
-      linkId = ref.replace("link_", "");
-    }
+    const linkId = extractLinkIdFromRef(params.get("ref"));
 
     // Extract UTM parameters
     const utmSource = params.get("utm_source");
@@ -229,6 +225,16 @@ export const action = async ({ request }) => {
     if (!attributionData?.linkId && referringSite) {
       attributionData = parseAttributionUrl(referringSite);
       logger.debug(`[webhook] Parsed referring_site:`, attributionData);
+    }
+
+    // 30-day last-click window for cookie / cart / landing_site. Discount
+    // codes skip it: using the code at purchase is the conversion event.
+    if (attributionData?.linkId && !discountLinkId) {
+      const lastTouchAt = await getLinkLastTouchAt(shopData.id, attributionData.linkId);
+      if (!shouldCreditLink({ lastTouchAt, fromDiscountCode: false })) {
+        logger.debug(`[webhook] link_${attributionData.linkId} outside 30-day window, skipping credit`);
+        attributionData = { ...attributionData, linkId: null };
+      }
     }
 
     // Record the sighting either way. Attribution used to leave no trace when

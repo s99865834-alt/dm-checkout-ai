@@ -745,7 +745,7 @@ export default function AnalyticsPage() {
             <div className="srVStack">
               <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                 <div className="srCardPad">
-                  <span className="srTextSubdued">Track which orders came from Instagram DMs and comments via attribution links.</span>
+                  <span className="srTextSubdued">Orders attributed to a link we sent, last click within 30 days. Discount codes still win if they used one.</span>
                 </div>
               </s-box>
 

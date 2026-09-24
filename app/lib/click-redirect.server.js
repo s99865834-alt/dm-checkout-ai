@@ -13,6 +13,7 @@ import {
   isLinkPreviewCrawler,
   DEFAULT_LINK_PREVIEW,
 } from "./link-preview.server";
+import { lastClickCookieHeader } from "./link-attribution";
 
 const PREVIEW_LOOKUP_MS = 2000;
 
@@ -92,7 +93,7 @@ export async function loadLinkPreviewMeta(linkId) {
   if (!linkId) return null;
   const { data: row, error } = await supabase
     .from("links_sent")
-    .select("product_id, shop_id")
+    .select("product_id, shop_id, url")
     .eq("link_id", linkId)
     .maybeSingle();
   if (error || !row?.shop_id) return null;
@@ -122,8 +123,25 @@ export async function loadLinkPreviewMeta(linkId) {
     if (product?.imageUrl) preview.imageUrl = product.imageUrl;
   }
 
+  // A collection page is more specific than the store thumbnail: title the
+  // card after the collection so "Nail Polish" does not preview as the shop.
+  if (!row.product_id && shop?.shopify_domain) {
+    const { collectionHandleFromUrl } = await import("./collection-match");
+    const handle = collectionHandleFromUrl(row.url);
+    if (handle) {
+      const { getShopCollections, collectionOgPreview } = await import("./shopify-data.server");
+      const collection = collectionOgPreview(await getShopCollections(shop.shopify_domain), handle);
+      if (collection?.title) {
+        preview.title = collection.title;
+        preview.description = storeName ? `${collection.title} on ${storeName}` : collection.title;
+      }
+      if (collection?.imageUrl) preview.imageUrl = collection.imageUrl;
+    }
+  }
+
   // Browse links carry no product, so they had no image and Instagram drew an
-  // empty card. Also covers a product whose own image lookup came back empty.
+  // empty card. Also covers a product or collection whose own image lookup
+  // came back empty.
   if (!preview.imageUrl && shop?.shopify_domain) {
     const { getShopOgImage } = await import("./shopify-data.server");
     preview.imageUrl = await getShopOgImage(shop.shopify_domain);
@@ -132,20 +150,22 @@ export async function loadLinkPreviewMeta(linkId) {
   return preview;
 }
 
-function htmlRedirectResponse(destinationUrl, preview) {
+function htmlRedirectResponse(destinationUrl, preview, { persistLastClick = false, linkId = null } = {}) {
   const html = buildTrackedLinkPageHtml({
     destinationUrl,
     title: preview?.title,
     description: preview?.description,
     imageUrl: preview?.imageUrl,
+    persistLastClick,
+    linkId,
   });
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-  });
+  const headers = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  };
+  const cookie = persistLastClick ? lastClickCookieHeader(linkId) : null;
+  if (cookie) headers["Set-Cookie"] = cookie;
+  return new Response(html, { status: 200, headers });
 }
 
 /**
@@ -176,5 +196,6 @@ export async function serveTrackedLink(linkId, request, { alwaysHtml = false } =
     if (extra) preview = extra;
   }
 
-  return htmlRedirectResponse(url, preview);
+  const persistLastClick = alwaysHtml && !crawler;
+  return htmlRedirectResponse(url, preview, { persistLastClick, linkId });
 }

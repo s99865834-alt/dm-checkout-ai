@@ -74,4 +74,15 @@ describe("buildTrackedLinkPageHtml", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("&amp;");
   });
+
+  it("stamps a 30-day last-click cookie and cart attribute on a real click", () => {
+    const html = buildTrackedLinkPageHtml({
+      destinationUrl: destination,
+      persistLastClick: true,
+      linkId: "info_abc123def456",
+    });
+    expect(html).toContain("sr_ref=link_info_abc123def456");
+    expect(html).toContain("/cart/update.js");
+    expect(html).toContain("window.location.replace");
+  });
 });
