@@ -106,9 +106,9 @@ export async function loadLinkPreviewMeta(linkId) {
   const storeName = shop?.store_context_json?.name || null;
   const preview = {
     title: storeName || DEFAULT_LINK_PREVIEW.title,
-    description: storeName
-      ? `Checkout on ${storeName}`
-      : DEFAULT_LINK_PREVIEW.description,
+    // "Checkout on X" is wrong for a browse link: nothing has been chosen
+    // yet. Corrected below once we know whether this link is about a product.
+    description: storeName ? `Shop ${storeName}` : DEFAULT_LINK_PREVIEW.description,
     imageUrl: null,
   };
 
@@ -120,6 +120,13 @@ export async function loadLinkPreviewMeta(linkId) {
       preview.description = storeName ? `${product.title} on ${storeName}` : product.title;
     }
     if (product?.imageUrl) preview.imageUrl = product.imageUrl;
+  }
+
+  // Browse links carry no product, so they had no image and Instagram drew an
+  // empty card. Also covers a product whose own image lookup came back empty.
+  if (!preview.imageUrl && shop?.shopify_domain) {
+    const { getShopOgImage } = await import("./shopify-data.server");
+    preview.imageUrl = await getShopOgImage(shop.shopify_domain);
   }
 
   return preview;

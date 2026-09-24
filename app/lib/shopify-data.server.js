@@ -717,6 +717,53 @@ export async function getProductOgPreview(shopDomain, productId) {
   }
 }
 
+// Store-level preview image, cached because it is the same for every browse
+// link a shop ever sends and it changes about as often as the catalogue does.
+const _shopOgCache = new Map(); // shopDomain -> { value, at }
+const SHOP_OG_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * An image to represent the whole store, for links that aren't about one
+ * product.
+ *
+ * Browse links carry no product_id, so the preview card had no image at all
+ * and Instagram rendered an empty grey box. Shopify's own brand assets would
+ * be the right source, but Shop.brand needs the read_brand scope and a
+ * merchant re-authorisation, which is a lot to ask for a thumbnail. A product
+ * image needs nothing we don't already hold.
+ *
+ * @param {string} shopDomain
+ * @returns {Promise<string|null>}
+ */
+export async function getShopOgImage(shopDomain) {
+  if (!shopDomain) return null;
+
+  const cached = _shopOgCache.get(shopDomain);
+  if (cached && Date.now() - cached.at < SHOP_OG_TTL_MS) return cached.value;
+
+  try {
+    const admin = await getAdminClient(shopDomain);
+    if (!admin) return null;
+    const response = await shopGraphql(
+      admin,
+      `query ShopOgImage {
+        products(first: 1, sortKey: UPDATED_AT, reverse: true) {
+          nodes { featuredImage { url } }
+        }
+      }`,
+    );
+    const url = response?.data?.products?.nodes?.[0]?.featuredImage?.url || null;
+    _shopOgCache.set(shopDomain, { value: url, at: Date.now() });
+    return url;
+  } catch (error) {
+    if (isExpectedAdminApiMiss(error)) return null;
+    logger.debug(
+      `[shopify-data] shop OG image failed for ${shopDomain}: ${error?.message || error}`,
+    );
+    return null;
+  }
+}
+
 /**
  * Build a single product context document for the AI (comment automation with mapped product).
  * Use so the AI can answer variant/product questions from real data (e.g. "does it come in black?").
