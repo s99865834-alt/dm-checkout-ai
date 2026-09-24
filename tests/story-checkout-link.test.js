@@ -19,6 +19,7 @@ vi.mock("../app/lib/shopify-data.server", () => ({
   getShopifyProductContextForReply: vi.fn(),
   buildStoreContextForAI: vi.fn(),
   searchProductsByDomain: vi.fn(),
+  getShopCollections: vi.fn(async () => []),
 }));
 vi.mock("../app/lib/storefront-mcp.server", () => ({ searchCatalogNormalized: vi.fn() }));
 vi.mock("../app/lib/links.server", () => ({
@@ -27,6 +28,8 @@ vi.mock("../app/lib/links.server", () => ({
   getTrackedLinkUrl: vi.fn(),
   shortenUrlsInReply: vi.fn(),
   getShopHomepageUrl: vi.fn(),
+  getShopBrowseUrl: vi.fn(),
+  getShopCollectionUrl: vi.fn(),
 }));
 
 const { toolsForSurface } = await import("../app/lib/sales-agent.server");
@@ -71,6 +74,7 @@ describe("which link tools the agent is offered", () => {
     expect(offered).toContain("search_products");
     expect(offered).toContain("get_product_details");
     expect(offered).toContain("get_store_info");
+    expect(offered).toContain("get_collection_link");
   });
 
   it("does not mutate the shared tool list", () => {

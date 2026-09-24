@@ -9,7 +9,7 @@ import { getProductMappings } from "./db.server";
 import { appendDiscountLine } from "./discount-rules";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
-import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize } from "./shopify-data.server";
+import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize, getShopCollections } from "./shopify-data.server";
 import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
 import {
   asksForProductPage,
@@ -33,7 +33,10 @@ import {
   getTrackedLinkUrl,
   shortenUrlsInReply,
   getShopHomepageUrl,
+  getShopBrowseUrl,
+  getShopCollectionUrl,
 } from "./links.server";
+import { findCollectionMatches } from "./collection-match";
 import { generateAgentReply, isExplicitLinkRequest, REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 
 // Link builders moved to links.server.js; re-exported for existing callers
@@ -1089,7 +1092,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
       // worse, staying silent, breaks the product's core promise). Only runs
       // when the sales agent already declined or errored.
       if (isExplicitLinkRequest(message.text)) {
-        const homepageUrl = getShopHomepageUrl(shop);
+        const homepageUrl = getShopBrowseUrl(shop);
         if (homepageUrl) {
           const brandVoiceData = await brandVoiceFor(shop.id, plan);
           let replyText = await generateReplyMessage(
@@ -1252,18 +1255,18 @@ const CAPTION_CACHE_TTL_MS = 60 * 60 * 1000;
 const CAPTION_CACHE_MAX = 200;
 const captionCache = new Map();
 
-async function getPostCaptionSearchTerm(shopId, mediaId) {
+async function getPostCaption(shopId, mediaId) {
   if (!shopId || !mediaId) return null;
 
   const cached = captionCache.get(mediaId);
-  if (cached && Date.now() - cached.at < CAPTION_CACHE_TTL_MS) return cached.term;
+  if (cached && Date.now() - cached.at < CAPTION_CACHE_TTL_MS) return cached.caption;
 
-  let term = null;
+  let caption = null;
   try {
     const [media] = await getInstagramMediaByIds(shopId, [mediaId]);
-    term = captionToSearchTerm(media?.caption);
+    caption = typeof media?.caption === "string" && media.caption.trim() ? media.caption : null;
   } catch (err) {
-    // A caption we can't read just means we fall back to the homepage link,
+    // A caption we can't read just means we fall back to the browse link,
     // which is what would have happened anyway. Not cached, so a transient
     // Graph failure doesn't blank the caption for an hour.
     logger.debug(`[automation] Caption lookup failed for media ${mediaId}: ${err?.message || err}`);
@@ -1273,8 +1276,43 @@ async function getPostCaptionSearchTerm(shopId, mediaId) {
   if (captionCache.size >= CAPTION_CACHE_MAX) {
     captionCache.delete(captionCache.keys().next().value);
   }
-  captionCache.set(mediaId, { term, at: Date.now() });
-  return term;
+  captionCache.set(mediaId, { caption, at: Date.now() });
+  return caption;
+}
+
+async function getPostCaptionSearchTerm(shopId, mediaId) {
+  return captionToSearchTerm(await getPostCaption(shopId, mediaId));
+}
+
+function allBrowseUrls(destinations) {
+  if (!destinations) return [];
+  return [
+    destinations.homepageUrl,
+    destinations.browseAllUrl,
+    ...((destinations.collections || []).map((c) => c.url)),
+  ].filter(Boolean);
+}
+
+function fallbackBrowseUrl(destinations) {
+  return destinations?.collections?.[0]?.url || destinations?.browseAllUrl || destinations?.homepageUrl || null;
+}
+
+async function browseDestinationsFor(shop, texts) {
+  const homepageUrl = getShopHomepageUrl(shop);
+  const browseAllUrl = getShopBrowseUrl(shop);
+  const hay = (texts || []).filter((t) => typeof t === "string" && t.trim()).join("\n");
+  let collections = [];
+  if (shop?.shopify_domain && hay) {
+    const catalog = await getShopCollections(shop.shopify_domain);
+    collections = findCollectionMatches(catalog, hay)
+      .map((c) => ({
+        title: c.title,
+        handle: c.handle,
+        url: getShopCollectionUrl(shop, c.handle),
+      }))
+      .filter((c) => c.url);
+  }
+  return { homepageUrl, browseAllUrl, collections };
 }
 
 /**
@@ -1692,18 +1730,22 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     }
 
     if (!productMapping) {
-      const homepageUrl = getShopHomepageUrl(shop);
-      if (!homepageUrl) {
+      const caption = await getPostCaption(shop.id, mediaId);
+      const destinations = await browseDestinationsFor(shop, [message.text, caption]);
+      const browseUrl = fallbackBrowseUrl(destinations);
+      if (!browseUrl) {
         logger.debug(`[automation] No product mapping found for media ${mediaId} and no shop domain`);
         return { sent: false, reason: "No product mapping found and no shop domain" };
       }
 
-      logger.debug(`[automation] No product mapping found for media ${mediaId}; sending homepage link`);
+      logger.debug(
+        `[automation] No product mapping found for media ${mediaId}; offering ${allBrowseUrls(destinations).length} browse destinations`
+      );
       const brandVoiceData = await brandVoiceFor(shop.id, plan);
       let replyText = await generateReplyMessage(
         brandVoiceData,
         null,
-        homepageUrl,
+        browseUrl,
         message.ai_intent,
         null,
         null,
@@ -1714,8 +1756,10 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
           inboundChannel: "comment",
           triggerChannel: "comment",
           isHomepageFallback: true,
+          postCaption: caption,
+          browseDestinations: destinations,
           lastProductLink: {
-            url: homepageUrl,
+            url: browseUrl,
             product_id: null,
             variant_id: null,
             trigger_channel: "comment",
@@ -1724,10 +1768,9 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         }
       );
 
-      // Convert the raw homepage URL into a tracked info_ link on the store's
-      // primary domain. Without this, the reply ships the bare myshopify URL:
-      // off-brand and invisible to click tracking / attribution. Every other
-      // reply path already shortens; this fallback path was the one gap.
+      // Convert the raw collection/browse URL into a tracked info_ link on the
+      // store's primary domain. Without this, the reply ships the bare
+      // myshopify URL: off-brand and invisible to click tracking.
       replyText = await shortenUrlsInReply(shop, message.id, replyText);
 
       const commentExternalId = message.external_id ?? message.externalId;
@@ -1742,10 +1785,10 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       const fromUserId = message.from_user_id ?? message.fromUserId;
       if (commentExternalId.startsWith("test_comment_") && fromUserId) {
         await sendInstagramDm(shop.id, fromUserId, replyText);
-        logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} (homepage link)`);
+        logger.debug(`[automation] ✅ Comment test reply sent as DM to user ${fromUserId} (browse link)`);
       } else {
         await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
-        logger.debug(`[automation] ✅ Comment private reply sent with homepage link for comment ${message.id}`);
+        logger.debug(`[automation] ✅ Comment private reply sent with browse link for comment ${message.id}`);
       }
       await incrementUsage(shop.id, 1);
       return { sent: true };
@@ -2171,6 +2214,41 @@ async function canSendFollowUp(message, shop, plan) {
   return hoursSinceLastMessage < 24;
 }
 
+function browseDestinationPrompt(destinations, caption) {
+  if (!destinations) return "";
+  const lines = [
+    "No single product is mapped to this Instagram post.",
+    caption
+      ? `Post caption (context for what the post is about, not an override of the comment):\n"""${String(caption).slice(0, 800)}"""`
+      : "Post caption: (none)",
+    "Pick ONE destination from this list and paste that URL exactly. Do not invent a URL.",
+  ];
+  if (destinations.homepageUrl) {
+    lines.push(
+      `- Homepage (the store front page, not a product list): ${destinations.homepageUrl}. Use when they want the store, the website, or a general "where do I shop" answer.`
+    );
+  }
+  for (const collection of destinations.collections || []) {
+    lines.push(
+      `- ${collection.title} collection: ${collection.url}. Use when the comment or the post is about that group of products.`
+    );
+  }
+  if (destinations.browseAllUrl) {
+    lines.push(
+      `- All products: ${destinations.browseAllUrl}. Use only when they want to browse everything and no named collection above fits.`
+    );
+  }
+  lines.push(
+    `Choose from what they said first. "Where's your website" is the homepage even if the caption names a collection. A reaction to a multi-product post ("every single one", "the collection") should use a named collection if one is listed.`
+  );
+  return lines.join("\n");
+}
+
+function urlOnAllowlist(candidate, allowed) {
+  const normalized = String(candidate || "").replace(/[.,;:!?)\]\s]+$/g, "").trim();
+  return allowed.find((a) => normalized === a || normalized.startsWith(a + "/") || normalized.startsWith(a + "?")) || null;
+}
+
 /**
  * Generate reply message with brand voice
  * @param {Object} brandVoice - Brand voice object from brand_voice table
@@ -2401,7 +2479,7 @@ IMPORTANT CONTEXT:
 ${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelContext.originChannel === "comment" ? "Instagram comment → DM (has product context from a post mapping)" : "Direct DM (may not have product context unless explicitly provided)"}` : ""}
 ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
-${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- No product is mapped to this post. Direct the customer to the store HOMEPAGE so they can browse. Use this URL exactly (it is the homepage, not a checkout link): ${checkoutUrl}. Do not invent or shorten the URL.` : ""}
+${safeChannelContext?.isHomepageFallback ? browseDestinationPrompt(safeChannelContext.browseDestinations, safeChannelContext.postCaption) : ""}
 ${safeChannelContext?.choiceConfirmation ? `- The customer was asked which one they want and picked: "${safeChannelContext.choiceConfirmation}". Confirm that choice by name and send the checkout link. Keep it brief, and do not ask them to pick again.` : ""}
 ${safeChannelContext?.sharedPost ? `- SHARED POST, NO TEXT: The customer forwarded one of your Instagram posts into this DM thread and wrote nothing at all. Acknowledge that they shared the post and treat it as interest in that product, then give the link. Never quote them or refer to anything they "said" or "asked" — they sent no words, and inventing some is an obvious tell. Keep it to two short sentences.` : ""}
 ${safeChannelContext?.storyReply ? `- STORY REACTION, NO TEXT: The customer reacted to your Instagram story without writing anything (a heart, a sticker, an image). Never quote them or refer to anything they "said". They watched your story and responded to it, so acknowledge the reaction warmly, then offer the product with the link as an invitation rather than a pitch. No urgency, no hype. Two short sentences.` : ""}
@@ -2438,7 +2516,7 @@ ${(intent === "product_question" || intent === "variant_inquiry") && !productPag
 ${intent === "store_question" ? `- Answer from the store context only.${availableLinkTokens.length > 0 ? ` When linking to a policy or page, use ONLY one of these exact placeholder tokens: ${availableLinkTokens.join(", ")}. Do NOT invent any other placeholder.` : ` Do NOT include any link or {{placeholder}} token — none exist for this store.`} Do NOT write out any URLs yourself.${storeContactEmail ? ` If you don't have the info the customer asked for, say so and offer the contact email: ${storeContactEmail}.` : ""}` : ""}
 ${(intent === "product_question" || intent === "variant_inquiry") && productContextForReply?.text ? `- Answer from the product context only. If they ask about an option (e.g. color/size) we don't have, say so and offer the checkout link for what we do have.` : ""}
 ${intent !== "product_question" && intent !== "variant_inquiry" && intent !== "store_question" && checkoutUrl && !safeChannelContext?.isHomepageFallback ? `- Include this checkout link: ${checkoutUrl}` : ""}
-${safeChannelContext?.isHomepageFallback && checkoutUrl ? `- Include the store homepage link so they can browse (use this URL exactly): ${checkoutUrl}` : ""}
+${safeChannelContext?.isHomepageFallback ? `- Include exactly one URL from the destination list above.` : ""}
 ${productName ? `- Product name: ${productName}` : ""}
 - Keep it brief (2-3 sentences max)${customInstruction ? `` : ` and friendly`}
 - CRITICAL: Instagram DMs only support plain text, NOT markdown. Do NOT use markdown formatting like [link text](url). ${intent === "store_question" ? (availableLinkTokens.length > 0 ? `When you want to include a link, use ONLY one of these exact placeholder tokens from the store context (copy character-for-character, no other tokens exist): ${availableLinkTokens.join(", ")}. The placeholder will be replaced with the real URL automatically. If none of these tokens match what the customer asked about, do NOT include any link — just answer the question or say you don't have that info.` : `No link placeholders are available for this store. Do NOT include any link or {{placeholder}} token. Answer in plain text only.`) : `Instead, write clear descriptive text before the URL, then include the full URL directly. URLs will be automatically shortened for cleaner appearance. Instagram will automatically make URLs clickable. For example, write "Check it out here: https://example.com/product" NOT "[Check it out here](https://example.com/product)". Make the text before the URL descriptive so users know what they're clicking.`}
@@ -2492,13 +2570,13 @@ Write the response:`;
             });
             message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
           }
-          if (safeChannelContext?.isHomepageFallback && checkoutUrl) {
-            const urlRegex = /https?:\/\/[^\s)]+/g;
-            message = message.replace(urlRegex, (matched) => {
-              const normalized = matched.replace(/[.,;:!?)\]\s]+$/g, "").trim();
-              return normalized === checkoutUrl || normalized.startsWith(checkoutUrl + "/") || normalized.startsWith(checkoutUrl + "?") ? checkoutUrl : "";
-            });
-            message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+          if (safeChannelContext?.isHomepageFallback) {
+            const allowedBrowseUrls = allBrowseUrls(safeChannelContext.browseDestinations);
+            if (allowedBrowseUrls.length) {
+              const urlRegex = /https?:\/\/[^\s)]+/g;
+              message = message.replace(urlRegex, (matched) => urlOnAllowlist(matched, allowedBrowseUrls) || "");
+              message = message.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+            }
           }
         }
       }
@@ -2528,7 +2606,11 @@ Write the response:`;
     (intent === "product_question" || intent === "variant_inquiry") && admitsNoAnswer(message);
 
   if (intent !== "store_question" && checkoutUrl && message && !answeredNothing) {
-    const allowedReplyUrls = [productPageUrl, checkoutUrl].filter(Boolean);
+    const allowedReplyUrls = [
+      productPageUrl,
+      checkoutUrl,
+      ...allBrowseUrls(safeChannelContext?.browseDestinations),
+    ].filter(Boolean);
     const hasAllowedLink = allowedReplyUrls.some((u) => message.includes(u));
     if (!hasAllowedLink) {
       // productPageUrl now only exists when the customer asked for the page.

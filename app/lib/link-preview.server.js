@@ -14,6 +14,13 @@
  * break the production smoke test. Only named unfurl crawlers need the card.
  */
 
+import {
+  isSafeLinkId,
+  linkRefValue,
+  REF_COOKIE_NAME,
+  REF_COOKIE_MAX_AGE_SEC,
+} from "./link-attribution";
+
 const LINK_PREVIEW_UA = [
   "facebookexternalhit",
   "facebot",
@@ -52,14 +59,35 @@ function isHttpUrl(value) {
   return typeof value === "string" && /^https?:\/\//i.test(value);
 }
 
+function lastClickScript(destinationUrl, linkId) {
+  if (!isSafeLinkId(linkId)) {
+    return `<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>`;
+  }
+  const ref = linkRefValue(linkId);
+  const cookie = `${REF_COOKIE_NAME}=${ref}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; SameSite=Lax`;
+  return `<script>(function(){
+var dest=${JSON.stringify(destinationUrl)};
+var ref=${JSON.stringify(ref)};
+document.cookie=${JSON.stringify(cookie)};
+try{fetch("/cart/update.js",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({attributes:{ref:ref}}),keepalive:true,credentials:"same-origin"});}catch(e){}
+window.location.replace(dest);
+})();</script>`;
+}
+
 /**
  * Instant client-side redirect page with Open Graph tags for DM link previews.
+ *
+ * On a real storefront click we also drop a 30-day last-click cookie and stamp
+ * the cart. Shopify app-proxy pages can run same-origin JS; they cannot rely
+ * on Set-Cookie surviving a 302.
  *
  * @param {{
  *   destinationUrl: string,
  *   title?: string,
  *   description?: string,
  *   imageUrl?: string|null,
+ *   persistLastClick?: boolean,
+ *   linkId?: string|null,
  * }} opts
  */
 export function buildTrackedLinkPageHtml({
@@ -67,6 +95,8 @@ export function buildTrackedLinkPageHtml({
   title = DEFAULT_LINK_PREVIEW.title,
   description = DEFAULT_LINK_PREVIEW.description,
   imageUrl = null,
+  persistLastClick = false,
+  linkId = null,
 }) {
   const safeUrl = escapeHtml(destinationUrl);
   const safeTitle = escapeHtml(title || DEFAULT_LINK_PREVIEW.title);
@@ -77,6 +107,9 @@ export function buildTrackedLinkPageHtml({
 <meta name="twitter:image" content="${escapeHtml(imageUrl)}">
 <meta name="twitter:card" content="summary_large_image">`
       : `<meta name="twitter:card" content="summary">`;
+  const redirectScript = persistLastClick
+    ? lastClickScript(destinationUrl, linkId)
+    : `<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>`;
 
   return `<!doctype html>
 <html>
@@ -93,7 +126,7 @@ export function buildTrackedLinkPageHtml({
 ${imageTags}
 </head>
 <body>
-<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>
+${redirectScript}
 <noscript><a href="${safeUrl}">Continue</a></noscript>
 </body>
 </html>`;

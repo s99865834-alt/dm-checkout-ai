@@ -18,6 +18,7 @@ import { sessionStorage } from "../shopify.server";
 import shopify from "../shopify.server";
 import { getShopifyProductContextForReply, getShopPrimaryDomainHost } from "./shopify-data.server";
 import { isCheckoutLinkId } from "./checkout-link-id";
+import { appendAttributionParams, extractLinkIdFromRef } from "./link-attribution";
 import { claimDiscountCode } from "./discount-pool.server";
 
 export { isCheckoutLinkId };
@@ -102,10 +103,11 @@ export async function shortenUrlsInReply(shop, messageId, text) {
   for (const url of [...new Set(urls)]) {
     if (isTrackedLinkUrl(url, shortBase)) continue;
     const linkId = `info_${randomBytes(6).toString("hex")}`;
+    const dest = appendAttributionParams(url, linkId, { campaign: "ig_browse" });
     const { error } = await supabase.from("links_sent").insert({
       shop_id: shop.id,
       message_id: messageId,
-      url,
+      url: dest,
       link_id: linkId,
     });
     if (error) {
@@ -132,9 +134,50 @@ export function getShopDomainHost(shop) {
   }
 }
 
+/**
+ * The host to show a customer. Prefers the merchant's own domain over the
+ * myshopify one, which we already store but were not using: browse links were
+ * landing people on lovebyluna.myshopify.com rather than lovebyluna.co, so a
+ * link that looked on-brand in the DM opened somewhere that didn't.
+ */
+function getShopPublicHost(shop) {
+  const host = shop?.store_context_json?.primaryDomain?.host;
+  if (typeof host === "string" && host.trim() && !host.trim().endsWith(".myshopify.com")) {
+    return host.trim();
+  }
+  return getShopDomainHost(shop);
+}
+
 export function getShopHomepageUrl(shop) {
-  const host = getShopDomainHost(shop);
+  const host = getShopPublicHost(shop);
   return host ? `https://${host}` : null;
+}
+
+/**
+ * Where to send someone who wants to look around rather than buy one thing.
+ *
+ * The reply for these says something like "browse the collection", and it was
+ * pointing at the bare homepage, so the customer arrived at a landing page
+ * with no products on it and had to go looking. The all-products collection
+ * is what that sentence promises.
+ */
+export function getShopBrowseUrl(shop) {
+  const stored = shop?.store_context_json?.storefrontAllProductsUrl;
+  if (typeof stored === "string" && /^https?:\/\//i.test(stored)) return stored;
+  const host = getShopPublicHost(shop);
+  return host ? `https://${host}/collections/all` : null;
+}
+
+/**
+ * A specific collection on the merchant's storefront. Same public host as
+ * browse links, so the customer lands on lovebyluna.co/collections/aries
+ * rather than the myshopify hostname.
+ */
+export function getShopCollectionUrl(shop, handle) {
+  const clean = String(handle || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!clean || clean.toLowerCase() === "all") return getShopBrowseUrl(shop);
+  const host = getShopPublicHost(shop);
+  return host ? `https://${host}/collections/${encodeURIComponent(clean)}` : null;
 }
 
 /**
@@ -197,19 +240,13 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
 
   const variantIdMatch = variantId ? variantId.match(/\/(\d+)$/) : null;
 
-  const pdpUrl = `https://${shopHost}/products/${handle}`;
+  let pdpUrl = `https://${shopHost}/products/${handle}`;
+  if (variantIdMatch) pdpUrl += `?variant=${variantIdMatch[1]}`;
 
-  const params = new URLSearchParams();
-  if (variantIdMatch) {
-    params.set("variant", variantIdMatch[1]);
-  }
-  params.set("ref", `link_${linkId}`);
-  params.set("utm_source", "instagram");
-  params.set("utm_medium", "ig_dm");
-  params.set("utm_campaign", "product_question");
-
-  const finalUrl = `${pdpUrl}?${params.toString()}`;
-  return { url: finalUrl, linkId };
+  return {
+    url: appendAttributionParams(pdpUrl, linkId, { campaign: "product_question" }),
+    linkId,
+  };
 }
 
 /**
@@ -325,18 +362,14 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
   }
 
-  // Attribution params — append to whichever URL we ended up with.
-  // `attributes[ref]` is a Shopify cart attribute: it persists ON THE CART
-  // and arrives in the order's note_attributes, so attribution survives even
-  // when the customer leaves and completes the purchase in a later session.
-  // The plain `ref` param only reaches us via the order's landing_site, which
-  // covers same-session purchases; together they cover both cases.
-  const params = new URLSearchParams({
-    ref: `link_${linkId}`,
-    "attributes[ref]": `link_${linkId}`,
-    utm_source: "instagram",
-    utm_medium: "ig_dm",
-    utm_campaign: "dm_to_buy",
+  // Attribution on every checkout permalink, same ref shape as browse/PDP.
+  // `attributes[ref]` persists on the cart and lands in note_attributes even
+  // when the customer buys in a later session. The plain `ref` covers
+  // same-session landing_site. A later click on another of our links
+  // overwrites both via the /a/go/ bounce.
+  let dest = appendAttributionParams(checkoutUrl, linkId, {
+    cartAttribute: true,
+    campaign: "dm_to_buy",
   });
 
   // A single-use code for this exact variant, if the shop has discounts on and
@@ -356,11 +389,14 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
       variantId: finalVariantId,
       linkId,
     });
-    if (discount?.code) params.set("discount", discount.code);
+    if (discount?.code) {
+      const parsed = new URL(dest);
+      parsed.searchParams.set("discount", discount.code);
+      dest = parsed.toString();
+    }
   }
 
-  const separator = checkoutUrl.includes("?") ? "&" : "?";
-  const finalUrl = `${checkoutUrl}${separator}${params.toString()}`;
+  const finalUrl = dest;
 
   return {
     url: finalUrl,
@@ -383,7 +419,6 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
  */
 export function extractLinkIdFromNoteAttributes(noteAttributes) {
   if (!Array.isArray(noteAttributes)) return null;
-  const refAttr = noteAttributes.find((a) => a?.name === "ref");
-  const value = refAttr?.value || "";
-  return value.startsWith("link_") ? value.replace("link_", "") : null;
+  const refAttr = noteAttributes.find((a) => a?.name === "ref" || a?.name === "referral");
+  return extractLinkIdFromRef(refAttr?.value || "") || null;
 }

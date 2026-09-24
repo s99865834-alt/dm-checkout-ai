@@ -1078,6 +1078,34 @@ export async function getRecentConversationContext(shopId, fromUserId, options =
 }
 
 /**
+ * Latest send or click for this link, used as the start of the 30-day
+ * last-click window. Clicks win when both exist.
+ */
+export async function getLinkLastTouchAt(shopId, linkId) {
+  if (!shopId || !linkId) return null;
+
+  const { data: click } = await supabase
+    .from("clicks")
+    .select("clicked_at")
+    .eq("link_id", linkId)
+    .order("clicked_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: sent } = await supabase
+    .from("links_sent")
+    .select("sent_at")
+    .eq("shop_id", shopId)
+    .eq("link_id", linkId)
+    .maybeSingle();
+
+  const clickAt = click?.clicked_at ? new Date(click.clicked_at).getTime() : 0;
+  const sentAt = sent?.sent_at ? new Date(sent.sent_at).getTime() : 0;
+  const latest = Math.max(clickAt, sentAt);
+  return latest ? new Date(latest).toISOString() : null;
+}
+
+/**
  * Record a click on a link_id (string from URL).
  */
 export async function logClick(params) {
@@ -1677,7 +1705,7 @@ export async function getStoryMessageCount(shopId) {
 
 /**
  * Revenue attributed to the app this calendar month (sum of attribution
- * rows). Powers the honest ROI upgrade pitch ("drove $X — Growth costs
+ * rows). Powers the honest ROI upgrade pitch ("attributed $X, Growth costs
  * $39"). Currency is taken from the first row; stores bill in a single
  * currency in practice. Failure-safe (zero).
  *
@@ -2288,8 +2316,12 @@ export async function getAdminDashboardStores({
   const pageSize = Math.min(Math.max(1, Number(limit) || ADMIN_STORES_PAGE_SIZE), 100);
   const from = Math.max(0, Number(offset) || 0);
   const to = from + pageSize - 1;
+  // Keep in step with buildAdminStoresResult: anything it reads off a row has
+  // to be selected here. It silently reads undefined otherwise, which is how
+  // the revenue column came to say "not read yet" for every shop while the
+  // figures sat in the table.
   const select =
-    "id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name";
+    "id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, store_revenue_ytd, store_revenue_currency, store_revenue_capped, store_revenue_updated_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name, settings(discount_enabled, discount_type, discount_value)";
 
   const run = (columns) =>
     applyStoreSearch(
