@@ -40,7 +40,7 @@ import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { findCollectionMatches, searchCollections } from "./collection-match";
 import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE } from "./reply-rules";
 import { describeOffer } from "./discount-rules";
-import { languageInstructionText, resolveReplyLanguage, storeLocaleFrom } from "./reply-language";
+import { languageInstructionText, resolveReplyLanguage } from "./reply-language";
 import {
   buildCheckoutLink,
   buildProductPageLink,
@@ -312,7 +312,6 @@ export async function generateAgentReply({
   const replyLanguage = resolveReplyLanguage({
     setting: brandVoice?.reply_language,
     messageText: message.text,
-    storeLocale: storeLocaleFrom(shop),
   });
 
   const toolDefinitions = toolsForSurface(storyContext, message.text);
@@ -445,7 +444,7 @@ export async function generateAgentReply({
     }
   };
 
-  const systemMessage = buildSystemMessage({ brandVoice, allowClarify, message, shop });
+  const systemMessage = buildSystemMessage({ brandVoice, allowClarify, message });
   const userMessage = buildUserMessage({ message, intent, threadContext, storyContext });
 
   const messages = [
@@ -663,14 +662,13 @@ export async function generateAgentReply({
   return { text, links: linksCreated };
 }
 
-function buildSystemMessage({ brandVoice, allowClarify, message, shop }) {
+function buildSystemMessage({ brandVoice, allowClarify, message }) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = (brandVoice?.custom_instruction || "").trim();
   const languageRule = languageInstructionText(
     resolveReplyLanguage({
       setting: brandVoice?.reply_language,
       messageText: message?.text,
-      storeLocale: storeLocaleFrom(shop),
     }),
   );
 
