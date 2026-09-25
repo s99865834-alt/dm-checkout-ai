@@ -11,7 +11,6 @@ import {
   languageInstructionText,
   REPLY_LANGUAGE_NAMES,
   resolveReplyLanguage,
-  storeLocaleFrom,
 } from "./reply-language";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
@@ -2077,11 +2076,10 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
  * (English unless the customer or the store is clearly in another language)
  * or a locale code that forces every reply into that language.
  */
-function replyLanguageFor(brandVoice, messageText, shop, storeInfo, channelContext) {
+function replyLanguageFor(brandVoice, messageText) {
   return resolveReplyLanguage({
     setting: brandVoice?.reply_language,
     messageText,
-    storeLocale: storeLocaleFrom(shop, storeInfo) || channelContext?.storeLocale || null,
   });
 }
 
@@ -2092,8 +2090,8 @@ function isForcedReplyLanguage(brandVoice) {
 }
 
 /** Build the language directive injected into every reply prompt. */
-function buildLanguageInstruction(brandVoice, originalMessage, shop, storeInfo, channelContext) {
-  return languageInstructionText(replyLanguageFor(brandVoice, originalMessage, shop, storeInfo, channelContext));
+function buildLanguageInstruction(brandVoice, originalMessage) {
+  return languageInstructionText(replyLanguageFor(brandVoice, originalMessage));
 }
 
 /**

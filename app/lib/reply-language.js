@@ -97,6 +97,11 @@ export function detectMessageLanguage(text) {
   return bestCode;
 }
 
+/**
+ * storeLocale is only used when a caller already has a real Shopify locale.
+ * We do not fetch one today: Shop.primaryLocale does not exist, and
+ * shopLocales requires the read_locales scope, which this app does not have.
+ */
 export function resolveReplyLanguage({ setting, messageText, storeLocale } = {}) {
   if (setting && setting !== "auto" && REPLY_LANGUAGE_NAMES[setting]) {
     return { code: setting, name: REPLY_LANGUAGE_NAMES[setting], source: "forced" };
@@ -110,10 +115,6 @@ export function resolveReplyLanguage({ setting, messageText, storeLocale } = {})
     return { code: store, name: REPLY_LANGUAGE_NAMES[store], source: "store" };
   }
   return { code: "en", name: "English", source: "default" };
-}
-
-export function storeLocaleFrom(shop, storeInfo) {
-  return storeInfo?.primaryLocale || shop?.store_context_json?.primaryLocale || null;
 }
 
 export function languageInstructionText(resolved) {
