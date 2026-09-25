@@ -1431,7 +1431,7 @@ export default function Index() {
                       <span className="srCardTitle">Reply language</span>
                       <span className="srCardDesc">
                         {brandVoiceReplyLang === "auto"
-                          ? "Auto: each reply is written in the same language the customer messaged in."
+                          ? "Auto: English, unless the customer writes in another language or the store itself is not English. Each reply stays in one language."
                           : "Replies are always written in the selected language, no matter what language the customer uses."}
                       </span>
                       <select

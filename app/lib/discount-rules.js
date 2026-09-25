@@ -75,9 +75,30 @@ function formatMoney(value, currency) {
 }
 
 /** "20% off" or "$5 off", for both merchant-facing and customer-facing copy. */
-export function describeOffer(type, value, currency) {
-  if (type === "amount") return `${formatMoney(value, currency)} off`;
-  return `${value}% off`;
+export function describeOffer(type, value, currency, language = "en") {
+  if (type === "amount") {
+    const money = formatMoney(value, currency);
+    const amount = {
+      en: `${money} off`,
+      es: `${money} de descuento`,
+      "pt-BR": `${money} de desconto`,
+      fr: `${money} de réduction`,
+      de: `${money} Rabatt`,
+      it: `${money} di sconto`,
+      nl: `${money} korting`,
+    };
+    return (amount[language] || amount.en);
+  }
+  const percent = {
+    en: `${value}% off`,
+    es: `${value}% de descuento`,
+    "pt-BR": `${value}% de desconto`,
+    fr: `${value} % de réduction`,
+    de: `${value} % Rabatt`,
+    it: `${value}% di sconto`,
+    nl: `${value}% korting`,
+  };
+  return percent[language] || percent.en;
 }
 
 /**
@@ -167,10 +188,19 @@ export function discountTitle(type, value, currency, productTitle) {
  * exists to remove, and almost nobody does it. Attribution has to be solved
  * by carrying the reference, not by delegating it to the customer.
  */
-export function discountOfferLine(type, value, currency, productTitle) {
+export function discountOfferLine(type, value, currency, productTitle, language = "en") {
   const item = (productTitle || "").trim();
-  const subject = item ? `the ${item}` : "it";
-  return `I've added ${describeOffer(type, value, currency)} ${subject} to that link, and it's good for one order.`;
+  const offer = describeOffer(type, value, currency, language);
+  const line = {
+    en: `I've added ${offer} ${item ? `the ${item}` : "it"} to that link, and it's good for one order.`,
+    es: `Agregué ${offer} ${item ? `de ${item}` : "de este artículo"} a ese enlace y es válido para un pedido.`,
+    "pt-BR": `Incluí ${offer} ${item ? `em ${item}` : "nesse item"} nesse link e vale para um pedido.`,
+    fr: `J'ai ajouté ${offer} ${item ? `sur ${item}` : "dessus"} à ce lien, valable pour une commande.`,
+    de: `Ich habe ${offer} ${item ? `für ${item}` : "dafür"} auf diesen Link gelegt, gültig für eine Bestellung.`,
+    it: `Ho aggiunto ${offer} ${item ? `su ${item}` : "su questo articolo"} a quel link, valido per un ordine.`,
+    nl: `Ik heb ${offer} ${item ? `op ${item}` : "erop"} aan die link toegevoegd, geldig voor één bestelling.`,
+  };
+  return line[language] || line.en;
 }
 
 /**
@@ -192,10 +222,10 @@ const MAX_REPLY_LENGTH = 1000;
  * @param {{discountCode?: string|null, discountType?: string|null, discountValue?: number|null, discountCurrency?: string|null}|null} link
  * @param {string|null} productName
  */
-export function appendDiscountLine(replyText, link, productName) {
+export function appendDiscountLine(replyText, link, productName, language = "en") {
   if (!replyText || !link?.discountCode || !link?.discountValue) return replyText;
 
-  const offer = describeOffer(link.discountType, link.discountValue, link.discountCurrency);
+  const offer = describeOffer(link.discountType, link.discountValue, link.discountCurrency, language);
 
   // A reply that already talks about the discount (brand voice can produce
   // one) must not get a second, contradictory sentence.
@@ -206,6 +236,7 @@ export function appendDiscountLine(replyText, link, productName) {
     link.discountValue,
     link.discountCurrency,
     productName,
+    language,
   )}`;
   return combined.length > MAX_REPLY_LENGTH ? replyText : combined;
 }

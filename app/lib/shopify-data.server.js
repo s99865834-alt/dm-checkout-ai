@@ -363,6 +363,7 @@ export async function getShopifyStoreInfo(shopDomain) {
           email
           contactEmail
           description
+          primaryLocale
           primaryDomain {
             url
             host
@@ -438,6 +439,7 @@ export async function getShopifyStoreInfo(shopDomain) {
       ownerEmail: shopData?.email || null,
       contactEmail: shopData?.contactEmail || null,
       description: shopData?.description || null,
+      primaryLocale: shopData?.primaryLocale || null,
       primaryDomain,
       refundPolicy: refundPolicy || null,
       privacyPolicy: privacyPolicy || null,
