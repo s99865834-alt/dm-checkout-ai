@@ -7,6 +7,12 @@ import OpenAI from "openai";
 import { getShopPlanAndUsage, incrementUsage, logLinkSent, deleteLinkSent, markReplyUndelivered, alreadyRepliedToMessage, alreadyRepliedToExternalMessage, claimMessageReply, claimCommentReply, isHumanTakeoverActive } from "./db.server";
 import { getProductMappings } from "./db.server";
 import { appendDiscountLine } from "./discount-rules";
+import {
+  languageInstructionText,
+  REPLY_LANGUAGE_NAMES,
+  resolveReplyLanguage,
+  storeLocaleFrom,
+} from "./reply-language";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize, getShopCollections } from "./shopify-data.server";
@@ -584,6 +590,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           originChannel,
           inboundChannel: "dm",
           triggerChannel: originChannel,
+          shop,
           lastProductLink: lastProductLink
             ? {
                 url: lastProductLink.url,
@@ -716,6 +723,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
                 originChannel,
                 inboundChannel: "dm",
                 triggerChannel: originChannel,
+                shop,
                 choiceConfirmation,
                 recentMessages: (threadContext?.messages || [])
                   .filter((m) => m.id !== message.id)
@@ -724,7 +732,12 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               }
             );
 
-            replyText = appendDiscountLine(replyText, checkoutLink, productInfo.productName);
+            replyText = appendDiscountLine(
+              replyText,
+              checkoutLink,
+              productInfo.productName,
+              replyLanguageFor(brandVoiceData, message.text, shop).code,
+            );
 
             if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
               return { sent: false, reason: "Already replied to this message" };
@@ -850,6 +863,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             originChannel,
             inboundChannel: "dm",
             triggerChannel: originChannel,
+            shop,
             lastProductLink: {
               url: lastProductLink.url,
               product_id: lastProductLink.product_id,
@@ -864,7 +878,12 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           productContextForReply
         );
 
-        replyText = appendDiscountLine(replyText, checkoutLink, productName);
+        replyText = appendDiscountLine(
+          replyText,
+          checkoutLink,
+          productName,
+          replyLanguageFor(brandVoiceData, message.text, shop).code,
+        );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
@@ -1052,6 +1071,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             originChannel: "dm",
             inboundChannel: "dm",
             triggerChannel: "dm",
+            shop,
             lastProductLink: null,
             recentMessages: (threadContext?.messages || [])
               .filter((m) => m.id !== message.id)
@@ -1061,7 +1081,12 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           productContextForReply
         );
 
-        replyText = appendDiscountLine(replyText, checkoutLink, productName);
+        replyText = appendDiscountLine(
+          replyText,
+          checkoutLink,
+          productName,
+          replyLanguageFor(brandVoiceData, message.text, shop).code,
+        );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
           return { sent: false, reason: "Already replied to this message" };
@@ -1108,6 +1133,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               originChannel: "dm",
               inboundChannel: "dm",
               triggerChannel: "dm",
+              shop,
               isHomepageFallback: true,
               recentMessages: (threadContext?.messages || [])
                 .filter((m) => m.id !== message.id)
@@ -1169,7 +1195,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           brandVoiceData,
           message.text,
           intent,
-          { originChannel: "dm", inboundChannel: "dm" }
+          { originChannel: "dm", inboundChannel: "dm", shop }
         );
 
         if (!(await claimMessageReply(shop.id, message.id, clarifyingReply, message.external_id))) {
@@ -1561,13 +1587,19 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
         originChannel: "dm",
         inboundChannel: "dm",
         triggerChannel: "dm",
+        shop,
         sharedPost: kind === "share",
         storyMention: kind === "story_mention",
         storyReply: kind === "story_reply",
       }
     );
 
-    replyText = appendDiscountLine(replyText, checkoutLink, productInfo.productName);
+    replyText = appendDiscountLine(
+      replyText,
+      checkoutLink,
+      productInfo.productName,
+      replyLanguageFor(brandVoiceData, message?.text, shop).code,
+    );
 
     if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
       return { sent: false, reason: "Already replied to this message" };
@@ -1755,6 +1787,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
           originChannel: "comment",
           inboundChannel: "comment",
           triggerChannel: "comment",
+          shop,
           isHomepageFallback: true,
           postCaption: caption,
           browseDestinations: destinations,
@@ -1951,6 +1984,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         originChannel: "comment",
         inboundChannel: "comment",
         triggerChannel: "comment",
+        shop,
         lastProductLink: {
           url: productPageUrlForMessage || checkoutUrlForMessage,
           product_id: productMapping.product_id,
@@ -1962,7 +1996,12 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       productContextForReply
     );
 
-    replyText = appendDiscountLine(replyText, checkoutLinkResult, productName);
+    replyText = appendDiscountLine(
+      replyText,
+      checkoutLinkResult,
+      productName,
+      replyLanguageFor(brandVoiceData, message.text, shop).code,
+    );
 
     const claimed = commentExternalId
       ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
@@ -2034,19 +2073,17 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 }
 
 /**
- * Reply-language support. `brand_voice.reply_language` is either "auto" (mirror the
- * customer's language — the default) or a locale code that forces all replies into
- * that language regardless of what the customer wrote.
+ * Reply-language support. `brand_voice.reply_language` is either "auto"
+ * (English unless the customer or the store is clearly in another language)
+ * or a locale code that forces every reply into that language.
  */
-const REPLY_LANGUAGE_NAMES = {
-  en: "English",
-  "pt-BR": "Brazilian Portuguese",
-  es: "Spanish",
-  fr: "French",
-  de: "German",
-  it: "Italian",
-  nl: "Dutch",
-};
+function replyLanguageFor(brandVoice, messageText, shop, storeInfo, channelContext) {
+  return resolveReplyLanguage({
+    setting: brandVoice?.reply_language,
+    messageText,
+    storeLocale: storeLocaleFrom(shop, storeInfo) || channelContext?.storeLocale || null,
+  });
+}
 
 /** Whether a reply-language setting forces a specific (non-auto) language. */
 function isForcedReplyLanguage(brandVoice) {
@@ -2055,11 +2092,8 @@ function isForcedReplyLanguage(brandVoice) {
 }
 
 /** Build the language directive injected into every reply prompt. */
-function buildLanguageInstruction(brandVoice) {
-  if (isForcedReplyLanguage(brandVoice)) {
-    return `LANGUAGE (highest priority): Write your ENTIRE reply in ${REPLY_LANGUAGE_NAMES[brandVoice.reply_language]}, regardless of the language the customer used.`;
-  }
-  return "LANGUAGE (highest priority): Write your ENTIRE reply in the same language the customer used in their message. Mirror their language exactly.";
+function buildLanguageInstruction(brandVoice, originalMessage, shop, storeInfo, channelContext) {
+  return languageInstructionText(replyLanguageFor(brandVoice, originalMessage, shop, storeInfo, channelContext));
 }
 
 /**
@@ -2090,7 +2124,7 @@ Customer intent: ${intentContext}
 ${channelContext?.originChannel ? `Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM" : "Direct DM"}` : ""}
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice)}
+- ${buildLanguageInstruction(brandVoice, originalMessage, channelContext?.shop, null)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 - Acknowledge their message briefly
@@ -2156,7 +2190,7 @@ Available sizes: ${sizesText}
 Customer's original message: "${originalMessage || ""}"
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice)}
+- ${buildLanguageInstruction(brandVoice, originalMessage, null, null)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. Match this style precisely.` : `- Style: Use ${tone} tone`}
 - Thank them for their interest briefly
 - Ask what size they'd like
@@ -2372,7 +2406,7 @@ export async function generateReplyMessage(brandVoice, productName = null, check
   // When a specific reply language is forced, we must run AI generation so the
   // language directive applies — the canned tone templates are English-only.
   const forceLanguage = isForcedReplyLanguage(brandVoice);
-  // Auto language mirroring (the default) also needs AI generation, otherwise a
+  // Auto language (the default) also needs AI generation, otherwise a
   // non-English customer would hit the English-only canned templates below. Auto
   // is the default for every plan, so in practice replies are AI-generated; the
   // templates remain only as an error / no-API-key fallback.
@@ -2504,7 +2538,7 @@ ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) 
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice)}
+- ${buildLanguageInstruction(brandVoice, originalMessage, safeChannelContext?.shop, storeInfo, safeChannelContext)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 ${warmthFirst ? `- CRITICAL: Thank-you first, link as a casual invitation second. No sales pressure or urgency language whatsoever.` : ""}

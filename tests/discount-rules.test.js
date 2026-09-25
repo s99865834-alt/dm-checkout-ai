@@ -148,6 +148,13 @@ describe("appendDiscountLine", () => {
     expect(out).toContain("Aries Nail Polish");
   });
 
+  it("keeps the discount sentence in the same language as the reply", () => {
+    const out = appendDiscountLine("Puedes pedirlo aquí.", pct, "The Collection Snowboard: Liquid", "es");
+    expect(out).toContain("Puedes pedirlo aquí.");
+    expect(out).toContain("10% de descuento");
+    expect(out).not.toMatch(/I've added/);
+  });
+
   it("announces a fixed amount in the shop's currency", () => {
     const out = appendDiscountLine("Here's the link.", amount, "Aries Nail Polish");
     expect(out).toContain("$5 off");

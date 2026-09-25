@@ -40,6 +40,7 @@ import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { findCollectionMatches, searchCollections } from "./collection-match";
 import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE } from "./reply-rules";
 import { describeOffer } from "./discount-rules";
+import { languageInstructionText, resolveReplyLanguage, storeLocaleFrom } from "./reply-language";
 import {
   buildCheckoutLink,
   buildProductPageLink,
@@ -308,6 +309,12 @@ export async function generateAgentReply({
   if (!isSalesAgentEnabled()) return null;
   if (!shop?.shopify_domain || !message?.text) return null;
 
+  const replyLanguage = resolveReplyLanguage({
+    setting: brandVoice?.reply_language,
+    messageText: message.text,
+    storeLocale: storeLocaleFrom(shop),
+  });
+
   const toolDefinitions = toolsForSurface(storyContext, message.text);
 
   // Links minted during the loop; logged to links_sent by the caller after send.
@@ -417,7 +424,7 @@ export async function generateAgentReply({
           // product exists to remove.
           ...(link.discountCode
             ? {
-                discount_applied: `${describeOffer(link.discountType, link.discountValue, link.discountCurrency)} this item is already built into that link. Say you have included it and that it works on one order. Never write out a discount code.`,
+                discount_applied: `${describeOffer(link.discountType, link.discountValue, link.discountCurrency, replyLanguage.code)} this item is already built into that link. Mention that in ${replyLanguage.name}, in the same language as the rest of the reply. Never write out a discount code.`,
               }
             : {}),
         };
@@ -438,7 +445,7 @@ export async function generateAgentReply({
     }
   };
 
-  const systemMessage = buildSystemMessage({ brandVoice, allowClarify });
+  const systemMessage = buildSystemMessage({ brandVoice, allowClarify, message, shop });
   const userMessage = buildUserMessage({ message, intent, threadContext, storyContext });
 
   const messages = [
@@ -656,26 +663,16 @@ export async function generateAgentReply({
   return { text, links: linksCreated };
 }
 
-function buildSystemMessage({ brandVoice, allowClarify }) {
+function buildSystemMessage({ brandVoice, allowClarify, message, shop }) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = (brandVoice?.custom_instruction || "").trim();
-
-  const languageNames = {
-    en: "English",
-    "pt-BR": "Brazilian Portuguese",
-    es: "Spanish",
-    fr: "French",
-    de: "German",
-    it: "Italian",
-    nl: "Dutch",
-  };
-  const forcedLanguage =
-    brandVoice?.reply_language && brandVoice.reply_language !== "auto"
-      ? languageNames[brandVoice.reply_language]
-      : null;
-  const languageRule = forcedLanguage
-    ? `Write your ENTIRE reply in ${forcedLanguage}, regardless of the language the customer used.`
-    : "Write your ENTIRE reply in the same language the customer used. Mirror their language exactly.";
+  const languageRule = languageInstructionText(
+    resolveReplyLanguage({
+      setting: brandVoice?.reply_language,
+      messageText: message?.text,
+      storeLocale: storeLocaleFrom(shop),
+    }),
+  );
 
   const styleRule = customInstruction
     ? `STYLE (follow exactly): ${customInstruction}. Do not default to friendly/enthusiastic unless this instruction says so.`
