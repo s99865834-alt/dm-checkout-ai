@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildTrackedLinkPageHtml,
+  destinationCarriesCartRef,
   isLinkPreviewCrawler,
   DEFAULT_LINK_PREVIEW,
 } from "../app/lib/link-preview.server";
@@ -83,6 +84,66 @@ describe("buildTrackedLinkPageHtml", () => {
     });
     expect(html).toContain("sr_ref=link_info_abc123def456");
     expect(html).toContain("/cart/update.js");
+    expect(html).toContain("fetch(\"/cart.js\"");
     expect(html).toContain("window.location.replace");
+  });
+
+  it("waits for the cart stamp before redirecting a real click", () => {
+    const html = buildTrackedLinkPageHtml({
+      destinationUrl: destination,
+      persistLastClick: true,
+      linkId: "info_abc123def456",
+    });
+    expect(html).toContain("clearTimeout");
+    expect(html).toContain("Continuing to the store.");
+    expect(html).toContain(".then(function(){clearTimeout(timer);go();},function(){clearTimeout(timer);go();})");
+    expect(html).toContain("<noscript><meta http-equiv=\"refresh\"");
+    const withoutNoscriptRefresh = html.replace("<noscript><meta http-equiv=\"refresh\"", "");
+    expect(withoutNoscriptRefresh).not.toContain("http-equiv=\"refresh\"");
+  });
+
+  it("keeps an instant refresh when there is no cart stamp to wait for", () => {
+    const html = buildTrackedLinkPageHtml({ destinationUrl: destination });
+    expect(html).toContain(`<meta http-equiv="refresh" content="0;url=${destination}">`);
+    expect(html).not.toContain("/cart/update.js");
+  });
+
+  // A checkout permalink sets attributes[ref] itself and Shopify rebuilds the
+  // cart from it, so stopping to POST /cart/update.js only delays the click.
+  it("does not delay a checkout permalink that already carries attributes[ref]", () => {
+    const permalink =
+      "https://lovebyluna.co/cart/123:1?ref=link_TeuHqkwt&attributes%5Bref%5D=link_TeuHqkwt";
+    const html = buildTrackedLinkPageHtml({
+      destinationUrl: permalink,
+      persistLastClick: true,
+      linkId: "TeuHqkwt",
+    });
+    expect(html).toContain("sr_ref=link_TeuHqkwt");
+    expect(html).not.toContain("/cart/update.js");
+    expect(html).not.toContain("Continuing to the store.");
+    expect(html).toContain('http-equiv="refresh"');
+    expect(html).not.toContain("<noscript><meta http-equiv=\"refresh\"");
+  });
+
+  it("still waits for a browse link, which has no cart attribute of its own", () => {
+    const html = buildTrackedLinkPageHtml({
+      destinationUrl: "https://lovebyluna.co/collections/all?ref=link_info_abc123def456",
+      persistLastClick: true,
+      linkId: "info_abc123def456",
+    });
+    expect(html).toContain("/cart/update.js");
+    expect(html).toContain("Continuing to the store.");
+  });
+});
+
+describe("destinationCarriesCartRef", () => {
+  it("recognises the encoded and literal attribute", () => {
+    expect(destinationCarriesCartRef("https://x.co/cart/1:1?attributes%5Bref%5D=link_a")).toBe(true);
+    expect(destinationCarriesCartRef("https://x.co/cart/1:1?attributes[ref]=link_a")).toBe(true);
+  });
+
+  it("is false for a browse or product url", () => {
+    expect(destinationCarriesCartRef("https://x.co/collections/all?ref=link_a")).toBe(false);
+    expect(destinationCarriesCartRef(null)).toBe(false);
   });
 });

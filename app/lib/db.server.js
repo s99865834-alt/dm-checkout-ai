@@ -1125,18 +1125,25 @@ export async function logClick(params) {
 
 /**
  * Record order attribution.
+ *
+ * Upsert, not insert: orders/create is at-least-once, so a retried webhook
+ * would otherwise add a second row and inflate attributed revenue. Keyed on
+ * (shop_id, order_id) by attribution_shop_order_key.
  */
 export async function recordAttribution(params) {
   const { shopId, orderId, linkId, channel, amount, currency } = params;
 
-  const { error } = await supabase.from("attribution").insert({
-    shop_id: shopId,
-    order_id: orderId,
-    link_id: linkId || null,
-    channel: channel || null,
-    amount: amount ?? null,
-    currency: currency || "USD",
-  });
+  const { error } = await supabase.from("attribution").upsert(
+    {
+      shop_id: shopId,
+      order_id: orderId,
+      link_id: linkId || null,
+      channel: channel || null,
+      amount: amount ?? null,
+      currency: currency || "USD",
+    },
+    { onConflict: "shop_id,order_id" },
+  );
 
   if (error) {
     console.error("recordAttribution error", error);

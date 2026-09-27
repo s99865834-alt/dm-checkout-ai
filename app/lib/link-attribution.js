@@ -1,9 +1,10 @@
 /**
  * Last-click attribution for every link we send, not just checkout.
  *
- * Affiliate default: a click drops a 30-day first-party cookie and stamps
- * the cart. The last click inside that window gets the sale. Discount codes
- * still beat the cookie, because they live on the order itself.
+ * A click drops a 30-day first-party cookie and stamps the cart. The last
+ * click inside that window gets the sale. A discount code credits the sale
+ * only when the cart and the landing URL have no link id, so a later click
+ * is not overwritten by an older code.
  */
 
 export const ATTRIBUTION_WINDOW_DAYS = 30;
@@ -57,7 +58,55 @@ export function appendAttributionParams(url, linkId, { cartAttribute = false, ca
 
 export function lastClickCookieHeader(linkId) {
   if (!isSafeLinkId(linkId)) return null;
-  return `${REF_COOKIE_NAME}=${linkRefValue(linkId)}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; SameSite=Lax`;
+  return `${REF_COOKIE_NAME}=${linkRefValue(linkId)}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; Secure; SameSite=Lax`;
+}
+
+/**
+ * Custom domain from store context. myshopify.com is not a public host:
+ * a cart stamped there is a different cart from the one on the real domain.
+ */
+export function publicStoreHost(storeContext) {
+  const host = storeContext?.primaryDomain?.host;
+  if (typeof host !== "string") return null;
+  const trimmed = host.trim().toLowerCase();
+  if (!trimmed || trimmed.endsWith(".myshopify.com") || !/^[a-z0-9.-]+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+/**
+ * Old checkout links were stored on *.myshopify.com. The click arrives on the
+ * public domain, so the cart stamp has to send the customer there too.
+ */
+export function rewriteMyshopifyHost(destinationUrl, publicHost) {
+  if (!publicHost || !destinationUrl) return destinationUrl;
+  let parsed;
+  try {
+    parsed = new URL(destinationUrl);
+  } catch {
+    return destinationUrl;
+  }
+  if (!parsed.hostname.endsWith(".myshopify.com")) return destinationUrl;
+  parsed.hostname = publicHost;
+  parsed.protocol = "https:";
+  return parsed.toString();
+}
+
+/**
+ * Which signal credits the order. Cart is the last click we stamped. Landing
+ * covers the same session when the stamp did not stick. The discount code is
+ * the fallback for a purchase that carried neither.
+ */
+export function chooseAttributionSource({
+  cartLinkId = null,
+  landingLinkId = null,
+  discountLinkId = null,
+  cartInWindow = false,
+  landingInWindow = false,
+} = {}) {
+  if (cartLinkId && cartInWindow) return { linkId: cartLinkId, source: "cart" };
+  if (landingLinkId && landingInWindow) return { linkId: landingLinkId, source: "landing" };
+  if (discountLinkId) return { linkId: discountLinkId, source: "discount" };
+  return { linkId: null, source: null };
 }
 
 /**

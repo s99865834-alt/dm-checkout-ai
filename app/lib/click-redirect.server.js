@@ -13,7 +13,7 @@ import {
   isLinkPreviewCrawler,
   DEFAULT_LINK_PREVIEW,
 } from "./link-preview.server";
-import { lastClickCookieHeader } from "./link-attribution";
+import { lastClickCookieHeader, publicStoreHost, rewriteMyshopifyHost } from "./link-attribution";
 
 const PREVIEW_LOOKUP_MS = 2000;
 
@@ -29,14 +29,25 @@ function looksLikeBrowser(request) {
   return BROWSER_UA_PATTERNS.some((p) => ua.includes(p));
 }
 
-async function fetchLinkUrl(linkId) {
+async function fetchLinkRow(linkId) {
   const { data: row, error } = await supabase
     .from("links_sent")
-    .select("url")
+    .select("url, shop_id")
     .eq("link_id", linkId)
     .maybeSingle();
+  if (error || !row?.url) return null;
+  return row;
+}
+
+async function publicHostForShop(shopId) {
+  if (!shopId) return null;
+  const { data: shop, error } = await supabase
+    .from("shops")
+    .select("store_context_json")
+    .eq("id", shopId)
+    .maybeSingle();
   if (error) return null;
-  return row?.url || null;
+  return publicStoreHost(shop?.store_context_json);
 }
 
 /**
@@ -46,16 +57,18 @@ async function fetchLinkUrl(linkId) {
 export async function resolveTrackedLink(linkId, request) {
   if (!linkId) return null;
 
-  let url = await fetchLinkUrl(linkId);
-  if (!url) {
+  let row = await fetchLinkRow(linkId);
+  if (!row) {
     // Race guard: Instagram fetches the link preview the instant a DM is
     // delivered, which can arrive before the links_sent insert commits.
     // Links are now persisted before sending, but one brief retry keeps
     // queued sends and any remaining ordering edge from 404ing the preview.
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    url = await fetchLinkUrl(linkId);
+    row = await fetchLinkRow(linkId);
   }
-  if (!url) return null;
+  if (!row?.url) return null;
+  const publicHost = await publicHostForShop(row.shop_id);
+  const url = rewriteMyshopifyHost(row.url, publicHost);
 
   // Every link type is logged, info_ included. The analytics KPIs filter to
   // checkout links via isCheckoutLinkId before counting, so this moves no
