@@ -14,12 +14,7 @@
  * break the production smoke test. Only named unfurl crawlers need the card.
  */
 
-import {
-  isSafeLinkId,
-  linkRefValue,
-  REF_COOKIE_NAME,
-  REF_COOKIE_MAX_AGE_SEC,
-} from "./link-attribution";
+import { isSafeLinkId, linkRefValue } from "./link-attribution";
 
 const LINK_PREVIEW_UA = [
   "facebookexternalhit",
@@ -72,28 +67,24 @@ export function destinationCarriesCartRef(url) {
   return url.includes("attributes[ref]") || url.toLowerCase().includes("attributes%5bref%5d");
 }
 
-function lastClickScript(destinationUrl, linkId, { wait = true } = {}) {
-  if (!isSafeLinkId(linkId)) {
-    return `<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>`;
-  }
+function plainRedirectScript(destinationUrl) {
+  return `<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>`;
+}
+
+/**
+ * Put the link reference on the cart, then leave.
+ *
+ * Browse and product links have no attributes[ref] of their own, so this POST
+ * is the only thing that gets the reference onto the cart the order will be
+ * placed from. It has to finish first: a 0-second meta refresh used to
+ * navigate away and the Instagram in-app browser cancelled the request. A new
+ * visitor has no cart yet, so a failed update retries after GET /cart.js.
+ */
+function cartStampScript(destinationUrl, linkId) {
   const ref = linkRefValue(linkId);
-  if (!wait) {
-    const quickCookie = `${REF_COOKIE_NAME}=${ref}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; Secure; SameSite=Lax`;
-    return `<script>(function(){
-document.cookie=${JSON.stringify(quickCookie)};
-window.location.replace(${JSON.stringify(destinationUrl)});
-})();</script>`;
-  }
-  const cookie = `${REF_COOKIE_NAME}=${ref}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; Secure; SameSite=Lax`;
-  // Wait for /cart/update.js. A 0-second meta refresh used to navigate first,
-  // and the Instagram in-app browser cancelled the stamp. GET /cart.js first
-  // when the update fails, because a brand-new visitor has no cart yet.
-  // The order webhook reads this cart attribute. The cookie is what a later
-  // page reapplies if this cart gets replaced.
   return `<script>(function(){
 var dest=${JSON.stringify(destinationUrl)};
 var ref=${JSON.stringify(ref)};
-document.cookie=${JSON.stringify(cookie)};
 var left=false;
 function go(){if(left)return;left=true;window.location.replace(dest);}
 function post(){return fetch("/cart/update.js",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({attributes:{ref:ref}})}).then(function(r){if(!r.ok)throw new Error("cart");});}
@@ -105,18 +96,17 @@ post().catch(function(){return fetch("/cart.js",{credentials:"same-origin"}).the
 /**
  * Instant client-side redirect page with Open Graph tags for DM link previews.
  *
- * On a real storefront click we stamp the cart, then redirect. The instant
- * meta refresh stays off for that page: it was winning the race and the cart
- * attribute never landed. Browsers without JS still get a noscript refresh.
- * Shopify app-proxy pages can run same-origin JS; they cannot rely on
- * Set-Cookie surviving a 302.
+ * On a real storefront click through the app proxy we stamp the cart first,
+ * then redirect. The instant meta refresh stays off for that page: it was
+ * winning the race and the cart attribute never landed. Browsers without JS
+ * still get a noscript refresh.
  *
  * @param {{
  *   destinationUrl: string,
  *   title?: string,
  *   description?: string,
  *   imageUrl?: string|null,
- *   persistLastClick?: boolean,
+ *   stampCart?: boolean,
  *   linkId?: string|null,
  * }} opts
  */
@@ -125,7 +115,7 @@ export function buildTrackedLinkPageHtml({
   title = DEFAULT_LINK_PREVIEW.title,
   description = DEFAULT_LINK_PREVIEW.description,
   imageUrl = null,
-  persistLastClick = false,
+  stampCart = false,
   linkId = null,
 }) {
   const safeUrl = escapeHtml(destinationUrl);
@@ -138,17 +128,17 @@ export function buildTrackedLinkPageHtml({
 <meta name="twitter:card" content="summary_large_image">`
       : `<meta name="twitter:card" content="summary">`;
   // Only browse and product links need the cart stamped before leaving.
-  const waitsForCartStamp =
-    persistLastClick && isSafeLinkId(linkId) && !destinationCarriesCartRef(destinationUrl);
-  const redirectScript = persistLastClick
-    ? lastClickScript(destinationUrl, linkId, { wait: waitsForCartStamp })
-    : `<script>window.location.replace(${JSON.stringify(destinationUrl)});</script>`;
+  const stampsCart =
+    stampCart && isSafeLinkId(linkId) && !destinationCarriesCartRef(destinationUrl);
+  const redirectScript = stampsCart
+    ? cartStampScript(destinationUrl, linkId)
+    : plainRedirectScript(destinationUrl);
   // Instant refresh only when we are not waiting on the cart stamp. Inside
   // noscript it still fires for browsers that cannot run the script.
-  const refreshTag = waitsForCartStamp
+  const refreshTag = stampsCart
     ? `<noscript><meta http-equiv="refresh" content="0;url=${safeUrl}"></noscript>`
     : `<meta http-equiv="refresh" content="0;url=${safeUrl}">`;
-  const waitingNote = waitsForCartStamp ? `<p>Continuing to the store.</p>` : "";
+  const waitingNote = stampsCart ? `<p>Continuing to the store.</p>` : "";
 
   return `<!doctype html>
 <html>

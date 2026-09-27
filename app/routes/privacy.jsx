@@ -39,7 +39,6 @@ export default function PrivacyPolicy() {
           <li>Instagram messages and comments received by your account, including the message text, sender's Instagram user ID, and sender's username</li>
           <li>Customer interaction data (message content, timestamps, channel type, AI-classified intent and sentiment)</li>
           <li>Click-through data from checkout links sent via our Service, including IP addresses and user agent strings of visitors who click checkout links</li>
-          <li>A first-party cookie named sr_ref on the store's own domain, holding only the link id of the last link the visitor clicked, kept for 30 days so a later order in that same browser can be attributed</li>
           <li>Order attribution data when customers make purchases through our checkout links</li>
           <li>Analytics and usage statistics</li>
         </ul>

@@ -230,26 +230,37 @@ describe("click logging by link type", () => {
     }
   });
 
-  it("returns HTML for a real browser on the app proxy so cart cookies survive", async () => {
+  it("returns HTML on the app proxy so the cart can be stamped same-origin", async () => {
     const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA), { alwaysHtml: true });
     expect(res.status).toBe(200);
-    expect(res.headers.get("set-cookie")).toContain("sr_ref=link_mEs7Sicv");
     const html = await res.text();
     expect(html).toContain("window.location.replace");
     expect(html).toContain("/cart/update.js");
-    expect(html).toContain("clearTimeout");
+    expect(html).toContain('var ref="link_mEs7Sicv"');
+    expect(html).toContain("attributes:{ref:ref}");
     expect(html).toContain(".then(function(){clearTimeout(timer);go();}");
-    expect(html).toContain("sr_ref=link_mEs7Sicv");
     const withoutNoscriptRefresh = html.replace("<noscript><meta http-equiv=\"refresh\"", "");
     expect(withoutNoscriptRefresh).not.toContain("http-equiv=\"refresh\"");
     expect(html).not.toMatch(/Redirecting/);
   });
 
-  it("does not stamp last-click on a preview crawler", async () => {
+  // No cookie is set anywhere any more, so there is nothing to leak to a bot.
+  it("sets no cookie, on a click or a crawler", async () => {
+    const click = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA), { alwaysHtml: true });
+    expect(click.headers.get("set-cookie")).toBeNull();
+    expect(await click.text()).not.toContain("document.cookie");
+
+    const crawler = await serveTrackedLink("mEs7Sicv", request("facebookexternalhit/1.1"), {
+      alwaysHtml: true,
+    });
+    expect(crawler.headers.get("set-cookie")).toBeNull();
+    expect(await crawler.text()).not.toContain("document.cookie");
+  });
+
+  it("does not stamp the cart for a preview crawler", async () => {
     const res = await serveTrackedLink("mEs7Sicv", request("facebookexternalhit/1.1"), {
       alwaysHtml: true,
     });
-    expect(res.headers.get("set-cookie")).toBeNull();
     const html = await res.text();
     expect(html).not.toContain("/cart/update.js");
   });
