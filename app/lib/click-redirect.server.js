@@ -13,7 +13,7 @@ import {
   isLinkPreviewCrawler,
   DEFAULT_LINK_PREVIEW,
 } from "./link-preview.server";
-import { lastClickCookieHeader, publicStoreHost, rewriteMyshopifyHost } from "./link-attribution";
+import { publicStoreHost, rewriteMyshopifyHost } from "./link-attribution";
 
 const PREVIEW_LOOKUP_MS = 2000;
 
@@ -163,22 +163,22 @@ export async function loadLinkPreviewMeta(linkId) {
   return preview;
 }
 
-function htmlRedirectResponse(destinationUrl, preview, { persistLastClick = false, linkId = null } = {}) {
+function htmlRedirectResponse(destinationUrl, preview, { stampCart = false, linkId = null } = {}) {
   const html = buildTrackedLinkPageHtml({
     destinationUrl,
     title: preview?.title,
     description: preview?.description,
     imageUrl: preview?.imageUrl,
-    persistLastClick,
+    stampCart,
     linkId,
   });
-  const headers = {
-    "Content-Type": "text/html; charset=utf-8",
-    "Cache-Control": "no-store",
-  };
-  const cookie = persistLastClick ? lastClickCookieHeader(linkId) : null;
-  if (cookie) headers["Set-Cookie"] = cookie;
-  return new Response(html, { status: 200, headers });
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 /**
@@ -209,6 +209,6 @@ export async function serveTrackedLink(linkId, request, { alwaysHtml = false } =
     if (extra) preview = extra;
   }
 
-  const persistLastClick = alwaysHtml && !crawler;
-  return htmlRedirectResponse(url, preview, { persistLastClick, linkId });
+  const stampCart = alwaysHtml && !crawler;
+  return htmlRedirectResponse(url, preview, { stampCart, linkId });
 }

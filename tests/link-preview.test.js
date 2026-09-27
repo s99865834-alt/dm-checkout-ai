@@ -76,22 +76,35 @@ describe("buildTrackedLinkPageHtml", () => {
     expect(html).toContain("&amp;");
   });
 
-  it("stamps a 30-day last-click cookie and cart attribute on a real click", () => {
+  it("stamps the cart with the link reference on a real click", () => {
     const html = buildTrackedLinkPageHtml({
       destinationUrl: destination,
-      persistLastClick: true,
+      stampCart: true,
       linkId: "info_abc123def456",
     });
-    expect(html).toContain("sr_ref=link_info_abc123def456");
+    expect(html).toContain('var ref="link_info_abc123def456"');
+    expect(html).toContain("attributes:{ref:ref}");
     expect(html).toContain("/cart/update.js");
     expect(html).toContain("fetch(\"/cart.js\"");
     expect(html).toContain("window.location.replace");
   });
 
+  // Nothing reads a cookie any more, so setting one would be tracking we
+  // never use.
+  it("sets no cookie", () => {
+    const html = buildTrackedLinkPageHtml({
+      destinationUrl: destination,
+      stampCart: true,
+      linkId: "info_abc123def456",
+    });
+    expect(html).not.toContain("document.cookie");
+    expect(html).not.toContain("sr_ref");
+  });
+
   it("waits for the cart stamp before redirecting a real click", () => {
     const html = buildTrackedLinkPageHtml({
       destinationUrl: destination,
-      persistLastClick: true,
+      stampCart: true,
       linkId: "info_abc123def456",
     });
     expect(html).toContain("clearTimeout");
@@ -115,10 +128,10 @@ describe("buildTrackedLinkPageHtml", () => {
       "https://lovebyluna.co/cart/123:1?ref=link_TeuHqkwt&attributes%5Bref%5D=link_TeuHqkwt";
     const html = buildTrackedLinkPageHtml({
       destinationUrl: permalink,
-      persistLastClick: true,
+      stampCart: true,
       linkId: "TeuHqkwt",
     });
-    expect(html).toContain("sr_ref=link_TeuHqkwt");
+    expect(html).toContain(permalink);
     expect(html).not.toContain("/cart/update.js");
     expect(html).not.toContain("Continuing to the store.");
     expect(html).toContain('http-equiv="refresh"');
@@ -128,7 +141,7 @@ describe("buildTrackedLinkPageHtml", () => {
   it("still waits for a browse link, which has no cart attribute of its own", () => {
     const html = buildTrackedLinkPageHtml({
       destinationUrl: "https://lovebyluna.co/collections/all?ref=link_info_abc123def456",
-      persistLastClick: true,
+      stampCart: true,
       linkId: "info_abc123def456",
     });
     expect(html).toContain("/cart/update.js");

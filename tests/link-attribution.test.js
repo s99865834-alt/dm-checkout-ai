@@ -4,7 +4,6 @@ import {
   appendAttributionParams,
   chooseAttributionSource,
   extractLinkIdFromRef,
-  lastClickCookieHeader,
   publicStoreHost,
   rewriteMyshopifyHost,
   shouldCreditLink,
@@ -103,18 +102,6 @@ describe("30-day last-click window", () => {
   it("rejects a missing last touch unless it is a discount code", () => {
     expect(shouldCreditLink({ lastTouchAt: null, now })).toBe(false);
     expect(shouldCreditLink({ lastTouchAt: null, fromDiscountCode: true, now })).toBe(true);
-  });
-});
-
-describe("lastClickCookieHeader", () => {
-  it("sets a 30-day first-party cookie", () => {
-    expect(lastClickCookieHeader("info_abc123def456")).toBe(
-      "sr_ref=link_info_abc123def456; Max-Age=2592000; Path=/; Secure; SameSite=Lax",
-    );
-  });
-
-  it("rejects an unsafe id", () => {
-    expect(lastClickCookieHeader("bad id")).toBeNull();
   });
 });
 

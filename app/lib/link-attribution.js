@@ -1,16 +1,15 @@
 /**
  * Last-click attribution for every link we send, not just checkout.
  *
- * A click drops a 30-day first-party cookie and stamps the cart. The last
- * click inside that window gets the sale. A discount code credits the sale
- * only when the cart and the landing URL have no link id, so a later click
- * is not overwritten by an older code.
+ * A click stamps the cart with the link that sent it, and the reference rides
+ * that cart onto the order. The last click inside a 30-day window gets the
+ * sale. A discount code credits the sale only when the cart and the landing
+ * URL carry no link id, so a later click is never overwritten by an older
+ * code.
  */
 
 export const ATTRIBUTION_WINDOW_DAYS = 30;
 export const ATTRIBUTION_WINDOW_MS = ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-export const REF_COOKIE_NAME = "sr_ref";
-export const REF_COOKIE_MAX_AGE_SEC = ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60;
 
 export function linkRefValue(linkId) {
   return typeof linkId === "string" && linkId ? `link_${linkId}` : null;
@@ -54,11 +53,6 @@ export function appendAttributionParams(url, linkId, { cartAttribute = false, ca
   if (!parsed.searchParams.get("utm_medium")) parsed.searchParams.set("utm_medium", "ig_dm");
   if (!parsed.searchParams.get("utm_campaign")) parsed.searchParams.set("utm_campaign", campaign);
   return parsed.toString();
-}
-
-export function lastClickCookieHeader(linkId) {
-  if (!isSafeLinkId(linkId)) return null;
-  return `${REF_COOKIE_NAME}=${linkRefValue(linkId)}; Max-Age=${REF_COOKIE_MAX_AGE_SEC}; Path=/; Secure; SameSite=Lax`;
 }
 
 /**
@@ -111,8 +105,8 @@ export function chooseAttributionSource({
 
 /**
  * Discount codes live on the order, so they credit even after the window.
- * Cookie, cart attribute, and landing_site only credit a link that was
- * sent or clicked in the last 30 days.
+ * A cart attribute or landing_site only credits a link that was sent or
+ * clicked in the last 30 days.
  */
 export function shouldCreditLink({ lastTouchAt, fromDiscountCode = false, now = Date.now() } = {}) {
   if (fromDiscountCode) return true;
