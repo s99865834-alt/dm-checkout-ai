@@ -4,7 +4,6 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings, getMissedOpportunityComments } from "../lib/db.server";
-import { isCheckoutLinkId } from "../lib/checkout-link-id";
 import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
 import { cached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
@@ -81,7 +80,7 @@ export const loader = async ({ request }) => {
         .eq("shop_id", shop.id)
         .eq("product_id", postProductId);
       postFilterMessageIds = [...new Set((scopedLinks || []).map(l => l.message_id).filter(Boolean))];
-      postFilterLinkIds = [...new Set((scopedLinks || []).map(l => l.link_id).filter(isCheckoutLinkId))];
+      postFilterLinkIds = [...new Set((scopedLinks || []).map(l => l.link_id).filter(Boolean))];
     }
   }
 

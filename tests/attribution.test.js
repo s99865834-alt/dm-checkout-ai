@@ -10,18 +10,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // buildCheckoutLink writes, resolveTrackedLink reads. One fake covers both.
 const fake = vi.hoisted(() => ({
   linkRow: { url: "https://store.example.com/products/x" },
+  shopRow: null,
   lastInsert: null,
 }));
 
 vi.mock("../app/lib/supabase.server", () => ({
   default: {
-    from: () => ({
+    from: (table) => ({
       insert: async (row) => {
         fake.lastInsert = row;
         return { error: null };
       },
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: fake.linkRow, error: null }) }),
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: table === "shops" ? fake.shopRow : fake.linkRow,
+            error: null,
+          }),
+        }),
       }),
     }),
   },
@@ -59,6 +65,20 @@ describe("checkout link attribution markers", () => {
     expect(parsed.searchParams.get("attributes[ref]")).toBe(`link_${linkId}`);
     expect(parsed.searchParams.get("utm_source")).toBe("instagram");
     expect(parsed.pathname).toBe("/cart/456:1");
+    expect(parsed.host).toBe("test-store.myshopify.com");
+  });
+
+  it("uses the public store host so the cart stamp and the permalink match", async () => {
+    const { url } = await buildCheckoutLink(
+      {
+        ...shop,
+        store_context_json: { primaryDomain: { host: "lovebyluna.co" } },
+      },
+      "gid://shopify/Product/123",
+      "gid://shopify/ProductVariant/456",
+      1,
+    );
+    expect(new URL(url).host).toBe("lovebyluna.co");
   });
 });
 
@@ -95,10 +115,24 @@ describe("browse and PDP destinations carry attribution", () => {
     );
     const parsed = new URL(url);
     expect(linkId.startsWith("pdp_")).toBe(true);
+    expect(parsed.host).toBe("test-store.myshopify.com");
     expect(parsed.pathname).toBe("/products/the-luna-set");
     expect(parsed.searchParams.get("ref")).toBe(`link_${linkId}`);
     expect(parsed.searchParams.get("utm_campaign")).toBe("product_question");
     expect(parsed.searchParams.get("attributes[ref]")).toBeNull();
+  });
+
+  it("uses the public store host for a product page", async () => {
+    const { url } = await buildProductPageLink(
+      {
+        ...shop,
+        store_context_json: { primaryDomain: { host: "lovebyluna.co" } },
+      },
+      "gid://shopify/Product/123",
+      null,
+      "the-luna-set",
+    );
+    expect(new URL(url).host).toBe("lovebyluna.co");
   });
 
   it("stores ref on a homepage or collection before shortening", async () => {
@@ -177,6 +211,25 @@ describe("click logging by link type", () => {
     expect(res.headers.get("location")).toBe("https://store.example.com/products/x");
   });
 
+  it("rewrites a myshopify destination onto the public domain before the cart stamp", async () => {
+    const previousLink = fake.linkRow;
+    const previousShop = fake.shopRow;
+    fake.linkRow = {
+      url: "https://lovebyluna.myshopify.com/cart/99:1?ref=link_mEs7Sicv",
+      shop_id: "shop-1",
+    };
+    fake.shopRow = { store_context_json: { primaryDomain: { host: "lovebyluna.co" } } };
+    try {
+      const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA), { alwaysHtml: true });
+      const html = await res.text();
+      expect(html).toContain("https://lovebyluna.co/cart/99:1?ref=link_mEs7Sicv");
+      expect(html).not.toContain("lovebyluna.myshopify.com");
+    } finally {
+      fake.linkRow = previousLink;
+      fake.shopRow = previousShop;
+    }
+  });
+
   it("returns HTML for a real browser on the app proxy so cart cookies survive", async () => {
     const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA), { alwaysHtml: true });
     expect(res.status).toBe(200);
@@ -184,7 +237,11 @@ describe("click logging by link type", () => {
     const html = await res.text();
     expect(html).toContain("window.location.replace");
     expect(html).toContain("/cart/update.js");
+    expect(html).toContain("clearTimeout");
+    expect(html).toContain(".then(function(){clearTimeout(timer);go();}");
     expect(html).toContain("sr_ref=link_mEs7Sicv");
+    const withoutNoscriptRefresh = html.replace("<noscript><meta http-equiv=\"refresh\"", "");
+    expect(withoutNoscriptRefresh).not.toContain("http-equiv=\"refresh\"");
     expect(html).not.toMatch(/Redirecting/);
   });
 

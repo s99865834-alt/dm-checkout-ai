@@ -201,7 +201,7 @@ export function getShopCollectionUrl(shop, handle) {
  * @returns {Promise<{url: string, linkId: string} | null>} - PDP URL + link ID, or null if the handle couldn't be resolved
  */
 export async function buildProductPageLink(shop, productId, variantId = null, productHandle = null, _shorten = true) {
-  const shopHost = getShopDomainHost(shop);
+  const shopHost = getShopPublicHost(shop);
   if (!shopHost) {
     logger.warn("[buildProductPageLink] Missing shop domain; skipping PDP link");
     return null;
@@ -258,7 +258,10 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
  * @returns {Promise<{url: string, linkId: string}>} - Checkout URL and link ID
  */
 export async function buildCheckoutLink(shop, productId, variantId = null, qty = 1, _shorten = true) {
-  const shopHost = getShopDomainHost(shop);
+  // Public host, same one the /a/go/ bounce stamps. A myshopify.com permalink
+  // is a different site from lovebyluna.co, so the cart attribute set on the
+  // click never arrives on the order.
+  const shopHost = getShopPublicHost(shop);
   if (!shopHost) {
     throw new Error("Shop domain is required");
   }

@@ -13,7 +13,7 @@ if (typeof global.crypto === "undefined") {
 import { authenticate } from "../shopify.server";
 import { getShopByDomain, getLinkLastTouchAt, recordAttribution, recordOrderSighting } from "../lib/db.server";
 import { extractLinkIdFromNoteAttributes } from "../lib/links.server";
-import { extractLinkIdFromRef, shouldCreditLink } from "../lib/link-attribution";
+import { extractLinkIdFromRef, shouldCreditLink, chooseAttributionSource } from "../lib/link-attribution";
 import { looksLikeOurDiscountCode } from "../lib/discount-rules";
 import { findLinkIdForDiscountCodes } from "../lib/discount-pool.server";
 import logger from "../lib/logger.server";
@@ -179,13 +179,19 @@ export const action = async ({ request }) => {
       referring_site: referringSite,
     });
 
-    // Attribution sources, most reliable first. A single-use discount code we
-    // minted is the strongest of the three: Shopify records it on the order
-    // itself, so it survives a different device, a cleared cookie, a week of
-    // delay, or the customer typing the code in by hand. Cart attributes only
-    // survive while the cart does, and landing_site only covers a purchase in
-    // the same session.
-    let attributionData = null;
+    // Last click wins. The cart attribute is the stamp from the most recent
+    // click in this browser. landing_site covers a same-session purchase when
+    // that stamp did not stick, and Shopify files a bare `ref` query param on
+    // landing_site_ref, which this used to ignore entirely. A discount code
+    // is the fallback only: it lives on the order so it survives a different
+    // device, but it must never outrank a later click.
+    const cartLinkId = extractLinkIdFromNoteAttributes(payload.note_attributes);
+    const landingFromUrl = landingSite ? parseAttributionUrl(landingSite)?.linkId : null;
+    const landingFromRefField = extractLinkIdFromRef(
+      typeof payload.landing_site_ref === "string" ? payload.landing_site_ref : "",
+    );
+    const referringLinkId = referringSite ? parseAttributionUrl(referringSite)?.linkId : null;
+    const landingLinkId = landingFromUrl || landingFromRefField || referringLinkId;
 
     const ourCodes = Array.isArray(payload.discount_codes)
       ? payload.discount_codes
@@ -195,61 +201,61 @@ export const action = async ({ request }) => {
     let discountLinkId = null;
     if (ourCodes.length > 0) {
       discountLinkId = await findLinkIdForDiscountCodes(shopData.id, ourCodes).catch(() => null);
-      if (discountLinkId) {
-        attributionData = {
-          linkId: discountLinkId,
-          utmSource: "instagram",
-          utmMedium: "ig_dm",
-          utmCampaign: "dm_to_buy",
-        };
-        logger.debug(`[webhook] Attribution from discount code: link_${discountLinkId}`);
-      }
     }
 
-    const noteAttrLinkId = extractLinkIdFromNoteAttributes(payload.note_attributes);
-    if (!attributionData?.linkId && noteAttrLinkId) {
+    const linkInWindow = async (linkId) => {
+      if (!linkId) return false;
+      const lastTouchAt = await getLinkLastTouchAt(shopData.id, linkId);
+      return shouldCreditLink({ lastTouchAt, fromDiscountCode: false });
+    };
+
+    const cartInWindow = cartLinkId ? await linkInWindow(cartLinkId) : false;
+    let landingInWindow = false;
+    if (landingLinkId === cartLinkId) {
+      landingInWindow = cartInWindow;
+    } else if (landingLinkId) {
+      landingInWindow = await linkInWindow(landingLinkId);
+    }
+
+    const chosen = chooseAttributionSource({
+      cartLinkId,
+      landingLinkId,
+      discountLinkId,
+      cartInWindow,
+      landingInWindow,
+    });
+
+    let attributionData = null;
+    if (chosen.linkId) {
+      const landingParsed =
+        landingLinkId === chosen.linkId && landingSite ? parseAttributionUrl(landingSite) : null;
       attributionData = {
-        linkId: noteAttrLinkId,
-        utmSource: "instagram",
-        utmMedium: "ig_dm",
-        utmCampaign: "dm_to_buy",
+        linkId: chosen.linkId,
+        utmSource: landingParsed?.utmSource || "instagram",
+        utmMedium: landingParsed?.utmMedium || "ig_dm",
+        utmCampaign:
+          landingParsed?.utmCampaign || (chosen.source === "landing" ? "ig_link" : "dm_to_buy"),
       };
-      logger.debug(`[webhook] Attribution from cart attributes: link_${noteAttrLinkId}`);
-    }
-
-    if (!attributionData?.linkId && landingSite) {
-      attributionData = parseAttributionUrl(landingSite);
-      logger.debug(`[webhook] Parsed landing_site:`, attributionData);
-    }
-
-    if (!attributionData?.linkId && referringSite) {
-      attributionData = parseAttributionUrl(referringSite);
-      logger.debug(`[webhook] Parsed referring_site:`, attributionData);
-    }
-
-    // 30-day last-click window for cookie / cart / landing_site. Discount
-    // codes skip it: using the code at purchase is the conversion event.
-    if (attributionData?.linkId && !discountLinkId) {
-      const lastTouchAt = await getLinkLastTouchAt(shopData.id, attributionData.linkId);
-      if (!shouldCreditLink({ lastTouchAt, fromDiscountCode: false })) {
-        logger.debug(`[webhook] link_${attributionData.linkId} outside 30-day window, skipping credit`);
-        attributionData = { ...attributionData, linkId: null };
-      }
+      logger.debug(`[webhook] Attribution from ${chosen.source}: link_${chosen.linkId}`);
     }
 
     // Record the sighting either way. Attribution used to leave no trace when
     // it found nothing, which made "is it working?" unanswerable: on 8 Sep
     // 2026 there were 19 verified human clicks and zero attributed orders, and
-    // no way to tell whether nobody bought or we lost the ref. The booleans
-    // say which signal carried the id, so a systematic loss is visible.
+    // no way to tell whether nobody bought or we lost the ref.
+    //
+    // From 27 Sep 2026 these three booleans mean "this signal was present on
+    // the order", not "this signal won". `attributed` already says whether
+    // anything won, and presence is what shows where a signal is being lost.
+    // Rows written before that date carry the older meaning.
     await recordOrderSighting({
       shopId: shopData.id,
       orderId,
-      attributed: !!attributionData?.linkId,
+      attributed: !!chosen.linkId,
       amount: totalPrice,
       currency,
-      hadCartRef: !!noteAttrLinkId,
-      hadLandingRef: !discountLinkId && !noteAttrLinkId && !!attributionData?.linkId,
+      hadCartRef: !!cartLinkId,
+      hadLandingRef: !!landingLinkId,
       hadDiscountCode: !!discountLinkId,
       ...describeTrafficSource(landingSite, referringSite),
     });

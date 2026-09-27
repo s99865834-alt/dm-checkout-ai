@@ -2,8 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   ATTRIBUTION_WINDOW_DAYS,
   appendAttributionParams,
+  chooseAttributionSource,
   extractLinkIdFromRef,
   lastClickCookieHeader,
+  publicStoreHost,
+  rewriteMyshopifyHost,
   shouldCreditLink,
 } from "../app/lib/link-attribution";
 
@@ -106,11 +109,69 @@ describe("30-day last-click window", () => {
 describe("lastClickCookieHeader", () => {
   it("sets a 30-day first-party cookie", () => {
     expect(lastClickCookieHeader("info_abc123def456")).toBe(
-      "sr_ref=link_info_abc123def456; Max-Age=2592000; Path=/; SameSite=Lax",
+      "sr_ref=link_info_abc123def456; Max-Age=2592000; Path=/; Secure; SameSite=Lax",
     );
   });
 
   it("rejects an unsafe id", () => {
     expect(lastClickCookieHeader("bad id")).toBeNull();
+  });
+});
+
+describe("rewriteMyshopifyHost", () => {
+  it("sends an old myshopify checkout link to the public domain", () => {
+    const url = rewriteMyshopifyHost(
+      "https://lovebyluna.myshopify.com/cart/42167057225:1?ref=link_L94zyvil&attributes%5Bref%5D=link_L94zyvil",
+      "lovebyluna.co",
+    );
+    const parsed = new URL(url);
+    expect(parsed.host).toBe("lovebyluna.co");
+    expect(parsed.pathname).toBe("/cart/42167057225:1");
+    expect(parsed.searchParams.get("ref")).toBe("link_L94zyvil");
+    expect(parsed.searchParams.get("attributes[ref]")).toBe("link_L94zyvil");
+  });
+
+  it("leaves a url that is already on the public domain", () => {
+    const url = "https://lovebyluna.co/collections/nail-polish?ref=link_info_abc123def456";
+    expect(rewriteMyshopifyHost(url, "lovebyluna.co")).toBe(url);
+  });
+});
+
+describe("publicStoreHost", () => {
+  it("reads the custom domain and ignores myshopify", () => {
+    expect(publicStoreHost({ primaryDomain: { host: "LoveByLuna.co" } })).toBe("lovebyluna.co");
+    expect(publicStoreHost({ primaryDomain: { host: "lovebyluna.myshopify.com" } })).toBeNull();
+    expect(publicStoreHost(null)).toBeNull();
+  });
+});
+
+describe("chooseAttributionSource", () => {
+  it("lets the cart stamp beat an older discount code", () => {
+    expect(chooseAttributionSource({
+      cartLinkId: "info_abc123def456",
+      discountLinkId: "TeuHqkwt",
+      cartInWindow: true,
+      landingInWindow: false,
+    })).toEqual({ linkId: "info_abc123def456", source: "cart" });
+  });
+
+  it("uses the landing ref when the cart stamp is missing", () => {
+    expect(chooseAttributionSource({
+      landingLinkId: "info_abc123def456",
+      landingInWindow: true,
+    })).toEqual({ linkId: "info_abc123def456", source: "landing" });
+  });
+
+  it("falls through to the discount code when the click is outside the window", () => {
+    expect(chooseAttributionSource({
+      cartLinkId: "TeuHqkwt",
+      discountLinkId: "TeuHqkwt",
+      cartInWindow: false,
+      landingInWindow: false,
+    })).toEqual({ linkId: "TeuHqkwt", source: "discount" });
+  });
+
+  it("credits nothing when every signal is empty", () => {
+    expect(chooseAttributionSource({})).toEqual({ linkId: null, source: null });
   });
 });
