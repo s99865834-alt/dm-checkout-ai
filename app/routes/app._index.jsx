@@ -12,7 +12,7 @@ import {
   MIN_DISCOUNT_AMOUNT,
   MAX_DISCOUNT_AMOUNT,
 } from "../lib/discount-rules";
-import { cached, invalidateCached } from "../lib/loader-cache.server";
+import { cached, peekCached, invalidateCached } from "../lib/loader-cache.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
@@ -124,7 +124,8 @@ export const loader = async ({ request }) => {
   if (shop?.id) {
     let attributionCount = 0;
     let hasLinkClick = false;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages] =
+    let recentComments = 0;
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages, recentComments] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -170,19 +171,23 @@ export const loader = async ({ request }) => {
         // (Meta's "Allow access to messages" toggle isn't queryable via API).
         getLastInboundMessageAt(shop.id),
         // Deterministic probe of the toggle itself (via the documented error
-        // messaging APIs return while it's off). Cached; "unknown" on failure.
-        // The probe is a live Meta API call that can take seconds on a cold
-        // cache — it must never hold the whole first paint hostage (this was
-        // the multi-second blank screen on mobile). Budget it: on timeout the
-        // client gets "pending" and immediately re-requests via the
-        // check-message-access action; the probe keeps running here and warms
-        // the cache, so that re-check usually returns instantly.
-        Promise.race([
+        // messaging APIs return while it's off). A live Meta call that can take
+        // seconds cold, and the UI already re-requests it through the
+        // check-message-access action whenever it sees "pending".
+        //
+        // So never wait for it. This used to race a 1500ms budget, which meant
+        // every cold load spent the full 1.5s before it could paint, to fetch
+        // something the page then happily fetches again by itself. Serve a warm
+        // value inline, and on a miss answer "pending" and let the probe warm
+        // the cache for the re-check that is already coming.
+        (() => {
+          const warm = peekCached(`igmsgaccess:${shop.id}`);
+          if (warm !== undefined) return Promise.resolve(warm);
           cached(`igmsgaccess:${shop.id}`, MSG_ACCESS_TTL_MS, () =>
             checkInstagramMessageAccess(shop.id),
-          ).catch(() => "unknown"),
-          new Promise((resolve) => setTimeout(() => resolve("pending"), 1500)),
-        ]),
+          ).catch(() => "unknown");
+          return Promise.resolve("pending");
+        })(),
         // Something other than us answering this Instagram account, from
         // refused comment replies (and, in theory, foreign echo app_ids).
         // Powers the contested-inbox banner so a quiet dashboard gets
@@ -197,6 +202,12 @@ export const loader = async ({ request }) => {
         // the shop can't act on them, since the number exists to explain the
         // silence and quantify what upgrading would unlock.
         plan?.stories ? Promise.resolve(0) : getStoryMessageCount(shop.id).catch(() => 0),
+        // Comment volume, used only to decide whether to raise the
+        // unmapped-posts problem. Fetched here rather than after this batch,
+        // because it is needed exactly when productMappings is empty, which is
+        // every brand-new merchant, and a serialised round trip landed on the
+        // people forming a first impression.
+        getRecentCommentCount(shop.id, 7).catch(() => 0),
       ]);
     // Ask only once a customer has actually done something: an attributed
     // order, or at minimum a click on a link we sent. The old bar was 20
@@ -205,11 +216,9 @@ export const loader = async ({ request }) => {
     // orders and two checkout links to their name.
     reviewEligible = attributionCount >= 1 || hasLinkClick;
 
-    // Comment volume, needed only to decide whether to raise the unmapped-posts
-    // problem, so only the shops that have no mappings pay for the query.
-    if (productMappings.length === 0) {
-      unmappedComments = await getRecentCommentCount(shop.id, 7).catch(() => 0);
-    }
+    // Only surfaced when nothing is mapped; a shop with mappings has no
+    // unmapped-posts problem to raise.
+    unmappedComments = productMappings.length === 0 ? recentComments : 0;
   }
 
   const shopId = shop?.id;

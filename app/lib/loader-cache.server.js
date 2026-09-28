@@ -53,6 +53,21 @@ export async function cached(key, ttlMs, fn) {
 }
 
 /**
+ * Read a fresh cached value without running anything, or undefined on a miss.
+ *
+ * For loader data the page can render without: a warm value is served inline,
+ * and a miss lets the caller ship the shell immediately instead of waiting on
+ * a slow external call. `undefined` means miss, so a cached `null` or `""`
+ * still reads as a hit.
+ * @param {string} key
+ */
+export function peekCached(key) {
+  const entry = _store.get(key);
+  if (entry && Date.now() - entry.at < entry.ttlMs) return entry.value;
+  return undefined;
+}
+
+/**
  * Remove every cache entry whose key starts with `prefix`. Call after
  * mutations that make cached data wrong (plan change, Instagram disconnect).
  * @param {string} prefix

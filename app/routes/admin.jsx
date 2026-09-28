@@ -21,6 +21,14 @@ import { mapWithConcurrency } from "../lib/concurrency";
 // Re-assert each connected account's Instagram webhook subscription at most
 // once a day (see ensureInstagramWebhookSubscription for why this matters).
 const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
+// Same key and TTL as the merchant home page, on purpose. This dashboard used
+// to call getInstagramAccountInfo raw, once per connected store, to fill in a
+// username column: a Meta round trip plus a token refresh each, three at a
+// time, which is most of why /admin took eight seconds. Sharing `iginfo:`
+// means a merchant opening their app warms this page too, and the disconnect
+// and OAuth-callback handlers already invalidate that prefix, so reconnecting
+// to a different account cannot leave a stale username behind.
+const IG_INFO_TTL_MS = 5 * 60 * 1000;
 // Live Shopify lookups use Prisma sessions (pool of 1). Never fan out more
 // than this, and abandon the rest of the page when the budget expires so
 // /admin cannot block merchant auth. Cache hits in shopify-data are instant.
@@ -94,7 +102,9 @@ export const loader = async ({ request }) => {
 
     const igLookups = await mapWithConcurrency(stores, ADMIN_META_CONCURRENCY, (s) =>
       s.instagram_connected
-        ? getInstagramAccountInfo(s.ig_business_id, s.shop_id)
+        ? cached(`iginfo:${s.shop_id}`, IG_INFO_TTL_MS, () =>
+            getInstagramAccountInfo(s.ig_business_id, s.shop_id),
+          )
         : Promise.resolve(null),
     );
     const storesWithIg = stores.map((s, i) => {
