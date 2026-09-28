@@ -254,6 +254,20 @@ async function _fetchStoreManagedTrial(shopDomain) {
  * @param {string} shopDomain
  * @returns {Promise<{daysLeft:number, trialEndsAt:string}|null>}
  */
+/**
+ * The cached managed trial for a shop, or undefined when nothing is cached.
+ *
+ * Lets a caller render immediately instead of waiting on a live Shopify call
+ * per shop. `undefined` means miss, so a cached `null` (the shop genuinely has
+ * no managed trial) still reads as a hit and is not re-fetched.
+ */
+export function peekStoreManagedTrial(shopDomain) {
+  if (!shopDomain) return undefined;
+  const entry = _trialCache.get(shopDomain);
+  if (entry && Date.now() - entry.at < TRIAL_TTL_MS) return entry.value;
+  return undefined;
+}
+
 export async function getStoreManagedTrial(shopDomain) {
   if (!shopDomain) return null;
 
