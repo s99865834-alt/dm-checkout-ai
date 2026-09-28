@@ -1,7 +1,47 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cached, invalidateCached } from "../app/lib/loader-cache.server.js";
+import { cached, peekCached, invalidateCached } from "../app/lib/loader-cache.server.js";
 
 const PREFIX = "test-cache-";
+
+// The home loader serves message-access inline when it is warm and answers
+// "pending" when it is not, rather than waiting on a live Meta probe. That
+// only works if a peek can tell a miss from a cached falsy value, and never
+// runs the expensive function itself.
+describe("peekCached", () => {
+  afterEach(() => {
+    invalidateCached(PREFIX);
+  });
+
+  it("returns undefined on a miss without running anything", () => {
+    expect(peekCached(`${PREFIX}absent`)).toBeUndefined();
+  });
+
+  it("returns a warm value", async () => {
+    const key = `${PREFIX}warm`;
+    await cached(key, 60_000, async () => "on");
+    expect(peekCached(key)).toBe("on");
+  });
+
+  it("tells a cached falsy value apart from a miss", async () => {
+    const key = `${PREFIX}falsy`;
+    await cached(key, 60_000, async () => null);
+    expect(peekCached(key)).toBeNull();
+    expect(peekCached(`${PREFIX}nothing-here`)).toBeUndefined();
+  });
+
+  it("treats an expired entry as a miss", async () => {
+    const key = `${PREFIX}expired`;
+    await cached(key, 1, async () => "stale");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(peekCached(key)).toBeUndefined();
+  });
+
+  it("does not populate the cache", () => {
+    const key = `${PREFIX}peek-only`;
+    expect(peekCached(key)).toBeUndefined();
+    expect(peekCached(key)).toBeUndefined();
+  });
+});
 
 describe("cached", () => {
   afterEach(() => {
