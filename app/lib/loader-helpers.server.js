@@ -1,5 +1,5 @@
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, createOrUpdateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
+import { getShopByDomain, createOrUpdateShop, reactivateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
 import { getPlanConfig } from "./plans";
 import { effectivePlan } from "./entitlements";
 import { getShopifyStoreInfo } from "./shopify-data.server";
@@ -87,17 +87,19 @@ export async function getShopWithPlan(request) {
         });
         logger.debug(`[getShopWithPlan] Created shop ${shopDomain} (fallback)`);
       } else if (!s.active) {
-        // Reinstall / reactivation path. Always reset to FREE so that the merchant
-        // must explicitly re-approve a paid charge via the Billing API before
-        // regaining any paid-plan features — required by Shopify App Store rules.
+        // authenticate.admin only succeeds when Shopify still considers the
+        // app installed, so an inactive row here is stale and DMs would be
+        // dropped by webhooks.meta until it is corrected.
+        //
+        // Flip `active` and nothing else. This used to call createOrUpdateShop,
+        // which also forces plan to FREE and zeroes usage_count: a paying
+        // merchant whose row went inactive for any reason was silently
+        // downgraded and had their usage reset by opening a page. The plan and
+        // usage reset that a real reinstall needs belongs to afterAuth, which
+        // runs on OAuth rather than on every navigation.
         try {
-          s = await createOrUpdateShop(shopDomain, {
-            plan: "FREE",
-            monthly_cap: getPlanConfig("FREE").cap,
-            active: true,
-            usage_count: 0,
-          });
-          logger.debug(`[getShopWithPlan] Reactivated shop ${shopDomain} on FREE (fallback)`);
+          s = await reactivateShop(shopDomain);
+          logger.debug(`[getShopWithPlan] Reactivated stale inactive shop ${shopDomain}`);
         } catch (error) {
           console.error(`[getShopWithPlan] Error reactivating shop ${shopDomain}:`, error);
         }

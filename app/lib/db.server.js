@@ -218,6 +218,33 @@ export async function updateShopPlan(shopId, plan) {
  * missed), so stale stores drop off the admin dashboard and stop being
  * retried. Reinstalling flips active back to true via afterAuth.
  */
+/**
+ * Turn `active` back on and change nothing else.
+ *
+ * Separate from createOrUpdateShop on purpose. That one is the reinstall
+ * primitive: it also forces plan to FREE and zeroes usage_count, which is
+ * correct for a genuine OAuth reinstall and catastrophic anywhere else. A page
+ * loader used to call it, so any request for a shop whose row was inactive
+ * silently downgraded a paying merchant and reset their usage. Reactivating
+ * matters because webhooks.meta drops DMs for an inactive shop, so this exists
+ * to do that one thing and nothing more.
+ */
+export async function reactivateShop(shopifyDomain) {
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ active: true })
+    .eq("shopify_domain", shopifyDomain)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("reactivateShop error", error);
+    throw error;
+  }
+  invalidateCached(`shopplan:${shopifyDomain}`);
+  return data;
+}
+
 export async function markShopUninstalled(shopifyDomain) {
   const config = getPlanConfig("FREE");
   const { error } = await supabase
