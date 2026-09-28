@@ -13,7 +13,7 @@ import { COMMENT_TRIAL_DAYS } from "../lib/entitlements";
 import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItems, getShopsWithToolDetections } from "../lib/db.server";
 import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
-import { getStoreManagedTrial } from "../lib/shopify-data.server";
+import { getStoreManagedTrial, peekStoreManagedTrial } from "../lib/shopify-data.server";
 import { cached, peekCached } from "../lib/loader-cache.server";
 import { describeOffer } from "../lib/discount-rules";
 import { mapWithConcurrency } from "../lib/concurrency";
@@ -29,20 +29,14 @@ const IG_SUBSCRIBE_TTL_MS = 24 * 60 * 60 * 1000;
 // and OAuth-callback handlers already invalidate that prefix, so reconnecting
 // to a different account cannot leave a stale username behind.
 const IG_INFO_TTL_MS = 5 * 60 * 1000;
-// Live Shopify lookups use Prisma sessions (pool of 1). Never fan out more
-// than this, and abandon the rest of the page when the budget expires so
-// /admin cannot block merchant auth. Cache hits in shopify-data are instant.
+// Live Shopify lookups go through Prisma sessions (pool of 1), which merchant
+// auth also needs, so never fan out more than this. Nothing on this page waits
+// for them any more; they only ever warm a cache behind the response.
 const ADMIN_LIVE_CONCURRENCY = 2;
-const ADMIN_LIVE_BUDGET_MS = 8000;
+// How many uncached trials to warm per load. Bounds the background work so a
+// fresh process filling 50 shops cannot monopolise the session pool.
+const ADMIN_TRIAL_WARM_PER_LOAD = 8;
 const ADMIN_META_CONCURRENCY = 3;
-
-function settleTimeout(ms) {
-  return new Promise((resolve) => setTimeout(() => resolve(null), Math.max(0, ms)));
-}
-
-function remainingBudget(startedAt, budgetMs) {
-  return Math.max(0, budgetMs - (Date.now() - startedAt));
-}
 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured()) {
@@ -134,22 +128,29 @@ export const loader = async ({ request }) => {
     // which made the column impossible to trust. It is now refreshed in the
     // background and read from the shops table with the rest of the row.
     //
-    // The trial lookup stays live because it has no stored equivalent, and it
-    // keeps the budget so /admin cannot block on Shopify.
-    const liveStarted = Date.now();
-    const liveLookups = await mapWithConcurrency(storesWithIg, ADMIN_LIVE_CONCURRENCY, async (s) => {
-      const left = remainingBudget(liveStarted, ADMIN_LIVE_BUDGET_MS);
-      if (left < 250) return { managedTrial: null };
-      const managedTrial = await Promise.race([
-        getStoreManagedTrial(s.shopify_domain),
-        settleTimeout(left),
-      ]);
-      return { managedTrial };
-    });
+    // The managed trial had the same shape and the same 8 second budget, and
+    // it was the rest of a cold /admin: a live Shopify call per shop, two at a
+    // time, through a Prisma session pool of one, so a fresh process spent the
+    // whole budget and still gave up on most of the page. Read from cache and
+    // warm the misses behind the response, a bounded slice per load so the
+    // pool this shares with merchant auth is never flooded.
+    const trialWarm = new Map();
+    const trialMissing = [];
+    for (const s of storesWithIg) {
+      const warm = peekStoreManagedTrial(s.shopify_domain);
+      if (warm !== undefined) trialWarm.set(s.shopify_domain, warm);
+      else trialMissing.push(s);
+    }
+    if (trialMissing.length > 0) {
+      mapWithConcurrency(
+        trialMissing.slice(0, ADMIN_TRIAL_WARM_PER_LOAD),
+        ADMIN_LIVE_CONCURRENCY,
+        (s) => getStoreManagedTrial(s.shopify_domain),
+      ).catch(() => {});
+    }
 
-    const storesFinal = storesWithIg.map((s, i) => {
-      const live = liveLookups[i]?.status === "fulfilled" ? liveLookups[i].value : null;
-      const managedTrial = live?.managedTrial || null;
+    const storesFinal = storesWithIg.map((s) => {
+      const managedTrial = trialWarm.get(s.shopify_domain) || null;
       const trial = managedTrial
         ? { ...managedTrial, source: "managed" }
         : s.beta_trial
