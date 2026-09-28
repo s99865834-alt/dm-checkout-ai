@@ -14,7 +14,7 @@ import { getAdminDashboardStores, getOutboundQueueOverview, getOutboundQueueItem
 import { ADMIN_STORES_PAGE_SIZE } from "../lib/admin-stores";
 import { getInstagramAccountInfo, ensureInstagramWebhookSubscription } from "../lib/meta.server";
 import { getStoreManagedTrial } from "../lib/shopify-data.server";
-import { cached } from "../lib/loader-cache.server";
+import { cached, peekCached } from "../lib/loader-cache.server";
 import { describeOffer } from "../lib/discount-rules";
 import { mapWithConcurrency } from "../lib/concurrency";
 
@@ -100,22 +100,33 @@ export const loader = async ({ request }) => {
       ),
     ).catch(() => {});
 
-    const igLookups = await mapWithConcurrency(stores, ADMIN_META_CONCURRENCY, (s) =>
-      s.instagram_connected
-        ? cached(`iginfo:${s.shop_id}`, IG_INFO_TTL_MS, () =>
-            getInstagramAccountInfo(s.ig_business_id, s.shop_id),
-          )
-        : Promise.resolve(null),
-    );
-    const storesWithIg = stores.map((s, i) => {
-      const result = igLookups[i];
-      const info = result?.status === "fulfilled" ? result.value : null;
-      return {
-        ...s,
-        instagram_username: info?.username || null,
-        competing_tool: toolDetections.get(s.shop_id) || null,
-      };
-    });
+    // Usernames are served from cache only, never waited on. Caching the call
+    // took a warm load from eight seconds to under two, but left a cold one at
+    // twelve, because a fresh process has to make every Meta round trip before
+    // it can render a single row, and this process restarts on every deploy.
+    // A miss now renders a blank username and starts a bounded background
+    // warm, so the next load has it. Deterministic rather than the random
+    // half-empty columns the store-revenue fetch used to produce.
+    const igWarm = new Map();
+    const igMissing = [];
+    for (const s of stores) {
+      if (!s.instagram_connected) continue;
+      const warm = peekCached(`iginfo:${s.shop_id}`);
+      if (warm !== undefined) igWarm.set(s.shop_id, warm);
+      else igMissing.push(s);
+    }
+    if (igMissing.length > 0) {
+      mapWithConcurrency(igMissing, ADMIN_META_CONCURRENCY, (s) =>
+        cached(`iginfo:${s.shop_id}`, IG_INFO_TTL_MS, () =>
+          getInstagramAccountInfo(s.ig_business_id, s.shop_id),
+        ),
+      ).catch(() => {});
+    }
+    const storesWithIg = stores.map((s) => ({
+      ...s,
+      instagram_username: igWarm.get(s.shop_id)?.username || null,
+      competing_tool: toolDetections.get(s.shop_id) || null,
+    }));
 
     // Store revenue is no longer fetched here. It used to race an 8 second
     // budget at concurrency 2 across every shop on the page, so most of them
