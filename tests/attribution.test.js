@@ -211,6 +211,69 @@ describe("click logging by link type", () => {
     expect(res.headers.get("location")).toBe("https://store.example.com/products/x");
   });
 
+  // Only the storefront's own origin can POST /cart/update.js, so a short-link
+  // click has to be handed to the store's app proxy. Sending it straight to
+  // the destination is why a shop without a custom domain could never
+  // attribute a sale: its links fall back to the shared short domain.
+  it("sends a short-link click through the store's proxy, not straight to the destination", async () => {
+    const previous = fake.shopRow;
+    const previousLink = fake.linkRow;
+    fake.linkRow = { url: "https://lovebyluna.co/collections/all", shop_id: "shop-1" };
+    fake.shopRow = {
+      shopify_domain: "lovebyluna.myshopify.com",
+      store_context_json: { primaryDomain: { host: "lovebyluna.co" } },
+    };
+    try {
+      const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA));
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("https://lovebyluna.co/a/go/mEs7Sicv");
+    } finally {
+      fake.shopRow = previous;
+      fake.linkRow = previousLink;
+    }
+  });
+
+  // The case that was completely broken: no custom domain at all. Shopify
+  // mounts the proxy on the myshopify domain too, so these clicks can be
+  // stamped instead of being written off.
+  it("falls back to the myshopify proxy when the shop has no custom domain", async () => {
+    const previous = fake.shopRow;
+    const previousLink = fake.linkRow;
+    fake.linkRow = {
+      url: "https://dmteststore-2.myshopify.com/collections/all",
+      shop_id: "shop-1",
+    };
+    fake.shopRow = {
+      shopify_domain: "dmteststore-2.myshopify.com",
+      store_context_json: { primaryDomain: { host: "dmteststore-2.myshopify.com" } },
+    };
+    try {
+      const res = await serveTrackedLink("mEs7Sicv", request(BROWSER_UA));
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(
+        "https://dmteststore-2.myshopify.com/a/go/mEs7Sicv",
+      );
+    } finally {
+      fake.shopRow = previous;
+      fake.linkRow = previousLink;
+    }
+  });
+
+  it("still serves Open Graph HTML to a crawler rather than bouncing it", async () => {
+    const previous = fake.shopRow;
+    fake.shopRow = {
+      shopify_domain: "dmteststore-2.myshopify.com",
+      store_context_json: null,
+    };
+    try {
+      const res = await serveTrackedLink("mEs7Sicv", request("facebookexternalhit/1.1"));
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("og:title");
+    } finally {
+      fake.shopRow = previous;
+    }
+  });
+
   it("rewrites a myshopify destination onto the public domain before the cart stamp", async () => {
     const previousLink = fake.linkRow;
     const previousShop = fake.shopRow;

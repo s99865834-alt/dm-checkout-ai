@@ -13,7 +13,7 @@ import {
   isLinkPreviewCrawler,
   DEFAULT_LINK_PREVIEW,
 } from "./link-preview.server";
-import { publicStoreHost, rewriteMyshopifyHost } from "./link-attribution";
+import { publicStoreHost, rewriteMyshopifyHost, storefrontProxyUrl } from "./link-attribution";
 
 const PREVIEW_LOOKUP_MS = 2000;
 
@@ -39,15 +39,25 @@ async function fetchLinkRow(linkId) {
   return row;
 }
 
-async function publicHostForShop(shopId) {
-  if (!shopId) return null;
+/**
+ * The two hosts a click cares about: the public one to show a customer, and
+ * whichever storefront host serves this shop's app proxy. A shop with no
+ * custom domain has no public host but still has a storefront, and the proxy
+ * is mounted there, which is what makes its clicks attributable at all.
+ */
+async function hostsForShop(shopId) {
+  if (!shopId) return { publicHost: null, storefrontHost: null };
   const { data: shop, error } = await supabase
     .from("shops")
-    .select("store_context_json")
+    .select("shopify_domain, store_context_json")
     .eq("id", shopId)
     .maybeSingle();
-  if (error) return null;
-  return publicStoreHost(shop?.store_context_json);
+  if (error || !shop) return { publicHost: null, storefrontHost: null };
+  const publicHost = publicStoreHost(shop.store_context_json);
+  return {
+    publicHost,
+    storefrontHost: publicHost || shop.shopify_domain || null,
+  };
 }
 
 /**
@@ -55,6 +65,16 @@ async function publicHostForShop(shopId) {
  * appropriate. Returns the URL string, or null when the link doesn't exist.
  */
 export async function resolveTrackedLink(linkId, request) {
+  const detail = await resolveTrackedLinkDetail(linkId, request);
+  return detail?.url ?? null;
+}
+
+/**
+ * As resolveTrackedLink, plus the storefront host that serves this shop's app
+ * proxy, which serveTrackedLink needs to hand the click to the store instead
+ * of sending it straight to the destination.
+ */
+async function resolveTrackedLinkDetail(linkId, request) {
   if (!linkId) return null;
 
   let row = await fetchLinkRow(linkId);
@@ -67,7 +87,7 @@ export async function resolveTrackedLink(linkId, request) {
     row = await fetchLinkRow(linkId);
   }
   if (!row?.url) return null;
-  const publicHost = await publicHostForShop(row.shop_id);
+  const { publicHost, storefrontHost } = await hostsForShop(row.shop_id);
   const url = rewriteMyshopifyHost(row.url, publicHost);
 
   // Every link type is logged, info_ included. The analytics KPIs filter to
@@ -87,7 +107,7 @@ export async function resolveTrackedLink(linkId, request) {
     }
   }
 
-  return url;
+  return { url, storefrontHost };
 }
 
 function withTimeout(promise, ms) {
@@ -185,22 +205,33 @@ function htmlRedirectResponse(destinationUrl, preview, { stampCart = false, link
  * Resolve a tracked link and respond.
  *
  * App-proxy links always return HTML (Shopify follows 302s server-side and
- * that breaks cart cookies). Short-link hosts 302 humans and only return HTML
- * for preview crawlers, so Instagram can read Open Graph tags.
+ * that breaks cart cookies). Short-link hosts only return HTML for preview
+ * crawlers, so Instagram can read Open Graph tags.
  *
  * @param {string} linkId
  * @param {Request} request
  * @param {{ alwaysHtml?: boolean }} [opts]
  */
 export async function serveTrackedLink(linkId, request, { alwaysHtml = false } = {}) {
-  const url = await resolveTrackedLink(linkId, request);
+  const detail = await resolveTrackedLinkDetail(linkId, request);
+  const url = detail?.url;
   if (!url || !/^https?:\/\//i.test(url)) {
     return new Response("Not Found", { status: 404 });
   }
 
   const crawler = isLinkPreviewCrawler(request);
   if (!alwaysHtml && !crawler) {
-    return new Response(null, { status: 302, headers: { Location: url } });
+    // Hand the click to the store's own app proxy rather than the
+    // destination. Only the storefront's own origin can stamp the cart, so a
+    // bare 302 from here meant a shop with no custom domain (20 of 35 active
+    // shops) could never attribute a sale: its links fall back to the shared
+    // short domain, which cannot touch /cart/update.js. The customer still
+    // clicked the short branded link; this is only where it sends them.
+    const proxied = storefrontProxyUrl(detail.storefrontHost, linkId);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: proxied || url },
+    });
   }
 
   let preview = DEFAULT_LINK_PREVIEW;
