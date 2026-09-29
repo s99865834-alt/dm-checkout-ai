@@ -7,6 +7,7 @@ import {
   publicStoreHost,
   rewriteMyshopifyHost,
   shouldCreditLink,
+  storefrontProxyUrl,
 } from "../app/lib/link-attribution";
 
 describe("appendAttributionParams", () => {
@@ -121,6 +122,29 @@ describe("rewriteMyshopifyHost", () => {
   it("leaves a url that is already on the public domain", () => {
     const url = "https://lovebyluna.co/collections/nail-polish?ref=link_info_abc123def456";
     expect(rewriteMyshopifyHost(url, "lovebyluna.co")).toBe(url);
+  });
+});
+
+describe("storefrontProxyUrl", () => {
+  it("builds the app-proxy URL on a custom domain", () => {
+    expect(storefrontProxyUrl("lovebyluna.co", "info_abc123def456")).toBe(
+      "https://lovebyluna.co/a/go/info_abc123def456",
+    );
+  });
+
+  // The whole point: a shop with only a myshopify domain still has a
+  // storefront, and the proxy is mounted on it.
+  it("works on a myshopify domain, which is the no-custom-domain case", () => {
+    expect(storefrontProxyUrl("dmteststore-2.myshopify.com", "TeuHqkwt")).toBe(
+      "https://dmteststore-2.myshopify.com/a/go/TeuHqkwt",
+    );
+  });
+
+  it("refuses to build a URL it cannot trust", () => {
+    expect(storefrontProxyUrl("", "TeuHqkwt")).toBeNull();
+    expect(storefrontProxyUrl(null, "TeuHqkwt")).toBeNull();
+    expect(storefrontProxyUrl("lovebyluna.co", "bad id")).toBeNull();
+    expect(storefrontProxyUrl("evil.com/../x", "TeuHqkwt")).toBeNull();
   });
 });
 

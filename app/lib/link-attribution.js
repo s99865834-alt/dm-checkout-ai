@@ -68,6 +68,26 @@ export function publicStoreHost(storeContext) {
 }
 
 /**
+ * The store's own app-proxy URL for a tracked link.
+ *
+ * The bounce page can only stamp the cart from the store's own origin, so a
+ * short-domain click has to be handed to the storefront rather than sent
+ * straight to the destination. A bare 302 is why every shop without a custom
+ * domain was unattributable: 20 of 35 active shops, 6 of them with Instagram
+ * connected. Shopify mounts the proxy on the myshopify domain too and 301s it
+ * to the primary domain preserving the path, so this is safe either way.
+ *
+ * The merchant's DM still shows the short branded link. This is only where
+ * that link sends the click.
+ */
+export function storefrontProxyUrl(storefrontHost, linkId) {
+  if (!storefrontHost || !isSafeLinkId(linkId)) return null;
+  const host = String(storefrontHost).trim().toLowerCase();
+  if (!/^[a-z0-9.-]+$/.test(host)) return null;
+  return `https://${host}/a/go/${linkId}`;
+}
+
+/**
  * Old checkout links were stored on *.myshopify.com. The click arrives on the
  * public domain, so the cart stamp has to send the customer there too.
  */
