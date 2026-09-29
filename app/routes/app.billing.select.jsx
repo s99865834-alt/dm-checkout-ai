@@ -5,6 +5,7 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
 import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { updateShopPlan } from "../lib/db.server";
+import { managedPricingUrl } from "../lib/billing-url";
 import { cached, invalidateCached } from "../lib/loader-cache.server";
 
 // The active-subscription lookup is a live Shopify GraphQL call — it made
@@ -19,7 +20,9 @@ const SUBSCRIPTION_TTL_MS = 5 * 60 * 1000;
 // active subscription. Any per-plan trial is a property of the plan itself
 // in the Partner Dashboard and applies uniformly to every merchant who
 // subscribes — there is no trial logic to maintain in this code.
-const APP_HANDLE = "dm-checkout-ai";
+//
+// The URL is built in billing-url.js, which pins the app handle against
+// shopify.app.toml. It was wrong here for the app's whole life.
 
 export const loader = async ({ request }) => {
   // shop.plan is read straight from the DB. It's written authoritatively by:
@@ -76,8 +79,11 @@ export const action = async ({ request }) => {
 
   // Under Managed Pricing, plan selection happens on Shopify's hosted page;
   // we can't pre-select GROWTH vs PRO from here. The merchant picks on Shopify.
-  const storeHandle = session.shop.replace(".myshopify.com", "");
-  const pricingUrl = `https://admin.shopify.com/store/${storeHandle}/charges/${APP_HANDLE}/pricing_plans`;
+  const pricingUrl = managedPricingUrl(session.shop);
+  if (!pricingUrl) {
+    console.error(`[billing] No shop domain on session; cannot build pricing URL`);
+    return { error: "Could not open the plan page. Please reload the app and try again." };
+  }
 
   return { confirmationUrl: pricingUrl, planName };
 };
