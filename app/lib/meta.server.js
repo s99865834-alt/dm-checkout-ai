@@ -1134,9 +1134,50 @@ export async function subscribeToWebhooks(shopId, pageId, _igBusinessId) {
 /**
  * Delete Meta authentication data for a shop (disconnect Instagram)
  */
+/**
+ * Tell Meta to stop sending us this account's events.
+ *
+ * The mirror of ensureInstagramWebhookSubscription. Without it, deleting our
+ * meta_auth row only makes us stop understanding the events: Meta keeps
+ * delivering the account's DMs and comments forever, and the webhook logs them
+ * as "No shop for ig_business_id" and throws them away. A merchant who
+ * uninstalled on 27 Sep 2026 was still producing those two days later.
+ *
+ * That is worth closing on its own, and it is also the difference between not
+ * reading a former merchant's customer conversations and not receiving them.
+ *
+ * Best-effort: a failure here must never stop the disconnect the merchant
+ * asked for. It only means Meta keeps talking to a shop we no longer serve.
+ */
+export async function unsubscribeInstagramWebhooks(shopId) {
+  if (!shopId) return false;
+  const auth = await getMetaAuthWithRefresh(shopId).catch(() => null);
+  if (!auth?.page_access_token || auth.auth_type !== "instagram") return false;
+
+  try {
+    const result = await metaGraphAPIInstagram("/me/subscribed_apps", auth.page_access_token, {
+      method: "DELETE",
+    });
+    console.log(
+      `[meta] Instagram webhook subscription removed for shop ${shopId}:`,
+      JSON.stringify(result),
+    );
+    return true;
+  } catch (error) {
+    console.warn(
+      `[meta] Could not unsubscribe webhooks for shop ${shopId} (Meta will keep sending):`,
+      error?.message || error,
+    );
+    return false;
+  }
+}
+
 export async function deleteMetaAuth(shopId) {
   logger.debug(`[meta] Deleting Meta auth for shop_id: ${shopId}`);
-  
+
+  // Before the token goes, while we can still authenticate the call.
+  await unsubscribeInstagramWebhooks(shopId).catch(() => false);
+
   const { error } = await supabase
     .from("meta_auth")
     .delete()

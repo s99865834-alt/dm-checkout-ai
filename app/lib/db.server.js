@@ -318,6 +318,32 @@ export async function incrementUsage(shopId, delta) {
   }
 }
 
+/**
+ * Hand a message allowance back, floored at zero.
+ *
+ * Usage is charged when a reply is handed off, not when it lands, so a reply
+ * the queue later gives up on has already been billed. Called once, on the
+ * attempt that exhausts the retries.
+ */
+export async function refundUsage(shopId, delta = 1) {
+  if (!shopId || !(delta > 0)) return;
+  const { data, error: readError } = await supabase
+    .from("shops")
+    .select("usage_count")
+    .eq("id", shopId)
+    .maybeSingle();
+  if (readError || !data) {
+    console.warn("refundUsage read error", readError?.message);
+    return;
+  }
+  const next = Math.max(0, (data.usage_count || 0) - delta);
+  const { error } = await supabase
+    .from("shops")
+    .update({ usage_count: next })
+    .eq("id", shopId);
+  if (error) console.warn("refundUsage error", error.message);
+}
+
 export async function getShopPlanAndUsage(shopId) {
   const { data, error } = await supabase
     .from("shops")
