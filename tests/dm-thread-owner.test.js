@@ -43,6 +43,24 @@ vi.mock("../app/lib/supabase.server", () => ({
 
 vi.mock("openai", () => ({ default: class { } }));
 
+// shopify.server calls shopifyApp() at module scope, which throws on an empty
+// appUrl. Locally .env supplies one, so a missing mock here passes and then
+// fails in CI, where there is no .env. Every other test that reaches
+// automation.server stubs these two for the same reason.
+vi.mock("../app/shopify.server", () => ({
+  default: { clients: {} },
+  sessionStorage: { loadSession: async () => null },
+  authenticate: { admin: async () => ({}) },
+}));
+
+vi.mock("../app/lib/shopify-data.server", () => ({
+  getShopifyProductContextForReply: async () => null,
+  getShopPrimaryDomainHost: async () => null,
+  getStoreManagedTrial: async () => null,
+  peekStoreManagedTrial: () => undefined,
+  getShopifyStoreInfo: async () => null,
+}));
+
 const { sendDmReply } = await import("../app/lib/automation.server");
 
 const igError = (message) => Object.assign(new Error(message), {
