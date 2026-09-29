@@ -116,6 +116,24 @@ export async function sendDmReply(shopId, igUserId, text) {
       return { sent: true };
     } catch (error) {
       const msg = error?.message || "";
+      // Somebody else owns this thread: the merchant answering from their own
+      // Instagram inbox, or another tool holding it. Meta hands those events
+      // to us on entry.standby for visibility and rejects any send with "not
+      // the thread owner" (code 100, subcode 2534037).
+      //
+      // Queueing it was wrong twice over. Retrying cannot win the thread back,
+      // so it burned three attempts and logged a stack trace that reads like a
+      // crash. And had control come back, the retry would have sent a late
+      // reply on top of whatever the merchant had already told the customer.
+      // Returning sent:false instead lets the existing rollback record it on
+      // links_sent and skip incrementUsage, so the merchant is not charged a
+      // message for a reply nobody received.
+      if (msg.includes("not the thread owner")) {
+        logger.warn(
+          `[automation] Thread is owned elsewhere for shop ${shopId}; leaving this conversation to them`,
+        );
+        return { sent: false, reason: "instagram_not_thread_owner" };
+      }
       const isPermanent =
         msg.includes("cannot be found") ||
         msg.includes("not exist") ||
