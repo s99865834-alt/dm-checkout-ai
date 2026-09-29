@@ -12,7 +12,8 @@ if (typeof global.crypto === "undefined") {
 
 import { authenticateWebhookTolerant } from "../lib/webhook-auth.server";
 import db from "../db.server";
-import { markShopUninstalled } from "../lib/db.server";
+import { markShopUninstalled, getShopByDomain } from "../lib/db.server";
+import { unsubscribeInstagramWebhooks } from "../lib/meta.server";
 import logger from "../lib/logger.server";
 
 // Webhooks are POST-only; answer crawler GETs with a 405 instead of letting
@@ -46,6 +47,24 @@ export const action = async ({ request }) => {
     //    must re-approve a paid charge on reinstall per App Store rules).
     await markShopUninstalled(shop);
     logger.debug(`[webhook] Shop ${shop} marked uninstalled (inactive, plan FREE)`);
+
+    // 3. Tell Meta to stop sending this account's DMs and comments. Uninstall
+    //    used to leave the Instagram subscription in place, so Meta kept
+    //    delivering a former merchant's customer conversations indefinitely
+    //    and the meta webhook logged and discarded them. Best-effort, and
+    //    deliberately after the steps above: the uninstall must be recorded
+    //    even if Meta is unreachable.
+    try {
+      const shopRow = await getShopByDomain(shop);
+      if (shopRow?.id) {
+        await unsubscribeInstagramWebhooks(shopRow.id);
+      }
+    } catch (metaError) {
+      console.warn(
+        `[webhook] Could not unsubscribe Meta webhooks for ${shop}:`,
+        metaError?.message || metaError,
+      );
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

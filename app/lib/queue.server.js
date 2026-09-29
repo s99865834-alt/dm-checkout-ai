@@ -1,6 +1,7 @@
 import supabase from "./supabase.server";
 import { getMetaAuthWithRefresh, getInstagramUserIdFromToken, metaGraphAPI, metaGraphAPIInstagram } from "./meta.server";
 import { incCounter } from "./metrics.server";
+import { markReplyUndelivered, refundUsage } from "./db.server";
 import logger from "./logger.server";
 
 const MAX_PER_MINUTE = 120;
@@ -183,7 +184,10 @@ export async function processDmQueue() {
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
-      if (shouldFail) failed += 1;
+      if (shouldFail) {
+        failed += 1;
+        await recordGiveUp(row, err?.message ?? String(err));
+      }
     }
   }
 
@@ -192,6 +196,50 @@ export async function processDmQueue() {
   incCounter("queue_failed", failed);
 
   return { processed, sent, failed };
+}
+
+/**
+ * Own up to a reply we are never going to deliver.
+ *
+ * The caller counted this reply the moment it was queued: it saw
+ * {queued: true}, treated that as success, and called incrementUsage. So a
+ * queued DM that then exhausted its attempts was recorded as a delivered
+ * message and billed to the merchant, while no customer ever saw it. The
+ * admin's "messages sent" counts links_sent rows with a null failed_reason,
+ * so it counted this too.
+ *
+ * The queue row has no link_id, so the reply is found by its exact text, which
+ * is what claimMessageReply stored on the claim row. Worst case that matches a
+ * different reply with identical wording, and both were undelivered anyway.
+ *
+ * Entirely best-effort. Getting the bookkeeping wrong must not stop the queue.
+ */
+async function recordGiveUp(row, reason) {
+  if (!row?.shop_id || !row?.text) return;
+  try {
+    const { data: claim } = await supabase
+      .from("links_sent")
+      .select("link_id")
+      .eq("shop_id", row.shop_id)
+      .eq("reply_text", row.text)
+      .is("failed_reason", null)
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (claim?.link_id) {
+      await markReplyUndelivered(row.shop_id, claim.link_id, reason || "dm_queue_exhausted");
+    }
+
+    // Hand the message allowance back. Safe to do exactly here: a row only
+    // transitions to "failed" once, on the attempt that crosses MAX_ATTEMPTS.
+    await refundUsage(row.shop_id, 1);
+    logger.warn(
+      `[queue] Gave up on a DM for shop ${row.shop_id}; marked undelivered and refunded the message`,
+    );
+  } catch (error) {
+    console.warn("[queue] Could not record give-up bookkeeping:", error?.message || error);
+  }
 }
 
 /**
