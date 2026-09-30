@@ -54,7 +54,15 @@ await check("app-proxy link serves a real redirect page (blank-page guard)", asy
   assert(html.includes(CANARY_DEST), "missing canary destination URL");
 });
 
-await check("root short link 302-redirects to destination", async () => {
+// A short-link click must be handed to the merchant's own storefront, not sent
+// straight to the destination. Only the storefront's origin can POST
+// /cart/update.js, so a direct 302 is exactly what made every shop without a
+// custom domain unattributable (20 of 35 active shops on 29 Sep 2026). This
+// check used to assert the direct redirect and so it failed the moment that
+// was fixed; it now asserts the handoff, which is the behaviour attribution
+// depends on. The destination payload itself is covered by the app-proxy check
+// above.
+await check("root short link hands the click to the store's app proxy", async () => {
   const res = await fetch(`${BASE}/${CANARY}`, {
     redirect: "manual",
     headers: {
@@ -66,7 +74,11 @@ await check("root short link 302-redirects to destination", async () => {
   });
   assert(res.status === 302 || res.status === 301, `status ${res.status}`);
   const loc = res.headers.get("location") || "";
-  assert(loc.startsWith(CANARY_DEST), `location: ${loc}`);
+  assert(loc.startsWith("https://"), `location not https: ${loc}`);
+  assert(loc.endsWith(`/a/go/${CANARY}`), `not an app-proxy handoff: ${loc}`);
+  // Guard against pointing the handoff back at ourselves, which would 404:
+  // the app serves /proxy/go/, only a storefront serves /a/go/.
+  assert(!loc.startsWith(BASE), `handoff points at the app, not a store: ${loc}`);
 });
 
 await check("preview crawler gets Open Graph HTML instead of a bare 302", async () => {
