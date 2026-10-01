@@ -179,6 +179,7 @@ Intent meanings:
   IMPORTANT: questions that mention "products" / "items" / "things" in the **plural and generic** ("products you carry", "do you have...", "what do you sell") are store_question, NOT product_question, even though the word "product" appears.
 - "clarification_needed": Customer message is too vague to determine what they want.
 - "not_relevant": Message has zero connection to the products or the business. Spam and follower/romance scams ("my friend thinks you're her type"), arguments between other users, and chatter about something else entirely ("lol", "smh", random tags). Naming a product, category, style or subject the store sells is NOT not_relevant, however casually it is said.
+  Also not_relevant: anyone selling TO this business instead of buying from it — wholesale or supplier offers, marketing, ads, SEO, growth or agency services, "collab" and "partnership" proposals, follower-growth offers, income or investment opportunities, people pitching to be an ambassador or to feature the store, job applications and anyone asking to work there, and any follow-up chasing a reply to one of those. The test is direction: a customer wants something this store sells, while these senders want the store to buy, book, hire, sign up, or reply to something THEY are offering. A compliment about the page, the aesthetic or the products does not make it a lead when the message goes on to pitch. This whole rule needs the sender to be making an offer or asking the business to do something; a message that merely names what the store sells, with no offer attached, is never caught by it.
 
 Disambiguation tie-breakers:
 1. If the message could refer to ONE specific item → product_question / variant_inquiry / price_request.
@@ -196,6 +197,9 @@ Examples (study these):
 - "Hi man my name is Nelson and I like the artwork of transformers" → purchase (names a subject the store sells; a lead despite the greeting and the absence of buying language)
 - "hiii my friend saw ur profile and said youre exactly her type lol" → not_relevant (follower/romance spam, no connection to the products)
 - "@someone FINALLY! Because girl you are talking to a WALL" → not_relevant (argument between two other users, not about the products)
+- "Hey Gorgeous! I'm Alison, the Wholesale Partnership Manager at C&D Beauty. I came across your boutique page and had to stop and connect - I LOVE your aesthetic!" → not_relevant (a supplier pitching the business; the compliment does not make it a lead)
+- "The information in the loom could be the missing piece to your revenue puzzle. Take a quick look" → not_relevant (growth pitch aimed at the business, not a customer buying anything)
+- "I LOVE your boutique, everything is so cute" → purchase (a shopper being nice with no pitch attached; this is a lead)
 - "I want this!" → purchase
 
 Confidence: How confident you are in the classification (0.0 = not confident, 1.0 = very confident)
