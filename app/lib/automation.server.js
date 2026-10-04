@@ -1689,7 +1689,19 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     }
 
     // 4. Check AI intent and confidence threshold
-    const eligibleIntents = ["purchase", "product_question", "variant_inquiry", "price_request"];
+    // store_question is eligible here for the same reason it is on the DM
+    // path: someone asking the business something is a customer, and answering
+    // is the value the merchant is paying for. It was missing until now by
+    // accident, not by choice — the intent was added to handleIncomingDm in
+    // January and this list was never updated, so Love By Luna's "Whr to buy"
+    // comment on 28 Sep produced no reply and no links_sent row at all.
+    const eligibleIntents = [
+      "purchase",
+      "product_question",
+      "variant_inquiry",
+      "price_request",
+      "store_question",
+    ];
     if (!message.ai_intent || !eligibleIntents.includes(message.ai_intent)) {
       logger.debug(`[automation] Comment AI intent "${message.ai_intent}" not eligible`);
       return { sent: false, reason: `AI intent "${message.ai_intent}" not eligible` };
@@ -1719,6 +1731,68 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         logger.debug(`[automation] Already replied to comment/message ${commentExternalId ?? message.id}`);
         return { sent: false, reason: "Already replied to this comment" };
       }
+    }
+
+    // 5b. Store questions are answered from store context, not from a product.
+    //
+    // This has to run before the mapping logic below, because that resolves a
+    // product from the post's caption when the comment names none. Sending
+    // that path a store question would answer "do you ship internationally?"
+    // with a checkout link for whatever the post happened to feature. Same
+    // shape as the DM path's store_question branch: no checkout URL, policies
+    // and contact details come from the cached store context.
+    if (message.ai_intent === "store_question") {
+      const [brandVoiceData, cachedStoreInfo] = await Promise.all([
+        brandVoiceFor(shop.id, plan),
+        getStoreContextForReply(shop).catch(() => null),
+      ]);
+      const storeInfo =
+        cachedStoreInfo ||
+        (shop.shopify_domain
+          ? await getShopifyStoreInfo(shop.shopify_domain).catch(() => null)
+          : null);
+
+      let replyText = await generateReplyMessage(
+        brandVoiceData,
+        null,
+        null,
+        "store_question",
+        null,
+        null,
+        message.text,
+        storeInfo,
+        {
+          originChannel: "comment",
+          inboundChannel: "comment",
+          triggerChannel: "comment",
+          shop,
+          recentMessages: [
+            { channel: "comment", text: message.text, created_at: message.created_at },
+          ],
+        }
+      );
+
+      replyText = await shortenUrlsInReply(shop, message.id, replyText);
+
+      const claimed = commentExternalId
+        ? await claimCommentReply(shop.id, commentExternalId, replyText, message.id)
+        : await claimMessageReply(shop.id, message.id, replyText, message.external_id);
+      if (!claimed) {
+        logger.debug(
+          `[automation] Reply already claimed for comment/message ${commentExternalId ?? message.id}, skipping send`
+        );
+        return { sent: false, reason: "Already replied to this comment" };
+      }
+
+      const storeQuestionFromUserId = message.from_user_id ?? message.fromUserId;
+      if (commentExternalId?.startsWith("test_comment_") && storeQuestionFromUserId) {
+        await sendInstagramDm(shop.id, storeQuestionFromUserId, replyText);
+      } else {
+        await sendInstagramPrivateReply(shop.id, commentExternalId, replyText);
+      }
+      await incrementUsage(shop.id, 1);
+      logger.debug(`[automation] ✅ Comment store-question reply sent for ${message.id}`);
+      return { sent: true };
     }
 
     // 6. Find product mapping for this media
