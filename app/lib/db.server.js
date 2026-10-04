@@ -679,7 +679,7 @@ export async function hasEverSentAutomatedReply(shopId) {
   return false;
 }
 
-export async function recordHumanTakeover(shopId, igUserId, appId = null) {
+export async function recordHumanTakeover(shopId, igUserId, appId = null, echoText = null) {
   if (!shopId || !igUserId) return;
   const { error } = await supabase.from("human_takeovers").upsert(
     {
@@ -689,12 +689,116 @@ export async function recordHumanTakeover(shopId, igUserId, appId = null) {
       // Echo app_id (null for manual Instagram-inbox replies). Kept for
       // auditing which takeovers were really humans vs unidentified tools.
       app_id: appId ? String(appId) : null,
+      last_echo_text: echoText ? String(echoText).slice(0, 2000) : null,
+      last_echo_at: new Date().toISOString(),
+      last_echo_was_template: false,
     },
     { onConflict: "shop_id,ig_user_id" }
   );
   if (error) {
     console.error("[db] recordHumanTakeover error:", error.message);
   }
+}
+
+/**
+ * Remember an outbound echo we judged to be Instagram's own canned reply.
+ *
+ * Deliberately does NOT write last_human_at. Omitting it leaves any genuine
+ * pause on this conversation intact, and leaves a brand new row with no pause
+ * at all, which is the whole point: an Away Message must not silence us.
+ */
+export async function recordTemplateEcho(shopId, igUserId, echoText) {
+  if (!shopId || !igUserId) return;
+  const { error } = await supabase.from("human_takeovers").upsert(
+    {
+      shop_id: shopId,
+      ig_user_id: String(igUserId),
+      last_echo_text: echoText ? String(echoText).slice(0, 2000) : null,
+      last_echo_at: new Date().toISOString(),
+      last_echo_was_template: true,
+    },
+    { onConflict: "shop_id,ig_user_id" }
+  );
+  if (error) {
+    console.error("[db] recordTemplateEcho error:", error.message);
+  }
+}
+
+/**
+ * Seconds between the customer's most recent message and now.
+ *
+ * The timing half of template detection. Meta's canned replies land ~3s after
+ * the customer writes; the merchants who really do answer by hand take tens of
+ * minutes. Returns null when there is no inbound message to measure against,
+ * which the caller treats as "assume a human" and pauses.
+ */
+export async function secondsSinceLastInbound(shopId, igUserId) {
+  if (!shopId || !igUserId) return null;
+  const { data, error } = await supabase
+    .from("messages")
+    .select("created_at")
+    .eq("shop_id", shopId)
+    .eq("from_user_id", String(igUserId))
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[db] secondsSinceLastInbound error:", error.message);
+    return null;
+  }
+  if (!data?.created_at) return null;
+  return (Date.now() - new Date(data.created_at).getTime()) / 1000;
+}
+
+/**
+ * The last outbound echo text from this shop's OTHER conversations.
+ *
+ * Cross-conversation repetition is what identifies a template: Meta swaps the
+ * handle and changes nothing else. Excluding the current conversation matters,
+ * because a merchant legitimately repeats themselves inside one thread.
+ */
+export async function recentEchoesFromOtherConversations(shopId, igUserId, limit = 25) {
+  if (!shopId || !igUserId) return [];
+  const { data, error } = await supabase
+    .from("human_takeovers")
+    .select("last_echo_text")
+    .eq("shop_id", shopId)
+    .neq("ig_user_id", String(igUserId))
+    .not("last_echo_text", "is", null)
+    .order("last_echo_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.warn("[db] recentEchoesFromOtherConversations error:", error.message);
+    return [];
+  }
+  return (data || []).map((row) => row.last_echo_text).filter(Boolean);
+}
+
+/**
+ * How many of this shop's conversations were last answered by one of
+ * Instagram's canned templates. Powers the home page notice telling the
+ * merchant we answer alongside their Away Message rather than going quiet.
+ */
+export async function countTemplateEchoConversations(shopId, sinceMs = 30 * 24 * 60 * 60 * 1000) {
+  if (!shopId) return { count: 0, lastSeenAt: null, sample: null };
+  const sinceIso = new Date(Date.now() - sinceMs).toISOString();
+  const { data, error } = await supabase
+    .from("human_takeovers")
+    .select("last_echo_text, last_echo_at")
+    .eq("shop_id", shopId)
+    .eq("last_echo_was_template", true)
+    .gte("last_echo_at", sinceIso)
+    .order("last_echo_at", { ascending: false });
+  if (error) {
+    console.warn("[db] countTemplateEchoConversations error:", error.message);
+    return { count: 0, lastSeenAt: null, sample: null };
+  }
+  const rows = data || [];
+  return {
+    count: rows.length,
+    lastSeenAt: rows[0]?.last_echo_at || null,
+    sample: rows[0]?.last_echo_text || null,
+  };
 }
 
 /**
