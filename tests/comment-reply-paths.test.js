@@ -633,6 +633,64 @@ describe("comment reply paths", () => {
   });
 });
 
+/**
+ * Store questions asked as comments.
+ *
+ * These went unanswered entirely until Oct 2026. store_question was added to
+ * the DM path in Jan and the comment path's eligible list was never updated,
+ * so Love By Luna's "Whr to buy" on 28 Sep produced no reply and no
+ * links_sent row. It is the highest-intent comment the app can receive.
+ */
+describe("store questions on comments", () => {
+  it('answers "Whr to buy", which used to be dropped on the floor', async () => {
+    const res = await handleIncomingComment(comment("Whr to buy", { ai_intent: "store_question", ai_confidence: 0.9 }), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    expect(sendInstagramPrivateReply).toHaveBeenCalledTimes(1);
+    expect(incrementUsage).toHaveBeenCalledWith(shop.id, 1);
+  });
+
+  it("answers a policy question without inventing a product", async () => {
+    const res = await handleIncomingComment(comment("do you ship internationally?", {
+        ai_intent: "store_question",
+        ai_confidence: 0.9,
+      }), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+    // The product-resolution path must not run: answering a shipping question
+    // with a checkout link for whatever the post featured is not an answer.
+    expect(searchCatalogNormalized).not.toHaveBeenCalled();
+    expect(logLinkSent).not.toHaveBeenCalled();
+  });
+
+  it("still claims the one reply slot, so a duplicate webhook sends once", async () => {
+    claimCommentReply.mockResolvedValue(false);
+
+    const res = await handleIncomingComment(comment("what are your hours?", { ai_intent: "store_question", ai_confidence: 0.9 }), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendInstagramPrivateReply).not.toHaveBeenCalled();
+    expect(incrementUsage).not.toHaveBeenCalled();
+  });
+
+  it("holds store questions to the same 0.7 confidence bar as before", async () => {
+    const res = await handleIncomingComment(comment("maybe something about the store?", {
+        ai_intent: "store_question",
+        ai_confidence: 0.6,
+      }), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendInstagramPrivateReply).not.toHaveBeenCalled();
+  });
+
+  it("leaves not_relevant comments alone", async () => {
+    const res = await handleIncomingComment(comment("Newsletter", { ai_intent: "not_relevant", ai_confidence: 0.9 }), "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(sendInstagramPrivateReply).not.toHaveBeenCalled();
+  });
+});
+
 describe("captionToSearchTerm", () => {
   it("keeps the words that describe the product", () => {
     expect(captionToSearchTerm("New drop! The Rizzbot is here 🤖 #art #sculpture @friend")).toBe(

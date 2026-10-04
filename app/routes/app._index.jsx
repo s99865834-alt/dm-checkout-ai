@@ -3,7 +3,7 @@ import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRouteError 
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
-import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount } from "../lib/db.server";
+import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount, countTemplateEchoConversations } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
 import {
   isValidDiscountOffer,
@@ -120,12 +120,13 @@ export const loader = async ({ request }) => {
   let competingTool = { detected: false, appId: null, conversations: 0, intercepted: 0 };
   let storyMessages = 0;
   let unmappedComments = 0;
+  let awayMessage = { count: 0, lastSeenAt: null, sample: null };
 
   if (shop?.id) {
     let attributionCount = 0;
     let hasLinkClick = false;
     let recentComments = 0;
-    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages, recentComments] =
+    [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages, recentComments, awayMessage] =
       await Promise.all([
         getMetaAuthWithRefresh(shop.id),
         getSettings(shop.id),
@@ -208,6 +209,14 @@ export const loader = async ({ request }) => {
         // every brand-new merchant, and a serialised round trip landed on the
         // people forming a first impression.
         getRecentCommentCount(shop.id, 7).catch(() => 0),
+        // Conversations where Instagram's own Instant Reply or Away Message
+        // answered first. We now answer alongside it rather than going quiet,
+        // which is surprising enough that it needs saying on the home page.
+        countTemplateEchoConversations(shop.id).catch(() => ({
+          count: 0,
+          lastSeenAt: null,
+          sample: null,
+        })),
       ]);
     // Ask only once a customer has actually done something: an attributed
     // order, or at minimum a click on a link we sent. The old bar was 20
@@ -237,7 +246,7 @@ export const loader = async ({ request }) => {
     void loadHomeFeed({ shopId, admin, igBusinessId, hasIg });
   }
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments };
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage };
 };
 
 export const action = async ({ request }) => {
@@ -576,7 +585,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1077,6 +1086,33 @@ export default function Index() {
               </span>
             </div>
             <s-button href="/app/support" variant="secondary" size="slim">How to fix</s-button>
+          </div>
+        </s-banner>
+      )}
+      {/* Instagram's Instant Reply / Away Message answers first on these
+          accounts. We used to read that as the owner handling it and stay
+          quiet, so the customer got opening hours and nothing else. We now
+          answer as well, which means two messages arrive: say so here rather
+          than let the merchant discover it in their own inbox. */}
+      {isConnected && awayMessage?.count > 0 && (
+        <s-banner tone="info">
+          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="srTextStrong">
+                Your Instagram auto-reply is answering first, and we answer after it
+              </span>
+              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
+                Instagram&apos;s instant reply or away message replied in{" "}
+                {awayMessage.count === 1
+                  ? "1 conversation"
+                  : `${awayMessage.count} conversations`}{" "}
+                this month. Those messages don&apos;t answer the question, so SocialRepl.ai now
+                follows them with the real product details and a checkout link. Your customer gets
+                your greeting and then the answer. If you&apos;d rather only send one message, turn
+                the auto-reply off in Meta Business Suite under Inbox &rsaquo; Automations. When you
+                reply yourself, we still step aside.
+              </span>
+            </div>
           </div>
         </s-banner>
       )}

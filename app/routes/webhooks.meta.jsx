@@ -16,7 +16,8 @@ if (typeof global.crypto === "undefined") {
   global.crypto = crypto;
 }
 
-import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection, hasEverSentAutomatedReply } from "../lib/db.server";
+import { logMessage, updateMessageAI, getSettings, getShopPlanAndUsage, alreadyRepliedToMessage, alreadyRepliedToComment, isRecentOutboundReply, recordHumanTakeover, recordToolDetection, hasEverSentAutomatedReply, recordTemplateEcho, recentEchoesFromOtherConversations, secondsSinceLastInbound } from "../lib/db.server";
+import { isAutomatedTemplate } from "../lib/echo-classify";
 import { classifyMessage } from "../lib/ai.server";
 import { handleIncomingDm, handleIncomingComment, handleNonTextDm } from "../lib/automation.server";
 import supabase from "../lib/supabase.server";
@@ -48,6 +49,26 @@ const COMPETING_BOT_APP_IDS = (process.env.COMPETING_BOT_APP_IDS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
+/**
+ * Is this outbound echo Instagram's own Instant Reply or Away Message?
+ *
+ * Those are templates that answer nothing, so yielding to one means the
+ * customer gets opening hours instead of the product they asked about. We
+ * answer alongside them and keep yielding to real people.
+ *
+ * Both lookups are deferred until they're needed: media-only echoes (no text)
+ * and confirmed competitor bots never reach them, which matters on accounts
+ * that send thousands of outbound messages.
+ */
+async function looksLikeInstagramTemplate(shopId, igUserId, echoText) {
+  if (!echoText) return false;
+  const [secondsSinceInbound, otherConversationEchoes] = await Promise.all([
+    secondsSinceLastInbound(shopId, igUserId),
+    recentEchoesFromOtherConversations(shopId, igUserId),
+  ]);
+  return isAutomatedTemplate({ text: echoText, secondsSinceInbound, otherConversationEchoes });
+}
 
 /**
  * In-process semaphore: caps concurrent background automation chains so a burst
@@ -511,6 +532,13 @@ export const action = async ({ request }) => {
                         logger.info(
                           `[webhook] Competing automation reply (app_id=${echoAppId}) → not pausing for user ${outboundCustomerId}`
                         );
+                      } else if (
+                        await looksLikeInstagramTemplate(shopId, outboundCustomerId, echoText)
+                      ) {
+                        await recordTemplateEcho(shopId, outboundCustomerId, echoText);
+                        logger.info(
+                          `[webhook] Instagram canned reply (instant/away message) → still answering for user ${outboundCustomerId}`
+                        );
                       } else if (!(await hasEverSentAutomatedReply(shopId))) {
                         // Onboarding: the merchant is almost certainly testing
                         // by messaging their own account and answering by hand.
@@ -520,7 +548,7 @@ export const action = async ({ request }) => {
                           `[webhook] Manual reply during onboarding (shop has never auto-replied) → not pausing for user ${outboundCustomerId}`
                         );
                       } else {
-                        await recordHumanTakeover(shopId, outboundCustomerId, echoAppId);
+                        await recordHumanTakeover(shopId, outboundCustomerId, echoAppId, echoText);
                         logger.info(
                           `[webhook] Non-bot outbound reply detected → automation paused for user ${outboundCustomerId} (echo app_id=${echoAppId ?? "none/manual"})`
                         );
