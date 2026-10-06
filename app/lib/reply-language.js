@@ -1,10 +1,25 @@
 /**
  * Which language a reply should be in.
  *
- * Default is English. Auto only leaves English when the customer clearly
- * wrote in another language, or when the store's primary locale is not
- * English. Emoji, hearts, and short noise are not a language, so they stay
- * English. A reply is always one language, never two.
+ * Emoji, hearts, and short noise are not a language, so they stay English.
+ * That rule exists because hearts used to be treated as "mirror the
+ * customer", the model guessed Spanish, and the English discount line made
+ * one reply two languages.
+ *
+ * It was never meant to cover a real sentence. The markers below only name
+ * seven Latin-script languages and the tokenizer only matches Latin letters,
+ * so an Arabic message scored as "no language" and got the same forced-English
+ * treatment as "🔥🔥🔥". State of Her is an Egyptian store: four of her
+ * customers' first ten DMs were Arabic and all four were answered in English,
+ * while the prompt told the model in capitals not to use any other language.
+ *
+ * So "no detectable language" is now split in two. Nothing we can read as a
+ * word means noise, and noise stays English. Words we cannot place means a
+ * customer writing in a language we do not enumerate, and the right reply is
+ * their language, not ours. The model handles those perfectly well once we
+ * stop forbidding it.
+ *
+ * A reply is still always one language, never two.
  */
 
 export const REPLY_LANGUAGE_NAMES = {
@@ -57,13 +72,34 @@ export function normalizeStoreLocale(locale) {
   return STORE_LOCALE_PREFIX[prefix] || null;
 }
 
-function tokenize(text) {
-  const stripped = String(text || "")
+/**
+ * Drop the parts of a message that say nothing about language: links, handles
+ * and hashtags. Shared so tokenize and hasWords never disagree about what
+ * counts as content.
+ */
+function stripNonLanguage(text) {
+  return String(text || "")
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/@\w+/g, " ")
-    .replace(/#\w+/g, " ")
-    .toLowerCase();
+    .replace(/#\w+/g, " ");
+}
+
+function tokenize(text) {
+  const stripped = stripNonLanguage(text).toLowerCase();
   return stripped.match(/[a-zà-öø-ÿãõáéíóúüñç]+/gi) || [];
+}
+
+/**
+ * Does the message contain letters in ANY script?
+ *
+ * \p{L} is the whole Unicode letter category, so this sees Arabic, Hebrew,
+ * Greek, Cyrillic, Thai, Japanese and Korean, none of which tokenize can.
+ * Two letters is enough: "ok" is a word, where "🔥🔥🔥", "!!!" and "٣٦" are
+ * not. Digits deliberately do not count, in any numeral system.
+ */
+export function hasWords(text) {
+  const letters = stripNonLanguage(text).match(/\p{L}/gu) || [];
+  return letters.length >= 2;
 }
 
 export function detectMessageLanguage(text) {
@@ -110,6 +146,13 @@ export function resolveReplyLanguage({ setting, messageText, storeLocale } = {})
   if (detected) {
     return { code: detected, name: REPLY_LANGUAGE_NAMES[detected], source: "customer" };
   }
+  // Real words we cannot place. Still the customer's language talking, so it
+  // outranks the store locale exactly as a detected language would. code stays
+  // null: describeOffer falls back to its English phrasing for an unknown
+  // code, and the prompt tells the model to say it in the customer's language.
+  if (hasWords(messageText)) {
+    return { code: null, name: "the same language the customer used", source: "mirror" };
+  }
   const store = normalizeStoreLocale(storeLocale);
   if (store && store !== "en") {
     return { code: store, name: REPLY_LANGUAGE_NAMES[store], source: "store" };
@@ -126,8 +169,11 @@ export function languageInstructionText(resolved) {
   if (resolved.source === "customer") {
     return `LANGUAGE (highest priority): The customer wrote in ${resolved.name}. Write your ENTIRE reply in ${resolved.name}. ${oneLanguage}`;
   }
+  if (resolved.source === "mirror") {
+    return `LANGUAGE (highest priority): Reply in the SAME language the customer wrote in, matching their script exactly. Do not translate to English and do not answer in English unless they wrote in English. Write the ENTIRE reply in their language, including any price, discount or shipping line. Never mix languages and never switch partway through. Product names stay in their original form.`;
+  }
   if (resolved.source === "store") {
     return `LANGUAGE (highest priority): The customer's message has no detectable language. This store's language is ${resolved.name}, so write your ENTIRE reply in ${resolved.name}. Do not guess a different language. ${oneLanguage}`;
   }
-  return `LANGUAGE (highest priority): The customer's message has no detectable language (emoji, hearts, or too short to tell). Write your ENTIRE reply in English. Do not guess Spanish, Portuguese, or any other language. ${oneLanguage}`;
+  return `LANGUAGE (highest priority): The customer's message contains no words at all (emoji, hearts, or punctuation only). Write your ENTIRE reply in English. Do not guess Spanish, Portuguese, or any other language. ${oneLanguage}`;
 }
