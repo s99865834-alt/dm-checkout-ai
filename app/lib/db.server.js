@@ -29,6 +29,42 @@ export async function getShopByDomain(shopifyDomain) {
   return data || null;
 }
 
+/** First day of the current UTC month as YYYY-MM-DD, matching increment_usage's date_trunc. */
+function currentUsageMonthStr() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Does this shop's usage_count belong to the month we are in now?
+ *
+ * usage_count is only meaningful alongside the month it was written in, and
+ * three separate places have to agree about that: the increment_usage RPC, the
+ * UI reset below, and the cap gate that decides whether to reply. The cap gate
+ * did not, and the result was a deadlock.
+ *
+ * A shop over its cap stops sending. Sends are the only thing that call
+ * increment_usage, which is the only thing that rolls the month forward in the
+ * webhook path. So the counter froze at September's total, every new month was
+ * measured against it, and the shop could never send again. The UI reset below
+ * would have freed them, but it only runs when the merchant opens the app, and
+ * a merchant whose app has gone quiet has no reason to.
+ *
+ * Mark Watts Studios last replied on 14 Sep and Shanesecaresllc on 13 Sep. Both
+ * were still silent on 8 Oct with 75 buying-intent messages unanswered between
+ * them, a week after the month that capped them had ended.
+ */
+export function isUsageMonthCurrent(usageMonth) {
+  const str =
+    typeof usageMonth === "string"
+      ? usageMonth.slice(0, 10)
+      : usageMonth
+        ? new Date(usageMonth).toISOString().slice(0, 10)
+        : null;
+  if (!str) return false;
+  return str >= currentUsageMonthStr();
+}
+
 /**
  * If the shop's usage_month is before the current month, reset usage to 0 and set usage_month to current month.
  * This ensures the UI shows 0/limit at the start of each month without waiting for the first message.
@@ -36,17 +72,8 @@ export async function getShopByDomain(shopifyDomain) {
  */
 export async function ensureUsageMonthCurrent(shop) {
   if (!shop?.id) return shop;
-  const now = new Date();
-  const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const currentMonthStr = currentMonthStart.toISOString().slice(0, 10);
-  const usageMonthRaw = shop.usage_month;
-  const usageMonthStr =
-    typeof usageMonthRaw === "string"
-      ? usageMonthRaw.slice(0, 10)
-      : usageMonthRaw
-        ? new Date(usageMonthRaw).toISOString().slice(0, 10)
-        : null;
-  if (!usageMonthStr || usageMonthStr < currentMonthStr) {
+  const currentMonthStr = currentUsageMonthStr();
+  if (!isUsageMonthCurrent(shop.usage_month)) {
     const { data, error } = await supabase
       .from("shops")
       .update({
@@ -371,9 +398,16 @@ export async function getShopPlanAndUsage(shopId) {
   // both read plan.cap so a packaging change actually takes effect.
   const cap = planConfig.cap;
 
+  // A stale usage_month means the count belongs to a month that has ended, so
+  // it must not be charged against this month's cap. Reported as 0 rather than
+  // written back: the first successful send calls increment_usage, which
+  // already resets the row itself. See isUsageMonthCurrent for how a capped
+  // shop used to get stuck here permanently.
+  const usage = isUsageMonthCurrent(data.usage_month) ? data.usage_count : 0;
+
   return {
     plan: planConfig,
-    usage: data.usage_count,
+    usage,
     cap,
   };
 }
