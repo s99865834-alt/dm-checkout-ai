@@ -1,0 +1,34 @@
+---
+description: Never send a URL, company, or contact unless the exact site is live and the company is real
+alwaysApply: true
+---
+
+# Live sites and real companies only
+
+Never send Stephan a link, company, or contact that has not been live-checked in this turn. Search hits, old notes, canvases, and sibling TLDs do not count.
+
+## Check the exact URL you will send
+
+GET it with a browser User-Agent. Follow redirects. Read the body.
+
+HTTP 200 is not live. Drop it if any of these are true:
+
+- Empty or near-empty body (WJA `.org` returned 200 with 114 bytes and no title)
+- Parked, for-sale, coming-soon, or registrar placeholder
+- Parking DNS (GoDaddy `3.33.130.190` / `15.197.148.33`, `wpdns.site`)
+- Redirect to a malware or safebrowse warning (Retail Minded)
+- Login wall or 403 on the only public page
+
+Checking `example.com` does not make `example.org` live. Send only the URL that passed.
+
+## The company must still exist
+
+Need recent 2025/2026 content, events, or independent press on that live site. A Google MX record is not a mailbox. A directory listing is not a business.
+
+## Contact must be published there
+
+Use a mailto or working form on the live page. Never guess `hello@`, never reuse an email from a dead domain, never invent a URL.
+
+## If it fails
+
+Do not send the link. Say it is dead and drop it. Do not pad the list with a stretch replacement.

@@ -1,0 +1,32 @@
+-- Close the only two publicly writable tables.
+--
+-- Supabase flagged discount_codes and discount_pools as the only public tables
+-- without row level security. The real exposure was worse than the wording
+-- suggested, and also narrower.
+--
+-- The anon role holds INSERT, UPDATE, DELETE and TRUNCATE on every table in
+-- this schema; only SELECT was ever revoked. RLS is what blocks those writes
+-- everywhere else, so these two tables were writable and truncatable by anyone
+-- holding the publishable key, which is designed to be public.
+--
+-- Confirmed rather than assumed, on 13 Oct 2026. An anonymous insert against
+-- discount_codes reached the database and was refused only by a NOT NULL
+-- constraint on pool_id:
+--
+--   23502  null value in column "pool_id" ... violates not-null constraint
+--
+-- The identical insert against links_sent, which has RLS on, was refused by
+-- the security layer instead:
+--
+--   42501  new row violates row-level security policy for table "links_sent"
+--
+-- Nothing was readable: anon has no SELECT on any table, so no customer data,
+-- message content or Meta token was ever exposed through this.
+--
+-- No policies are added, matching the other 22 tables. The app connects as
+-- service_role, which has rolbypassrls, so RLS with no policy denies every
+-- external caller and leaves the app untouched. Verified after applying: the
+-- same two writes now return 42501.
+
+alter table public.discount_codes enable row level security;
+alter table public.discount_pools enable row level security;
