@@ -79,6 +79,21 @@ forward once the next task started.
 - When work is left unfinished at the end of a session, list it in the reply.
   Stephan is the one who has to remember it otherwise.
 
+## Live sites and real companies only
+
+Never send a link, company, or contact that has not been live-checked in this
+turn. Search hits, old notes, and sibling TLDs do not count.
+
+- GET the exact URL you will send, with a browser User-Agent, and read the body.
+  HTTP 200 is not live: empty pages, parking DNS, registrar placeholders, and
+  malware redirects are dead.
+- Checking `example.com` does not make `example.org` live.
+- The company must still exist (recent 2025/2026 content, events, or press).
+- Contact must be published on that live site (mailto or working form). Never
+  guess `hello@`.
+- If it fails, drop it. Do not send the link. Do not pad with a stretch
+  replacement.
+
 ## Writing
 
 - No em dashes, in chat replies, code, comments, or product copy. Use a comma,
