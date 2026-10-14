@@ -3,8 +3,16 @@ import {
   echoWords,
   echoSimilarity,
   isAutomatedTemplate,
+  FAST_TEMPLATE_DELAY_SEC,
   MAX_TEMPLATE_DELAY_SEC,
 } from "../app/lib/echo-classify";
+
+// socialrepl.ai, 14 Oct 2026. Fired 1.8 seconds after "Howdy", the first time
+// that text had ever been seen on the account. Requiring a matching echo from
+// another conversation meant it was read as the owner replying, which paused
+// automation for six hours and swallowed the next message.
+const FIRST_EVER_AUTOREPLY =
+  "Hi, thanks for contacting us at socialrepl.ai! We've received your message and appreciate you reaching out.";
 
 // Verbatim from Shabby 2 Chic's real Instagram threads, read back from Meta.
 // Only the handle changes between firings, which is the whole signal.
@@ -80,24 +88,63 @@ describe("isAutomatedTemplate", () => {
     ).toBe(true);
   });
 
-  // The expensive mistake would be talking over a real merchant, so each
-  // condition is checked on its own.
-  it("does not fire the first time a template is seen", () => {
+  it("catches the very first autoreply on an account, with nothing to compare against", () => {
+    expect(
+      isAutomatedTemplate({
+        text: FIRST_EVER_AUTOREPLY,
+        secondsSinceInbound: 1.8,
+        otherConversationEchoes: [],
+      })
+    ).toBe(true);
+  });
+
+  it("catches a fast template in a brand new conversation", () => {
     expect(
       isAutomatedTemplate({
         text: INSTANT_REPLY_A,
         secondsSinceInbound: 3,
         otherConversationEchoes: [],
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("does not fire on a slow reply, however repetitive", () => {
+  // The expensive mistake would be talking over a real merchant, so each
+  // condition is still checked on its own.
+  it("needs a matching echo once the reply is slower than the fast window", () => {
+    const justSlow = FAST_TEMPLATE_DELAY_SEC + 2;
+    expect(
+      isAutomatedTemplate({
+        text: INSTANT_REPLY_A,
+        secondsSinceInbound: justSlow,
+        otherConversationEchoes: [],
+      })
+    ).toBe(false);
+    expect(
+      isAutomatedTemplate({
+        text: INSTANT_REPLY_A,
+        secondsSinceInbound: justSlow,
+        otherConversationEchoes: [INSTANT_REPLY_B],
+      })
+    ).toBe(true);
+  });
+
+  it("does not fire past the outer window, however repetitive", () => {
     expect(
       isAutomatedTemplate({
         text: INSTANT_REPLY_A,
         secondsSinceInbound: MAX_TEMPLATE_DELAY_SEC + 1,
         otherConversationEchoes: [INSTANT_REPLY_B],
+      })
+    ).toBe(false);
+  });
+
+  it("leaves a genuine merchant reply alone, even a long fast one past the window", () => {
+    // Kim's real reply to Melanie, 3 minutes after the customer wrote.
+    expect(
+      isAutomatedTemplate({
+        text: "Hello! Thank you for reaching out! Here's the link to the dress. I hope you and daughter are doing well.",
+        secondsSinceInbound: 180,
+        otherConversationEchoes: [INSTANT_REPLY_A, AWAY_MESSAGE_A],
       })
     ).toBe(false);
   });
@@ -125,13 +172,32 @@ describe("isAutomatedTemplate", () => {
   });
 
   it("does not fire on a long human reply that is unlike the others", () => {
+    // 45 seconds, which is about the fastest a person could read this and type
+    // nineteen words back. The fixture used to say 4 seconds, which asserted
+    // something physically impossible and only passed because repetition was
+    // mandatory.
     expect(
       isAutomatedTemplate({
         text: "Yes we still have the rust polka dot dress in a medium, want me to hold one back for you?",
-        secondsSinceInbound: 4,
+        secondsSinceInbound: 45,
         otherConversationEchoes: [INSTANT_REPLY_A, AWAY_MESSAGE_A],
       })
     ).toBe(false);
+  });
+
+  // Known and accepted: a merchant who taps a long Instagram saved reply can
+  // match a template on speed, because tapping is as fast as a server. They
+  // would then get our reply alongside theirs. A saved reply is itself canned,
+  // and the alternative is the bug this rule exists to fix, so this is the
+  // tradeoff rather than an oversight.
+  it("cannot distinguish a tapped saved reply from a template, by design", () => {
+    expect(
+      isAutomatedTemplate({
+        text: "Thanks for your order! It will ship within two business days and you will get tracking by email.",
+        secondsSinceInbound: 2,
+        otherConversationEchoes: [],
+      })
+    ).toBe(true);
   });
 
   it("ignores media-only echoes", () => {
