@@ -318,6 +318,26 @@ export async function generateAgentReply({
 
   // Links minted during the loop; logged to links_sent by the caller after send.
   const linksCreated = [];
+
+  /**
+   * The product this reply is about, when the agent discussed one without
+   * minting a link.
+   *
+   * The system prompt tells the agent to ask which size or colour the customer
+   * wants before sending a link, and it follows that instruction. The reply it
+   * writes names the product, the price and every option. But only the link
+   * tools recorded a product id, so a reply like "The Complete Snowboard is
+   * $699.95 and comes in Ice, Dawn, Powder, Electric and Sunset. Which colour?"
+   * stored nothing at all.
+   *
+   * That silently disarmed both recovery paths in handleIncomingDm, which are
+   * gated on hasPriorProductContext: the matcher that resolves the customer's
+   * answer against the product's real option values, and the rescue that
+   * answers a vague reply in a live thread. On 14 Oct 2026 a test customer
+   * answered "Dawn" to exactly that question and got silence, at the single
+   * highest-intent moment in the conversation.
+   */
+  let productContext = null;
   // Every URL the model is allowed to include (tool-issued only).
   const allowedUrls = new Set();
 
@@ -347,6 +367,12 @@ export async function generateAgentReply({
         const gid = toProductGid(args.product_id);
         if (!gid) return { error: "product_id is required" };
         const raw = await getShopifyProductContextForReply(shop.shopify_domain, gid).catch(() => null);
+        // Remember which product this reply is about, even though no link is
+        // being minted. The thread's product context is what lets the next
+        // message ("Dawn") be resolved against this product's options, and
+        // until now it only existed when a link tool ran. See productContext
+        // in the return value below.
+        if (raw) productContext = { productId: gid, variantId: null };
         return formatProductDetails(raw);
       }
       case "get_store_info": {
@@ -659,7 +685,14 @@ export async function generateAgentReply({
   logger.debug(
     `[sales-agent] Reply generated for message ${message.id} (${linksCreated.length} tracked links, model=${REPLY_MODEL})`
   );
-  return { text, links: linksCreated };
+  // A minted link already carries the product, so only fall back to the
+  // discussed product when nothing was linked.
+  const linkedProduct = linksCreated.find((l) => l.productId) || null;
+  return {
+    text,
+    links: linksCreated,
+    productContext: linkedProduct ? null : productContext,
+  };
 }
 
 function buildSystemMessage({ brandVoice, allowClarify, message }) {

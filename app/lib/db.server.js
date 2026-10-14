@@ -1049,15 +1049,26 @@ export async function alreadyRepliedToComment(shopId, commentExternalId) {
  * Claim the right to send the one automated reply for this message (atomic). Returns true if we claimed, false if already claimed.
  * Uses link_id = dm_reply_${messageId} so duplicate webhook processing only one wins.
  */
-export async function claimMessageReply(shopId, messageId, replyText, externalId = null) {
+export async function claimMessageReply(
+  shopId,
+  messageId,
+  replyText,
+  externalId = null,
+  productContext = null
+) {
   if (!shopId || !messageId) return false;
   const stableId = externalId || messageId;
   const linkId = `dm_reply_ext_${stableId}`;
+  // productContext carries the product this reply is about when the agent
+  // discussed one without minting a link, e.g. "which colour do you want?".
+  // getRecentConversationContext picks lastProductLink by product_id, so
+  // without it the customer's answer has nothing to resolve against and the
+  // reply is dropped. See productContext in sales-agent.server.js.
   const { error } = await supabase.from("links_sent").insert({
     shop_id: shopId,
     message_id: messageId,
-    product_id: null,
-    variant_id: null,
+    product_id: productContext?.productId || null,
+    variant_id: productContext?.variantId || null,
     url: null,
     link_id: linkId,
     reply_text: replyText || null,

@@ -542,7 +542,15 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           });
 
       if (agentResult?.text) {
-        if (!(await claimMessageReply(shop.id, message.id, agentResult.text, message.external_id))) {
+        if (
+          !(await claimMessageReply(
+            shop.id,
+            message.id,
+            agentResult.text,
+            message.external_id,
+            agentResult.productContext
+          ))
+        ) {
           logger.debug(`[automation] Reply already claimed for message ${message.id}, skipping send`);
           return { sent: false, reason: "Already replied to this message" };
         }
