@@ -14,18 +14,31 @@
  * had already written (product name, price, sizes) was thrown away. The
  * customer got opening hours and nothing else.
  *
- * Three conditions have to hold together before we call an echo a template,
- * because the cost of a false positive is talking over a real merchant:
+ * Speed is the signal. Templates are sent by Meta's servers the moment the
+ * message lands; a person has to read it, decide, and type. On real traffic
+ * templates reply in about 3 seconds (median 3.1s at Mark Watts Studios, 3.2s
+ * at Shabby 2 Chic) while the merchants who genuinely answer by hand take a
+ * median of 29 minutes (Shanesecaresllc) to 100 minutes (Love By Luna). There
+ * is nothing in between, so a tight window separates them cleanly.
+ *
+ * Two conditions, because the cost of a false positive is talking over a real
+ * merchant:
  *
  *  1. It is long. Templates carry addresses and opening hours; "sure!" or
  *     "✅ send it to me" (both real Shabby 2 Chic replies) must never qualify.
- *  2. It repeats near-verbatim in a different customer's thread. Meta
- *     substitutes the handle and changes nothing else, which lands around 0.9
- *     token similarity. A merchant answering two people says different things.
- *  3. It landed within seconds of the customer's message. Measured on real
- *     traffic, templates reply in ~3s (median 3.1s at Mark Watts Studios, 3.2s
- *     at Shabby 2 Chic) while humans take ~29 minutes (Shanesecaresllc) to
- *     ~100 minutes (Love By Luna). There is a lot of room between those.
+ *     Someone would have to read a message and type eight or more words inside
+ *     the window to be misread.
+ *  2. It landed inside FAST_TEMPLATE_DELAY_SEC, or inside the longer
+ *     MAX_TEMPLATE_DELAY_SEC while matching an echo already seen in another
+ *     customer's thread.
+ *
+ * Repetition used to be mandatory. That was wrong, and it cost socialrepl.ai's
+ * first test: the autoreply fired 1.8 seconds after "Howdy", had nothing to
+ * match because it was the first time that text had ever been seen on the
+ * account, was therefore read as the owner replying, and paused automation for
+ * six hours. The next message was "I love the dawn complete snowboard" and it
+ * got nothing. Requiring a second conversation to corroborate means every
+ * account with an autoreply sacrifices its first one.
  *
  * When the delay is unknown we return false, so an unrecognised echo still
  * pauses automation. Staying quiet is the recoverable mistake.
@@ -37,8 +50,18 @@ export const MIN_TEMPLATE_WORDS = 8;
 /** Token overlap at or above this counts as the same template. */
 export const TEMPLATE_SIMILARITY = 0.8;
 
-/** A reply slower than this came from a person, not Meta's automation. */
-export const MAX_TEMPLATE_DELAY_SEC = 15;
+/**
+ * No human reads a message and types this fast. Enough on its own, which is
+ * what lets the very first autoreply on an account be recognised.
+ */
+export const FAST_TEMPLATE_DELAY_SEC = 10;
+
+/**
+ * The outer window, allowed only when the text already matches an echo from
+ * another conversation. A merchant could plausibly reply inside this if they
+ * happened to be sitting in the thread, so it needs the corroboration.
+ */
+export const MAX_TEMPLATE_DELAY_SEC = 30;
 
 /**
  * Word tokens, lowercased, punctuation dropped. Keeps digits so opening hours
@@ -98,6 +121,13 @@ export function isAutomatedTemplate({
     return false;
   }
 
+  // Fast enough that no person could have written it, so it stands alone. This
+  // is the case that matters on a brand new account, where there is no second
+  // conversation to compare against yet.
+  if (secondsSinceInbound <= FAST_TEMPLATE_DELAY_SEC) return true;
+
+  // Slower than that is only a template if we have already seen the same words
+  // sent to a different customer.
   return otherConversationEchoes.some(
     (other) => echoSimilarity(text, other) >= TEMPLATE_SIMILARITY
   );
