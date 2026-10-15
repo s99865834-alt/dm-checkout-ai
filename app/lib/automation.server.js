@@ -1438,6 +1438,19 @@ const EXPECTED_PRIVATE_REPLY_REJECTIONS = {
     reason: "instagram_private_reply_rejected",
     detail: "was refused: the comment is gone, or the token lacks the private-reply scope",
   },
+  // A private reply has to land in a DM thread with the commenter. Meta
+  // reports several situations through this one subcode: the person deleted
+  // or archived the conversation, they blocked the account, or their message
+  // settings refuse it. All of them mean there is no thread to deliver into
+  // and no retry that would help.
+  //
+  // Neutral label for the same reason as 2534066 above. "Deleted" would be a
+  // guess, and the tell is volume: Love By Luna has seen this twice, on 5 Sep
+  // and 15 Oct, which is two lost comments rather than a fault.
+  2534001: {
+    reason: "instagram_thread_unavailable",
+    detail: "could not be answered: the commenter's DM thread is archived, deleted, or closed to us",
+  },
 };
 
 const STORY_CONTENT_TYPES = new Set(["story_reply", "story_mention"]);

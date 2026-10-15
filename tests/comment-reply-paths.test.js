@@ -243,6 +243,33 @@ function replyAlreadyExists() {
  * nine seconds. Meta words this one as a permissions problem, which it wasn't:
  * the same token had been sending comment replies all week.
  */
+/**
+ * A commenter we cannot open a DM thread with.
+ *
+ * A private reply has to land in a direct message thread with the person who
+ * commented. Love By Luna, 15 Oct 2026: "Very rising sign coded" classified
+ * purchase at 0.9, and Meta refused with subcode 2534001. The person had
+ * deleted or archived the conversation, blocked the account, or has message
+ * settings that refuse it, and there is no retry that fixes any of those.
+ *
+ * Before this was recognised it fell through to the generic handler and
+ * printed a stack trace for something routine, which is exactly the noise
+ * EXPECTED_PRIVATE_REPLY_REJECTIONS exists to prevent.
+ */
+function threadArchivedOrGone() {
+  const err = new Error(
+    "Instagram API error: The thread owner has archived or deleted this conversation, or the thread does not exist. (Code: 100)"
+  );
+  err.meta = {
+    message:
+      "The thread owner has archived or deleted this conversation, or the thread does not exist.",
+    type: "IGApiException",
+    code: 100,
+    error_subcode: 2534001,
+  };
+  return err;
+}
+
 function commentGoneOrNoScope() {
   const err = new Error(
     "Instagram API error: Please check if access token has enough IG permissions granular scopes for IG private reply. Or verify if the comment id is valid (Code: 200)"
@@ -348,6 +375,31 @@ describe("a reply Instagram refuses", () => {
     sendInstagramPrivateReply.mockRejectedValue(commentGoneOrNoScope());
 
     await handleIncomingComment(comment("how much is this?"), "media-1", shop, growthPlan);
+
+    const reason = markReplyUndelivered.mock.calls[0][2];
+    expect(reason.startsWith("instagram_reply_already_exists")).toBe(false);
+  });
+
+  it("records an unreachable DM thread under its own reason, not as an app error", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(threadArchivedOrGone());
+
+    const msg = comment("Very rising sign coded");
+    const res = await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "instagram_thread_unavailable"
+    );
+  });
+
+  it("keeps an unreachable thread out of the competing-tool count", async () => {
+    mappedPost();
+    sendInstagramPrivateReply.mockRejectedValue(threadArchivedOrGone());
+
+    await handleIncomingComment(comment("Very rising sign coded"), "media-1", shop, growthPlan);
 
     const reason = markReplyUndelivered.mock.calls[0][2];
     expect(reason.startsWith("instagram_reply_already_exists")).toBe(false);
