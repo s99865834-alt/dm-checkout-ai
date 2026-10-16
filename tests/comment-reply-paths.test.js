@@ -743,6 +743,64 @@ describe("store questions on comments", () => {
   });
 });
 
+/**
+ * The link-request rescue is the second line of defence, not a bypass.
+ *
+ * Even with the tightened pattern, a message the classifier confidently
+ * rejected must stay rejected. Belt and braces, because the cost on
+ * Shabby 2 Chic was a Pro merchant's quota spent answering a spammer.
+ */
+describe("a confident not_relevant cannot be overridden", () => {
+  it("stays silent even when the text would match a link request", async () => {
+    const { handleIncomingDm } = await import("../app/lib/automation.server");
+
+    const res = await handleIncomingDm(
+      {
+        id: "msg-spam-1",
+        text: "Want to grow? Send us a message and we'll share the link to our packages.",
+        ai_intent: "not_relevant",
+        ai_confidence: 0.95,
+        created_at: new Date().toISOString(),
+        external_id: "17800000001",
+        from_user_id: "spammer-1",
+        channel: "dm",
+      },
+      shop,
+      growthPlan,
+      {}
+    );
+
+    expect(res.sent).toBe(false);
+    expect(sendInstagramDm).not.toHaveBeenCalled();
+  });
+
+  it("still rescues a genuine terse link request", async () => {
+    const { handleIncomingDm } = await import("../app/lib/automation.server");
+
+    // clarification_needed is what the classifier gives a bare "send me the
+    // link", and the rescue exists precisely for it.
+    const res = await handleIncomingDm(
+      {
+        id: "msg-real-1",
+        text: "send me the link please",
+        ai_intent: "clarification_needed",
+        ai_confidence: 0.8,
+        created_at: new Date().toISOString(),
+        external_id: "17800000002",
+        from_user_id: "customer-9",
+        channel: "dm",
+      },
+      shop,
+      growthPlan,
+      {}
+    );
+
+    // Reaches the reply pipeline rather than being dropped at the intent gate.
+    // An undefined reason means it got through and sent, which is also a pass.
+    expect(res.reason ?? "").not.toMatch(/not eligible/i);
+  });
+});
+
 describe("captionToSearchTerm", () => {
   it("keeps the words that describe the product", () => {
     expect(captionToSearchTerm("New drop! The Rizzbot is here 🤖 #art #sculpture @friend")).toBe(

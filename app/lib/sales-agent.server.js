@@ -80,7 +80,13 @@ export function isExplicitLinkRequest(text) {
   const t = (text || "").trim().toLowerCase();
   if (!t) return false;
   if (/^(?:yes,?\s*)?link\s*(?:\?|!|please|pls)?$/.test(t)) return true;
-  return /\b(?:send|share|give|get|drop|need|want|have)\b[^.!?]*\blink\b/.test(t);
+  // The verb and "link" have to be in the same breath. [^.!?]* used to span
+  // any distance, including across newlines, so a promotion pitch reading
+  // "you will get 10k followers" and then, five lines later, "Website link in
+  // bio" matched and was treated as a customer asking for a URL. Capping the
+  // gap keeps "can you send me the link" while dropping two unrelated words
+  // that happen to share a paragraph.
+  return /\b(?:send|share|give|get|drop|need|want|have)\b[^.!?\n]{0,40}\blink\b/.test(t);
 }
 
 /**
