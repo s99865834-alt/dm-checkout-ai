@@ -384,12 +384,28 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     // absolutely" gets classified clarification_needed and previously went
     // unanswered). Route them to the agent as purchase intent — without a
     // specific product it answers with the store's browse-all-products link.
+    //
+    // Never over a confident not_relevant, though. That verdict means the
+    // message has nothing to do with the store, and this rescue exists for a
+    // terse "send me the link", not to resurrect something the classifier
+    // deliberately rejected.
+    //
+    // Shabby 2 Chic, 16 Oct 2026: an Instagram promotion seller pitching $35
+    // to $199 packages was scored not_relevant at 0.95, correctly. The pitch
+    // contained "you will get 10k followers" and, lines later, "Website link
+    // in bio". isExplicitLinkRequest spans everything between send/get/want
+    // and "link" as long as no .!? separates them, so it matched across the
+    // gap, forced purchase, and we answered a spammer on a Pro merchant's
+    // quota.
+    const confidentlyIrrelevant =
+      message.ai_intent === "not_relevant" && (message.ai_confidence ?? 0) >= 0.7;
+
     let intent = message.ai_intent || null;
     if (!intent || !eligibleIntents.includes(intent)) {
       // If we have prior product context, try a lightweight inference.
       if (hasPriorProductContext) {
         intent = inferIntentFromText(message.text);
-      } else if (isExplicitLinkRequest(message.text)) {
+      } else if (!confidentlyIrrelevant && isExplicitLinkRequest(message.text)) {
         intent = "purchase";
       }
     }
