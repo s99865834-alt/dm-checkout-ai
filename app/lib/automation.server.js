@@ -21,6 +21,7 @@ import {
   admitsNoAnswer,
   asksIfAutomated,
   claimsToBeHuman,
+  stripUnknownEmails,
   AUTOMATED_DISCLOSURE,
 } from "./reply-rules";
 import { getStoreContextForReply, ensureStoreContextFresh } from "./store-context.server";
@@ -2794,6 +2795,19 @@ Write the response:`;
     message = AUTOMATED_DISCLOSURE;
   }
 
-  return stripEmDashes(message);
+  // An address the model was not given is one it made up. This path had no
+  // guard at all, so the same failure the sales agent hit on 20 Oct had an
+  // open route here too: a model will assemble a plausible address out of
+  // whatever nouns are nearby, including the app's own name if a customer
+  // happens to mention it.
+  const storeEmails = new Set([storeInfo?.email, storeInfo?.contactEmail].filter(Boolean));
+  const emailGuard = stripUnknownEmails(message, storeEmails);
+  if (emailGuard.stripped) {
+    console.warn(
+      `[automation] Reply for intent "${intent}" contained an email the store does not have; removed`
+    );
+  }
+
+  return stripEmDashes(emailGuard.text);
 }
 

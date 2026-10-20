@@ -38,7 +38,7 @@ import {
 } from "./shopify-data.server";
 import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { findCollectionMatches, searchCollections } from "./collection-match";
-import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE } from "./reply-rules";
+import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE, stripUnknownEmails } from "./reply-rules";
 import { describeOffer } from "./discount-rules";
 import { languageInstructionText, resolveReplyLanguage } from "./reply-language";
 import {
@@ -347,6 +347,21 @@ export async function generateAgentReply({
   // Every URL the model is allowed to include (tool-issued only).
   const allowedUrls = new Set();
 
+  /**
+   * Contact addresses the store actually has, filled in by get_store_info.
+   *
+   * Shanese Cares, 20 Oct 2026. A DM read "my name is Stephan and I built the
+   * shopify app SocialRepl.ai that you are using". The model took the app name
+   * out of the customer's own words, built "info@socialrepl.ai" from it, and
+   * handed it to the merchant's customer as the store's contact address. The
+   * store context held the correct info@shanesecaresllc.com the whole time,
+   * and the address it invented does not exist.
+   *
+   * URLs have been allowlisted for a while for the same reason. An email was
+   * not, so a fabricated one went out in a merchant's voice.
+   */
+  const allowedEmails = new Set();
+
   const runTool = async (name, args) => {
     switch (name) {
       case "search_products": {
@@ -387,6 +402,9 @@ export async function generateAgentReply({
           storeInfo = await getShopifyStoreInfo(shop.shopify_domain).catch(() => null);
         }
         if (!storeInfo) return { error: "Store information is unavailable right now" };
+        // Same allowlist treatment as URLs: an address the model did not get
+        // from here cannot be real, so record this one and strip the rest.
+        if (storeInfo.email) allowedEmails.add(String(storeInfo.email).trim().toLowerCase());
         const built = buildStoreContextForAI(storeInfo);
         // The context builder emits {{token}} placeholders for the legacy
         // sanitizer; the agent gets real URLs instead, which we allowlist and
@@ -585,7 +603,11 @@ export async function generateAgentReply({
     return null;
   }
 
-  let { text, strippedUrl, strippedPlaceholder } = sanitizeReplyText(finalText, allowedUrls);
+  let { text, strippedUrl, strippedPlaceholder } = sanitizeReplyText(
+    finalText,
+    allowedUrls,
+    allowedEmails
+  );
 
   // Two ways the model reaches for a link without calling a link tool: it
   // invents a URL from a product title (the allowlist strips it), or it writes
@@ -605,7 +627,7 @@ export async function generateAgentReply({
     });
     const retryText = await runToolLoop(2);
     if (retryText) {
-      const retry = sanitizeReplyText(retryText, allowedUrls);
+      const retry = sanitizeReplyText(retryText, allowedUrls, allowedEmails);
       if (retry.text) text = retry.text;
     }
   }
@@ -626,7 +648,7 @@ export async function generateAgentReply({
     });
     const retryText = await runToolLoop(2);
     if (retryText) {
-      const retry = sanitizeReplyText(retryText, allowedUrls);
+      const retry = sanitizeReplyText(retryText, allowedUrls, allowedEmails);
       if (retry.text) text = retry.text;
     }
   }
@@ -645,7 +667,7 @@ export async function generateAgentReply({
         "Your reply tells the customer you could not find a product, or repeats the words you searched for. Never do either: your lookups are internal. Rewrite the reply so it answers what the customer actually said. If they were not really asking about a specific product, respond to the substance of their message. If they were, offer the closest thing the store does carry. Do not mention searching, and do not mention this correction.",
     });
     const retryText = await runToolLoop(2);
-    const retry = retryText ? sanitizeReplyText(retryText, allowedUrls) : null;
+    const retry = retryText ? sanitizeReplyText(retryText, allowedUrls, allowedEmails) : null;
     if (retry?.text && !narratesFailedLookup(retry.text)) {
       text = retry.text;
     } else {
@@ -737,6 +759,7 @@ HOW TO SELL:
 - If a product comes in multiple sizes/colors and they want to buy but haven't chosen, ask which one they want (list the options) rather than sending a generic link.
 ${vagueRule}
 - OWNER HANDOFF: some requests only the store owner can handle personally — visiting the store or meeting up, events/signings, custom or commissioned work, wholesale, press, or the customer referencing a personal conversation with the owner ("we spoke on the phone", "you mentioned meeting"). Do NOT pitch products in response to these. Acknowledge warmly in ONE short reply and share the store's contact email from get_store_info so the owner can follow up directly; if there is no contact email, say the owner will follow up personally right here. If the same message ALSO asks about products, answer the product part normally and include the handoff in the same reply.
+- NEVER write an email address unless get_store_info returned that exact address. Do not build one from the store name, the customer's message, a brand or an app name, and do not fall back to a pattern like info@ or support@. If get_store_info gave you no email, say the owner will follow up right here and give no address at all. A made-up address sends the customer nowhere and it goes out in the merchant's name.
 - When you genuinely can't help with the info available, say so honestly and give the store's contact email from get_store_info.
 
 HARD RULES:
@@ -885,7 +908,7 @@ const LINK_PLACEHOLDER = /\[[^\]\n]*\b(?:link|url|insert|checkout|product\s+page
  * removed, so the caller can give the model a corrective pass instead of
  * sending a linkless promise.
  */
-export function sanitizeReplyText(text, allowedUrls) {
+export function sanitizeReplyText(text, allowedUrls, allowedEmails = new Set()) {
   // Em dashes read as AI-written; the prompt bans them but the model can
   // slip, so strip deterministically (comma reads naturally in DMs).
   let result = text.replace(/\s*—\s*/g, ", ");
@@ -921,6 +944,8 @@ export function sanitizeReplyText(text, allowedUrls) {
     // before punctuation so even the no-retry fallback reads cleanly.
     result = result.replace(/[ \t]*\b(?:right\s+)?(?:here|link|page|url)\s*:[ \t]*(?=[.!?,;]|\n|$)/gim, "");
   }
+
+  result = stripUnknownEmails(result, allowedEmails).text;
 
   const cleaned = result
     .replace(/[ \t]{2,}/g, " ")
