@@ -2306,3 +2306,125 @@ s-page .srBtnCompact {
   margin: 0 0 18px;
 }
 
+/* BFCM splash */
+.srBfcm .srBfcmBar {
+  background: var(--sr-ink);
+  color: #fff;
+}
+.srBfcm .srBfcmBarInner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+.srBfcm .srBfcmBar strong { font-weight: 700; }
+.srBfcm .srBfcmStats {
+  display: flex;
+  gap: 28px;
+  margin: 8px 0 20px;
+  flex-wrap: wrap;
+}
+.srBfcm .srBfcmStats strong {
+  display: block;
+  font-size: 28px;
+  line-height: 1.1;
+}
+.srBfcm .srBfcmStats span {
+  font-size: 13px;
+  color: var(--sr-ink-muted);
+}
+.srBfcm .srBfcmClock {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.srBfcm .srBfcmClock div {
+  min-width: 72px;
+  padding: 10px 8px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--sr-line);
+  border-radius: var(--sr-radius-md);
+}
+.srBfcm .srBfcmClock strong {
+  display: block;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sr-purple-2);
+}
+.srBfcm .srBfcmClock span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sr-ink-muted);
+}
+.srBfcm .srBfcmClosed {
+  font-weight: 700;
+  margin: 0 0 18px;
+}
+.srBfcm .srBfcmPain {
+  padding: 56px 24px;
+  background: var(--sr-ink);
+  color: #fff;
+}
+.srBfcm .srBfcmPain h2 {
+  font-size: 32px;
+  line-height: 1.2;
+  margin: 0 0 12px;
+  max-width: 720px;
+}
+.srBfcm .srBfcmPain p {
+  margin: 0;
+  max-width: 640px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+}
+.srBfcm .srBfcmWrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 24px;
+}
+.srBfcm .srFeatures { padding: 0; }
+.srBfcm .srFeatures h2,
+.srBfcm .srHow h2 {
+  font-size: clamp(26px, 3.4vw, 36px);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 12px 0 18px;
+}
+.srBfcm .srHow { padding: 0; background: var(--sr-bg-pink-soft); }
+.srBfcm .srBfcmSteps {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.srBfcm .srBfcmSteps li {
+  background: #fff;
+  border: 1px solid var(--sr-line);
+  border-radius: var(--sr-radius-md);
+  padding: 16px 18px;
+}
+.srBfcm .srBfcmSteps strong { display: block; margin-bottom: 4px; }
+.srBfcm .srBfcmSteps span { color: var(--sr-ink-muted); font-size: 15px; line-height: 1.5; }
+.srBfcm .srBfcmFine {
+  margin: 16px auto 0;
+  max-width: 520px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+}
+@media (max-width: 720px) {
+  .srBfcm .srBfcmClock div { min-width: 64px; }
+  .srBfcm .srBfcmPain h2 { font-size: 26px; }
+}
+
