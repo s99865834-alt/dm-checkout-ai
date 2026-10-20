@@ -3,9 +3,8 @@ import { useLoaderData } from "react-router";
 import { MarketingNav, MarketingFooter, appStoreUrl } from "../components/marketing/MarketingChrome";
 import { GoogleAnalytics } from "../components/marketing/GoogleAnalytics";
 
-// Lower this as you turn Pro on for shops from this page. It starts at 100
-// because nobody has claimed a spot yet.
-const SPOTS_LEFT = 100;
+// Spots still open on the BFCM offer. Lower this when a shop is granted Pro.
+const SPOTS_LEFT = 44;
 const SPOTS_TOTAL = 100;
 // Nov 18, 2026, 11:59pm Denver time. Setup has to be done before Black Friday.
 const DEADLINE_MS = Date.parse("2026-11-19T06:59:00.000Z");
