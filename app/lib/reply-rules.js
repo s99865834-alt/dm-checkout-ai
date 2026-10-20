@@ -139,3 +139,58 @@ export function claimsToBeHuman(text) {
  */
 export const AUTOMATED_DISCLOSURE =
   "I'm an automated assistant for this store, not a person. I can answer questions about the products and send you links, and the owner reads these messages too if you'd rather hear from them directly.";
+
+/**
+ * Remove any email address the store does not actually have.
+ *
+ * Shanese Cares, 20 Oct 2026. A DM read "my name is Stephan and I built the
+ * shopify app SocialRepl.ai that you are using". The model took the app name
+ * out of the customer's own words, built info@socialrepl.ai from it, and
+ * offered it to the merchant's customer as the store's contact address. The
+ * real one, info@shanesecaresllc.com, was in context the whole time.
+ *
+ * Both reply paths run this. A model will assemble a plausible address out of
+ * whatever nouns are nearby, so the only safe rule is that an address has to
+ * have come from the store's own data or it does not go out.
+ *
+ * When the real address is known it is substituted, because the sentence
+ * around it is usually correct and only the address is wrong. Otherwise the
+ * address and the phrase introducing it are both removed, so nothing is left
+ * dangling.
+ *
+ * @param {string} text
+ * @param {Set<string>|string[]} allowedEmails - addresses from store data
+ * @returns {{text: string, stripped: boolean}}
+ */
+export function stripUnknownEmails(text, allowedEmails = new Set()) {
+  if (!text) return { text, stripped: false };
+
+  const known = [...allowedEmails]
+    .map((e) => String(e || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  let stripped = false;
+  let result = text.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, (matched) => {
+    if (known.includes(matched.toLowerCase())) return matched;
+    if (known.length === 1) return known[0];
+    stripped = true;
+    return "";
+  });
+
+  if (stripped) {
+    result = result
+      .replace(
+        /[ \t]*\b(?:at|via|on)?[ \t]*(?:their|the|our)?[ \t]*(?:contact[ \t]+)?email(?:[ \t]+address)?\s*:?[ \t]*(?=[.!?,;]|\n|$)/gim,
+        ""
+      )
+      .replace(
+        /[ \t]*\b(?:you can )?(?:contact|email|reach)[ \t]+(?:them|us|the (?:store )?owner)\s*:?[ \t]*(?=[.!?,;]|\n|$)/gim,
+        ""
+      )
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/[ \t]+([.!?,;])/g, "$1")
+      .trim();
+  }
+
+  return { text: result, stripped };
+}

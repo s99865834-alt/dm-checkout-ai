@@ -38,7 +38,7 @@ import {
 } from "./shopify-data.server";
 import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { findCollectionMatches, searchCollections } from "./collection-match";
-import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE } from "./reply-rules";
+import { asksForProductPage, claimsToBeHuman, AUTOMATED_DISCLOSURE, stripUnknownEmails } from "./reply-rules";
 import { describeOffer } from "./discount-rules";
 import { languageInstructionText, resolveReplyLanguage } from "./reply-language";
 import {
@@ -759,6 +759,7 @@ HOW TO SELL:
 - If a product comes in multiple sizes/colors and they want to buy but haven't chosen, ask which one they want (list the options) rather than sending a generic link.
 ${vagueRule}
 - OWNER HANDOFF: some requests only the store owner can handle personally — visiting the store or meeting up, events/signings, custom or commissioned work, wholesale, press, or the customer referencing a personal conversation with the owner ("we spoke on the phone", "you mentioned meeting"). Do NOT pitch products in response to these. Acknowledge warmly in ONE short reply and share the store's contact email from get_store_info so the owner can follow up directly; if there is no contact email, say the owner will follow up personally right here. If the same message ALSO asks about products, answer the product part normally and include the handoff in the same reply.
+- NEVER write an email address unless get_store_info returned that exact address. Do not build one from the store name, the customer's message, a brand or an app name, and do not fall back to a pattern like info@ or support@. If get_store_info gave you no email, say the owner will follow up right here and give no address at all. A made-up address sends the customer nowhere and it goes out in the merchant's name.
 - When you genuinely can't help with the info available, say so honestly and give the store's contact email from get_store_info.
 
 HARD RULES:
@@ -944,27 +945,7 @@ export function sanitizeReplyText(text, allowedUrls, allowedEmails = new Set()) 
     result = result.replace(/[ \t]*\b(?:right\s+)?(?:here|link|page|url)\s*:[ \t]*(?=[.!?,;]|\n|$)/gim, "");
   }
 
-  // Any address the model did not get from get_store_info is invented. When we
-  // know the store's real one, swap it in, because the sentence around it is
-  // usually right and only the address is wrong. When we don't, remove it and
-  // the phrase that introduced it rather than ship a fabricated contact.
-  const known = [...allowedEmails].map((e) => String(e).trim().toLowerCase()).filter(Boolean);
-  let strippedEmail = false;
-  result = result.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, (matched) => {
-    if (known.includes(matched.toLowerCase())) return matched;
-    if (known.length === 1) return known[0];
-    strippedEmail = true;
-    return "";
-  });
-
-  if (strippedEmail) {
-    result = result
-      .replace(
-        /[ \t]*\b(?:at|via|on)?[ \t]*(?:their|the|our)?[ \t]*(?:contact[ \t]+)?email(?:[ \t]+address)?\s*:?[ \t]*(?=[.!?,;]|\n|$)/gim,
-        ""
-      )
-      .replace(/[ \t]*\b(?:you can )?(?:contact|email|reach)[ \t]+(?:them|us|the (?:store )?owner)\s*:?[ \t]*(?=[.!?,;]|\n|$)/gim, "");
-  }
+  result = stripUnknownEmails(result, allowedEmails).text;
 
   const cleaned = result
     .replace(/[ \t]{2,}/g, " ")
