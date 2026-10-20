@@ -2392,6 +2392,7 @@ s-page .srBtnCompact {
   padding: 64px 24px;
 }
 .srBfcm .srFeatures { padding: 0; }
+.srBfcm .srFeatures .srFeatureList { margin: 0 0 36px; }
 .srBfcm .srFeatures h2,
 .srBfcm .srHow h2 {
   font-size: clamp(26px, 3.4vw, 36px);
@@ -2400,6 +2401,9 @@ s-page .srBtnCompact {
   letter-spacing: -0.01em;
   margin: 12px 0 18px;
 }
+.srBfcm .srCta .srBtnPrimary { margin: 8px 0 32px; }
+.srBfcm .srHeroActions { margin-bottom: 8px; }
+.srBfcm .srHeroFinePrint { margin-top: 20px; }
 .srBfcm .srHow { padding: 0; background: var(--sr-bg-pink-soft); }
 .srBfcm .srBfcmSteps {
   list-style: none;
@@ -2416,15 +2420,39 @@ s-page .srBtnCompact {
 }
 .srBfcm .srBfcmSteps strong { display: block; margin-bottom: 4px; }
 .srBfcm .srBfcmSteps span { color: var(--sr-ink-muted); font-size: 15px; line-height: 1.5; }
-.srBfcm .srBfcmFine {
-  margin: 16px auto 0;
-  max-width: 520px;
+.srBfcm .srCta .srBfcmFine {
+  margin: 0;
+  max-width: none;
+  text-align: left;
   font-size: 13px;
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.8);
 }
 @media (max-width: 720px) {
-  .srBfcm .srBfcmClock div { min-width: 64px; }
-  .srBfcm .srBfcmPain h2 { font-size: 26px; }
+  .srBfcm .srHero { padding: 32px 20px 40px; }
+  .srBfcm .srHeroCopy h1 { font-size: 32px; }
+  .srBfcm .srBfcmBarInner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 12px 20px;
+  }
+  .srBfcm .srBfcmStats { gap: 16px 24px; }
+  .srBfcm .srBfcmStats strong { font-size: 22px; }
+  .srBfcm .srBfcmClock {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+  .srBfcm .srBfcmClock div { min-width: 0; padding: 8px 4px; }
+  .srBfcm .srBfcmClock strong { font-size: 22px; }
+  .srBfcm .srBfcmPain { padding: 36px 20px; }
+  .srBfcm .srBfcmPain h2 { font-size: 24px; }
+  .srBfcm .srBfcmWrap { padding: 40px 20px; }
+  .srBfcm .srCta { padding: 48px 20px; }
+  .srBfcm .srBtnPrimary {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
