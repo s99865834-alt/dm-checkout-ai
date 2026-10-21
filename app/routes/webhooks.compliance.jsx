@@ -31,14 +31,46 @@ if (typeof global.crypto === "undefined") {
 }
 
 import { authenticateWebhookTolerant } from "../lib/webhook-auth.server";
+import { readVerifiedShopifyWebhook } from "../lib/shopify-webhook-hmac.server";
 import supabase from "../lib/supabase.server";
 import logger from "../lib/logger.server";
+
+/**
+ * Topics with nothing to do, so nothing to look up.
+ *
+ * The app stores no Shopify customer PII (see the file header), which makes
+ * both of these guaranteed no-ops. They are answered from the signature alone,
+ * without loading a session or querying Supabase, because on 17 Oct 2026 a
+ * bulk customer redaction delivered ~160 of them in one second, each queued
+ * behind the others on this app's single pooled Prisma connection, and Shopify
+ * timed out at 5 seconds on most of the burst.
+ */
+const NO_OP_TOPICS = new Set(["CUSTOMERS_DATA_REQUEST", "CUSTOMERS_REDACT"]);
 
 // Webhooks are POST-only; answer crawler GETs with a 405 instead of letting
 // React Router warn about rendering a component-less route.
 export const loader = () => new Response("Method Not Allowed", { status: 405 });
 
 export const action = async ({ request }) => {
+  // Read and verify first, without touching the database. A request that
+  // fails the signature check never reaches the session store, and the two
+  // no-op topics are answered before anything can queue.
+  const verified = await readVerifiedShopifyWebhook(request.clone());
+
+  if (verified.valid && NO_OP_TOPICS.has(verified.topic)) {
+    logger.debug(
+      `[webhook/compliance] ${verified.topic} for shop=${verified.shop} ` +
+        `customer_id=${verified.payload?.customer?.id ?? null} -> no stored data, acknowledged`
+    );
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Anything else (shop/redact, or a request our own check could not verify)
+  // goes through the library, which is still the authority on authentication.
+  //
   // Tolerant auth: shop/redact arrives 48 hours AFTER uninstall, when the
   // shop's tokens are already revoked — the library's token-refresh step
   // would 500 on an otherwise-authentic webhook. Failing mandatory
@@ -48,40 +80,29 @@ export const action = async ({ request }) => {
   logger.debug(`[webhook/compliance] Received ${topic} for ${shop}`);
 
   try {
-    const { data: shopRow } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("shopify_domain", shop)
-      .single();
-
-    const dbShopId = shopRow?.id;
-
     switch (topic) {
-      case "CUSTOMERS_DATA_REQUEST": {
-        // We don't store any per-customer data, so the only honest response
-        // is an empty data set. We log the request so we can prove it was
-        // received and acknowledged.
-        const customerId = payload?.customer?.id ?? null;
-        logger.debug(
-          `[webhook/compliance] customers/data_request for shop=${shop} ` +
-            `customer_id=${customerId} -> no stored data`
-        );
-        break;
-      }
-
+      case "CUSTOMERS_DATA_REQUEST":
       case "CUSTOMERS_REDACT": {
-        // Same posture: there is nothing customer-scoped to delete because
-        // we never wrote any. Acknowledge and move on.
+        // Reached only when the fast path could not verify the signature
+        // itself, e.g. a secret rotation mid-flight. Same no-op either way.
         const customerId = payload?.customer?.id ?? null;
         logger.debug(
-          `[webhook/compliance] customers/redact for shop=${shop} ` +
-            `customer_id=${customerId} -> no stored data to erase`
+          `[webhook/compliance] ${topic} for shop=${shop} ` +
+            `customer_id=${customerId} -> no stored data (library path)`
         );
         break;
       }
 
       case "SHOP_REDACT": {
         logger.debug(`[webhook/compliance] shop/redact for ${shop}`);
+        // Only this topic needs to know who the shop is, so the lookup lives
+        // here rather than running for every delivery.
+        const { data: shopRow } = await supabase
+          .from("shops")
+          .select("id")
+          .eq("shopify_domain", shop)
+          .single();
+        const dbShopId = shopRow?.id;
         if (dbShopId) {
           await supabase.from("messages").delete().eq("shop_id", dbShopId);
           await supabase.from("links_sent").delete().eq("shop_id", dbShopId);
