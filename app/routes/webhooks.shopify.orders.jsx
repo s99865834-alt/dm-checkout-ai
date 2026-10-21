@@ -299,9 +299,14 @@ export const action = async ({ request }) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    // 401/400 from HMAC validation must pass through untouched so forged
+    // requests are rejected with the right status. Returning 500 here told
+    // Shopify the delivery was transient, so every unsigned POST from a bot
+    // was retried and counted against the app's webhook delivery record.
+    if (error instanceof Response) throw error;
     console.error(`[webhook] Error processing orders/create webhook:`, error);
     console.error(`[webhook] Error stack:`, error.stack);
-    
+
     // Return error response
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
