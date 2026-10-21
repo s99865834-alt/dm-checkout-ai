@@ -1126,7 +1126,19 @@ export default function Index() {
                 (comments, multi-turn, brand voice), then {PLANS.FREE.cap} DMs/month.
               </span>
             </div>
-            <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
+            {/* Connecting is the only thing a new shop needs to do, so the
+                banner that asks for it has to be able to start it. It used to
+                offer the pricing page as its only action. */}
+            <div className="srHStack" style={{ gap: "8px", flexWrap: "wrap" }}>
+              <s-button
+                variant="primary" size="slim" className="srBtnCompact"
+                onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                disabled={connectFetcher.state === "submitting"}
+              >
+                {connectFetcher.state === "submitting" ? "Connecting…" : "Connect Instagram"}
+              </s-button>
+              <s-button href="/app/billing/select" variant="secondary" size="slim">See all plans</s-button>
+            </div>
           </div>
         </s-banner>
       )}
