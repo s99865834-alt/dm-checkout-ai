@@ -16,6 +16,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getShopPrimaryDomainHost = vi.fn();
 
+// shopify.server calls shopifyApp() at module scope, which throws on an empty
+// appUrl. Locally .env supplies one, so a missing mock here passes and then
+// fails in CI, where there is no .env.
+vi.mock("../app/shopify.server", () => ({
+  default: { clients: {} },
+  sessionStorage: { loadSession: async () => null },
+}));
+
 vi.mock("../app/lib/shopify-data.server", () => ({
   getShopPrimaryDomainHost: (...a) => getShopPrimaryDomainHost(...a),
   getShopifyProductContextForReply: vi.fn(),

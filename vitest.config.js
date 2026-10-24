@@ -10,6 +10,10 @@ export default defineConfig({
     env: {
       OPENAI_API_KEY: "test-key",
       SHORT_LINK_DOMAIN: "https://short.test",
+      // shopifyApp() throws "empty appUrl" at import time without this. CI has
+      // no .env, so a test that forgets to mock shopify.server used to pass
+      // locally and fail the lint-and-build job.
+      SHOPIFY_APP_URL: "https://test.example",
       // crypto.server requires a 32-byte key at import time. Not base64, so it
       // falls through to the utf8 branch and lands on exactly 32 bytes.
       ENCRYPTION_KEY_32B: "a".repeat(32),
