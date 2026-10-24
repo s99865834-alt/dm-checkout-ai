@@ -23,6 +23,7 @@ import { handleIncomingDm, handleIncomingComment, handleNonTextDm } from "../lib
 import supabase from "../lib/supabase.server";
 import { incCounter, recordTiming } from "../lib/metrics.server";
 import logger from "../lib/logger.server";
+import { noteUnknownAccount } from "../lib/unknown-account-log.server";
 import {
   deriveAttachmentContentType,
   extractSharedMediaId,
@@ -49,6 +50,7 @@ const COMPETING_BOT_APP_IDS = (process.env.COMPETING_BOT_APP_IDS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
 
 /**
  * Is this outbound echo Instagram's own Instant Reply or Away Message?
@@ -431,7 +433,7 @@ export const action = async ({ request }) => {
 
           const shopId = await resolveShopFromEvent(null, igBusinessId);
           if (!shopId) {
-            console.warn(`[webhook] No shop for ig_business_id=${igBusinessId}, skipping`);
+            noteUnknownAccount("ig_business_id", igBusinessId);
             continue;
           }
           logger.debug(`[webhook] shop_id=${shopId}`);
@@ -899,7 +901,7 @@ export const action = async ({ request }) => {
           const shopId = await resolveShopFromEvent(entry.id, null);
           
           if (!shopId) {
-            console.warn(`[webhook] Could not resolve shop for page ${entry.id}, skipping`);
+            noteUnknownAccount("page_id", entry.id);
             continue;
           }
           
