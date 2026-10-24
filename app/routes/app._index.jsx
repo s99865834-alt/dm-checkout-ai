@@ -5,6 +5,8 @@ import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount, countTemplateEchoConversations } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
+import { generateReplyPreview } from "../lib/reply-preview.server";
+import { suggestedPreviewQuestion } from "../lib/reply-preview";
 import {
   isValidDiscountOffer,
   MIN_DISCOUNT_PERCENTAGE,
@@ -246,7 +248,11 @@ export const loader = async ({ request }) => {
     void loadHomeFeed({ shopId, admin, igBusinessId, hasIg });
   }
 
-  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage };
+  // Pre-filled question for the pre-connection preview card. Pure read off the
+  // cached store context, so it adds no API call to the loader.
+  const previewQuestion = suggestedPreviewQuestion(shop?.store_context_json);
+
+  return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage, previewQuestion };
 };
 
 export const action = async ({ request }) => {
@@ -265,6 +271,27 @@ export const action = async ({ request }) => {
       if (!shop?.id) return { error: "Shop not found" };
       await recordReviewPrompt(shop.id, formData.get("result"));
       return { success: true };
+    }
+
+    // ── Pre-connection reply preview ──────────────────────────────────────
+    // Runs the live generator against a message the merchant types, so they
+    // can see a real reply to their own catalogue before granting access to
+    // their DMs. Sends nothing: see reply-preview.server.js.
+    if (actionType === "preview-reply") {
+      if (!shop?.id) return { error: "Shop not found" };
+      const text = (formData.get("text") || "").toString().slice(0, 300);
+      if (!text.trim()) return { error: "Type a question to see the reply." };
+      try {
+        const brandVoice = await getBrandVoice(shop.id).catch(() => null);
+        const preview = await generateReplyPreview({ shop, brandVoice, text });
+        if (!preview) {
+          return { error: "Couldn't generate a reply just now. Please try again." };
+        }
+        return { success: true, actionType: "preview-reply", preview, previewAsked: text };
+      } catch (err) {
+        console.error("[home] Reply preview failed:", err);
+        return { error: "Couldn't generate a reply just now. Please try again." };
+      }
     }
 
     // ── Re-check Instagram message access (the "Check again" button) ──────
@@ -585,7 +612,7 @@ function RecheckIconButton({ onClick, checking }) {
 
 export default function Index() {
   const loaderData = useLoaderData();
-  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage } = loaderData || {};
+  const { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage, previewQuestion } = loaderData || {};
   const { hasAccess, isFree } = usePlanAccess();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -619,6 +646,7 @@ export default function Index() {
   const postFetcher = useFetcher();         // Per-post toggle, save/delete mapping
   const defaultProductFetcher = useFetcher(); // Default product picker (PRO)
   const feedFetcher = useFetcher(); // Instagram grid + product catalog
+  const previewFetcher = useFetcher(); // Pre-connection reply preview
   const feedKickoff = useRef(false);
 
   // Instagram posts + products load after hydrate. Streaming them from the
@@ -1141,6 +1169,93 @@ export default function Index() {
             </div>
           </div>
         </s-banner>
+      )}
+
+      {/* ── See it work (pre-connection) ──────────────────────────────────
+          The first thing an unconnected shop sees. Connecting grants access to
+          a merchant's customer DMs, which is a lot to ask before showing
+          anything, so this answers a question about their own catalogue first.
+          It runs the live generator, not a canned demo: a preview that flatters
+          the product would only move the disappointment later. */}
+      {!isConnected && (
+        <s-section heading="See it work">
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <span className="srCardDesc" style={{ display: "block", marginBottom: "12px" }}>
+              Ask the question a customer would ask. This is the real reply, written
+              from your live catalogue. Nothing is sent to anyone.
+            </span>
+
+            <previewFetcher.Form method="post">
+              <input type="hidden" name="action" value="preview-reply" />
+              <div className="srHStack" style={{ gap: "8px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                <s-text-field
+                  name="text"
+                  label="Customer message"
+                  labelAccessibilityVisibility="exclusive"
+                  defaultValue={previewQuestion}
+                  maxLength={300}
+                  style={{ flex: 1, minWidth: "260px" }}
+                />
+                <s-button
+                  type="submit"
+                  variant="primary"
+                  disabled={previewFetcher.state === "submitting"}
+                >
+                  {previewFetcher.state === "submitting" ? "Writing reply…" : "See the reply"}
+                </s-button>
+              </div>
+            </previewFetcher.Form>
+
+            {previewFetcher.state === "submitting" && (
+              <span className="srCardDesc" style={{ display: "block", marginTop: "12px" }}>
+                Looking up your products…
+              </span>
+            )}
+
+            {previewFetcher.data?.error && (
+              <s-banner tone="critical">
+                <s-text>{previewFetcher.data.error}</s-text>
+              </s-banner>
+            )}
+
+            {previewFetcher.data?.preview?.text && (
+              <div style={{ marginTop: "16px" }}>
+                <span className="srCardDesc" style={{ display: "block", marginBottom: "4px" }}>
+                  Customer asked
+                </span>
+                <s-box padding="base" borderWidth="base" borderRadius="base">
+                  <s-text>{previewFetcher.data.previewAsked}</s-text>
+                </s-box>
+
+                <span className="srCardDesc" style={{ display: "block", margin: "12px 0 4px" }}>
+                  Your store replied
+                </span>
+                <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+                  <s-text>{previewFetcher.data.preview.text}</s-text>
+                </s-box>
+
+                {previewFetcher.data.preview.links?.length > 0 && (
+                  <span className="srCardDesc" style={{ display: "block", marginTop: "8px" }}>
+                    That link is live. Open it and you&apos;ll land on a real checkout for
+                    the product, with the sale tracked back to the conversation.
+                  </span>
+                )}
+
+                <div style={{ marginTop: "16px" }}>
+                  <s-button
+                    variant="primary"
+                    onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
+                    disabled={connectFetcher.state === "submitting"}
+                  >
+                    {connectFetcher.state === "submitting"
+                      ? "Connecting…"
+                      : "Connect Instagram to send these for real"}
+                  </s-button>
+                </div>
+              </div>
+            )}
+          </s-box>
+        </s-section>
       )}
 
       {/* ── Plan & Instagram ───────────────────────────────────────────── */}

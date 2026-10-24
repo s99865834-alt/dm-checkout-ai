@@ -457,7 +457,7 @@ describe("links on a product question", () => {
     // id is a checkout link, a "pdp_" prefix is a product page.
     const text = sentReplyText();
     expect(text).not.toContain("pdp_");
-    expect(text).toMatch(/https:\/\/short\.test\/[A-Za-z0-9]{8}\b/);
+    expect(text).toMatch(/https:\/\/test-store\.myshopify\.com\/a\/go\/[A-Za-z0-9]{8}\b/);
   });
 
   it("sends a product page link when they asked for the page", async () => {
@@ -471,7 +471,7 @@ describe("links on a product question", () => {
     );
 
     expect(res.sent).toBe(true);
-    expect(sentReplyText()).toContain("short.test/pdp_");
+    expect(sentReplyText()).toContain("test-store.myshopify.com/a/go/pdp_");
   });
 
   it("does not log a product page link it never sent", async () => {
@@ -534,7 +534,7 @@ describe("comment reply paths", () => {
 
     expect(res.sent).toBe(true);
     // Homepage link must be converted to a tracked short link, never the raw domain.
-    expect(sentReplyText()).toContain("https://short.test/");
+    expect(sentReplyText()).toContain("https://test-store.myshopify.com/a/go/");
   });
 
   it("FREE plan outside the comment window: does not reply", async () => {
@@ -642,7 +642,7 @@ describe("comment reply paths", () => {
     const res = await handleIncomingComment(comment("😍😍"), "media-caption-2", shop, growthPlan);
 
     expect(res.sent).toBe(true);
-    expect(sentReplyText()).toContain("https://short.test/");
+    expect(sentReplyText()).toContain("https://test-store.myshopify.com/a/go/");
   });
 
   it("unmapped post whose caption names a collection: still replies with a real link", async () => {
