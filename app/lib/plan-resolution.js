@@ -33,6 +33,14 @@ export function planFromSubscription(subscription) {
   const name = (subscription.name || "").toLowerCase();
   if (name.includes("pro")) return "PRO";
   if (name.includes("growth")) return "GROWTH";
+  // Managed Pricing models the free tier as an ACTIVE subscription named
+  // "Free" rather than as the absence of one, so this arrives looking exactly
+  // like a plan we failed to recognise. Treating it as unknown meant a paid
+  // merchant who downgraded through Shopify's own pricing page kept PRO or
+  // GROWTH in shop.plan, and therefore kept paid capabilities on a $0
+  // subscription. Checked after pro/growth so "Growth free trial" still maps
+  // to GROWTH.
+  if (name.includes("free")) return "FREE";
   return null;
 }
 

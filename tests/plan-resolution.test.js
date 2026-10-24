@@ -38,8 +38,28 @@ describe("planFromSubscription", () => {
     ["growth", "GROWTH"],
     ["Growth Plan", "GROWTH"],
     ["SocialReplAI Growth", "GROWTH"],
+    // Managed Pricing represents the free tier as an ACTIVE subscription named
+    // "Free", not as the absence of one. Donna Henry's install on 23 Oct 2026
+    // carried subscription 75765973305 named "Free" with status ACTIVE.
+    ["Free", "FREE"],
+    ["free", "FREE"],
+    ["Free Plan", "FREE"],
+    ["SocialReplAI Free", "FREE"],
+    // Paid names win over the word "free" so a trial does not read as a
+    // downgrade.
+    ["Growth free trial", "GROWTH"],
+    ["Pro (first month free)", "PRO"],
   ])("maps the subscription named %s to %s", (name, expected) => {
     expect(planFromSubscription(active(name))).toBe(expected);
+  });
+
+  it("downgrades a paid shop that moved to the Free plan in Shopify", () => {
+    // The bug this covers: "Free" resolved to null, null means "leave
+    // shop.plan alone", so a merchant who downgraded through Shopify's hosted
+    // pricing page kept Pro capabilities while paying nothing. Nothing in the
+    // app writes shop.plan on that path except this function.
+    expect(planFromSubscription(active("Free"))).toBe("FREE");
+    expect(planFromSubscription(active("Free"))).not.toBeNull();
   });
 
   it("returns null rather than guessing on a name it does not recognise", () => {
