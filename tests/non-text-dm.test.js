@@ -197,7 +197,7 @@ describe("shared post DMs", () => {
     );
 
     expect(res.sent).toBe(true);
-    expect(sentText()).toContain("https://short.test/");
+    expect(sentText()).toContain("https://test-store.myshopify.com/a/go/");
     expect(incrementUsage).toHaveBeenCalledWith(shop.id, 1);
   });
 
@@ -211,7 +211,7 @@ describe("shared post DMs", () => {
     );
 
     expect(res.sent).toBe(true);
-    expect(sentText()).toContain("https://short.test/");
+    expect(sentText()).toContain("https://test-store.myshopify.com/a/go/");
   });
 
   // The default product is what Pro charges for. A Growth shop with one set
@@ -275,7 +275,7 @@ describe("story DMs", () => {
       const res = await handleNonTextDm(nonTextDm(kind), shop, proPlan);
 
       expect(res.sent).toBe(true);
-      expect(sentText()).toContain("https://short.test/");
+      expect(sentText()).toContain("https://test-store.myshopify.com/a/go/");
       expect(incrementUsage).toHaveBeenCalledWith(shop.id, 1);
     }
   );
@@ -322,7 +322,7 @@ describe("heart DMs", () => {
 
     const text = sentText();
     expect(text).not.toContain("http");
-    expect(text).not.toContain("short.test");
+    expect(text).not.toContain("/a/go/");
   });
 
   it("uses the brand tone when one is set", async () => {

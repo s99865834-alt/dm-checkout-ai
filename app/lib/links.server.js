@@ -58,23 +58,28 @@ export function getClickTrackingUrlForMessage(linkId) {
 }
 
 /**
- * The tracked URL to paste into a DM for `linkId`, preferring the merchant's
- * own storefront domain via the app proxy: https://{store-domain}/a/go/{id}.
- * On-brand ("feels like the store, not a third-party tool") and immune to
- * shortener-domain blocklists, since each link rides the merchant's own
- * domain reputation. Falls back to the shared short-link domain when the
- * store has no custom domain (myshopify.com hosts are excluded by design).
+ * The tracked URL to paste into a DM for `linkId`, always on a domain the
+ * customer recognises as the store: https://{store-domain}/a/go/{id}.
+ *
+ * Preference order:
+ *   1. The primary custom domain, when there is one.
+ *   2. The shop's own *.myshopify.com host. This used to be skipped in favour
+ *      of the shared short-link domain, which meant 21 of 38 shops sent links
+ *      on a domain their customers had never heard of. A myshopify host is
+ *      still visibly the merchant's store, Shopify mounts the app proxy on it
+ *      and 301s to the primary domain preserving the path, and it always has
+ *      valid SSL. click-redirect.server.js already resolves this host the same
+ *      way (`storefrontHost: publicHost || shop.shopify_domain`).
+ *   3. The shared short-link domain, only when we have no shop domain at all.
  *
  * @param {Object} shop - shops row (needs shopify_domain)
  * @param {string} linkId
  * @returns {Promise<string>}
  */
 export async function getTrackedLinkUrl(shop, linkId) {
-  const host = shop?.shopify_domain
-    ? await getShopPrimaryDomainHost(shop.shopify_domain)
-    : null;
-  if (host) return `https://${host}/a/go/${linkId}`;
-  return getClickTrackingUrlForMessage(linkId);
+  if (!shop?.shopify_domain) return getClickTrackingUrlForMessage(linkId);
+  const host = await getShopPrimaryDomainHost(shop.shopify_domain);
+  return `https://${host || shop.shopify_domain}/a/go/${linkId}`;
 }
 
 /** True when a URL is already one of our tracked links (either form). */
