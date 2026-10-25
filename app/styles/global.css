@@ -778,6 +778,19 @@ input[type="date"].srInput {
 .srVStack       { display: flex; flex-direction: column; gap: 12px; }
 .srVStackTight  { display: flex; flex-direction: column; gap: 4px; }
 .srHStack       { display: flex; align-items: center;   gap: 12px; flex-wrap: wrap; }
+.srBannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.srPreviewReply {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #303030;
+}
 .srHStackTight  { display: flex; align-items: center;   gap: 8px;  flex-wrap: wrap; }
 .srHStackSpread { display: flex; align-items: center;   gap: 12px; justify-content: space-between; flex-wrap: wrap; }
 
@@ -1146,6 +1159,10 @@ s-page .srIGHealthLine,
 }
 
 @media (max-width: 600px) {
+  .srBannerActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .srPlanIGRow {
     flex-direction: column;
     align-items: flex-start;

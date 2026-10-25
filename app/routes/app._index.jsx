@@ -6,7 +6,7 @@ import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, del
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount, countTemplateEchoConversations } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
 import { generateReplyPreview } from "../lib/reply-preview.server";
-import { suggestedPreviewQuestion } from "../lib/reply-preview";
+import { suggestedPreviewQuestion, splitTextWithUrls } from "../lib/reply-preview";
 import {
   isValidDiscountOffer,
   MIN_DISCOUNT_PERCENTAGE,
@@ -590,6 +590,25 @@ export const action = async ({ request }) => {
   }
 };
 
+/* Instagram makes URLs tappable in a DM. The preview is a web page, so the
+   same string has to become a real link the merchant can click. Opens in a
+   new tab so the admin iframe stays on this page. */
+function PreviewReplyBody({ text }) {
+  return (
+    <div className="srPreviewReply">
+      {splitTextWithUrls(text).map((part, i) =>
+        part.type === "url" ? (
+          <s-link key={`${part.value}-${i}`} href={part.value} target="_blank">
+            {part.value}
+          </s-link>
+        ) : (
+          <span key={i}>{part.value}</span>
+        ),
+      )}
+    </div>
+  );
+}
+
 /* Tiny refresh icon that re-probes message access; spins while the check is
    in flight. Used on the green statuses where a full button would be noisy. */
 function RecheckIconButton({ onClick, checking }) {
@@ -1145,19 +1164,16 @@ export default function Index() {
         </s-banner>
       )}
       {shop && plan && plan.name === "FREE" && shop.usage_count === 0 && !missedComments && !isConnected && !plan?.commentTrial?.granting && (
-        <s-banner tone="success">
-          <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ flex: 1 }}>
-              <span className="srTextStrong">Welcome to SocialRepl.ai!</span>
-              <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                You're on Free. Connect Instagram for a 14-day Growth demo
-                (comments, multi-turn, brand voice), then {PLANS.FREE.cap} DMs/month.
-              </span>
-            </div>
-            {/* Connecting is the only thing a new shop needs to do, so the
-                banner that asks for it has to be able to start it. It used to
-                offer the pricing page as its only action. */}
-            <div className="srHStack" style={{ gap: "8px", flexWrap: "wrap" }}>
+        <s-banner heading="Welcome to SocialRepl.ai!" tone="success">
+          {/* Heading lives in the banner slot so it stays above the buttons on
+              every width. The old side-by-side row put Connect / See all plans
+              next to the title on a phone and squeezed the copy. */}
+          <div className="srVStack">
+            <span className="srCardDesc">
+              You're on Free. Connect Instagram for a 14-day Growth demo
+              (comments, multi-turn, brand voice), then {PLANS.FREE.cap} DMs/month.
+            </span>
+            <div className="srBannerActions">
               <s-button
                 variant="primary" size="slim" className="srBtnCompact"
                 onClick={() => connectFetcher.submit({ connectType: "instagram-login" }, { method: "post" })}
@@ -1231,7 +1247,7 @@ export default function Index() {
                   Your store replied
                 </span>
                 <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-                  <s-text>{previewFetcher.data.preview.text}</s-text>
+                  <PreviewReplyBody text={previewFetcher.data.preview.text} />
                 </s-box>
 
                 {previewFetcher.data.preview.links?.length > 0 && (
