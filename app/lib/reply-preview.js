@@ -55,3 +55,40 @@ export function suggestedPreviewQuestion(storeContext) {
   if (!title) return GENERIC_QUESTION;
   return `How much is the ${title}?`;
 }
+
+// Instagram DMs show URLs as plain text and make them tappable. The preview
+// lives in a web page, so the same string has to become a real hyperlink or
+// the merchant cannot click through the demo. Trailing sentence punctuation
+// is not part of the URL: "here: https://shop.example/a/go/AbCdEf12."
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`]+/gi;
+const TRAILING_PUNCTUATION = /[.,!?;:)]+$/;
+
+/**
+ * Split reply text into plain runs and http(s) URLs, for rendering links.
+ *
+ * @param {unknown} text
+ * @returns {Array<{type: "text"|"url", value: string}>}
+ */
+export function splitTextWithUrls(text) {
+  if (typeof text !== "string" || text === "") return [];
+
+  const parts = [];
+  let lastIndex = 0;
+  const matches = text.matchAll(URL_IN_TEXT);
+  for (const match of matches) {
+    const raw = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      parts.push({ type: "text", value: text.slice(lastIndex, index) });
+    }
+    const punct = raw.match(TRAILING_PUNCTUATION)?.[0] || "";
+    const url = punct ? raw.slice(0, -punct.length) : raw;
+    if (url) parts.push({ type: "url", value: url });
+    if (punct) parts.push({ type: "text", value: punct });
+    lastIndex = index + raw.length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return parts;
+}

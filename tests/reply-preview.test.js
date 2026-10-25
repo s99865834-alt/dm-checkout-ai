@@ -9,7 +9,11 @@
  * asserted against a real cached payload.
  */
 import { describe, it, expect } from "vitest";
-import { suggestedPreviewQuestion, PREVIEW_FAILED_REASON } from "../app/lib/reply-preview";
+import {
+  suggestedPreviewQuestion,
+  splitTextWithUrls,
+  PREVIEW_FAILED_REASON,
+} from "../app/lib/reply-preview";
 
 // Exactly the shape stored for 3f24fb-2.myshopify.com on 23 Oct 2026.
 const REAL_STORE_CONTEXT = {
@@ -73,6 +77,45 @@ describe("suggestedPreviewQuestion", () => {
     expect(suggestedPreviewQuestion({ products: [{ title: "Gift Card" }] })).toBe(
       "How much is the Gift Card?",
     );
+  });
+});
+
+describe("splitTextWithUrls", () => {
+  it("returns an empty list for empty or non-string input", () => {
+    expect(splitTextWithUrls("")).toEqual([]);
+    expect(splitTextWithUrls(null)).toEqual([]);
+    expect(splitTextWithUrls(undefined)).toEqual([]);
+  });
+
+  it("keeps a reply with no URL as a single text run", () => {
+    expect(splitTextWithUrls("It's $42.")).toEqual([{ type: "text", value: "It's $42." }]);
+  });
+
+  it("splits a tracked checkout URL out so the preview can hyperlink it", () => {
+    expect(
+      splitTextWithUrls("It's $42. Checkout: https://donnahenry.co.uk/a/go/AbCdEf12"),
+    ).toEqual([
+      { type: "text", value: "It's $42. Checkout: " },
+      { type: "url", value: "https://donnahenry.co.uk/a/go/AbCdEf12" },
+    ]);
+  });
+
+  it("does not swallow the period at the end of a sentence", () => {
+    expect(splitTextWithUrls("Here: https://shop.example/a/go/AbCdEf12.")).toEqual([
+      { type: "text", value: "Here: " },
+      { type: "url", value: "https://shop.example/a/go/AbCdEf12" },
+      { type: "text", value: "." },
+    ]);
+  });
+
+  it("keeps two URLs as separate link runs", () => {
+    const parts = splitTextWithUrls(
+      "This one https://a.example/a/go/aaaaaaaa or https://b.example/a/go/bbbbbbbb",
+    );
+    expect(parts.filter((p) => p.type === "url").map((p) => p.value)).toEqual([
+      "https://a.example/a/go/aaaaaaaa",
+      "https://b.example/a/go/bbbbbbbb",
+    ]);
   });
 });
 
