@@ -14,6 +14,20 @@ export const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token
 const INSTAGRAM_GRAPH_VERSION = process.env.META_INSTAGRAM_API_VERSION || "v24.0";
 export const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
 
+// Graph/token calls used to hang until Node's default fetch timeout. A hung
+// refresh on the home loader sat on first paint for tens of seconds and
+// failed Built for Shopify LCP. Keep retries, but never wait more than this
+// per attempt. Callers that must stay on the critical path should not be
+// hitting Meta at all.
+const META_FETCH_TIMEOUT_MS = 8000;
+
+function metaFetch(url, init = {}) {
+  return fetch(url, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(META_FETCH_TIMEOUT_MS),
+  });
+}
+
 /**
  * Save Meta authentication data for a shop
  */
@@ -217,7 +231,7 @@ export async function refreshMetaToken(shopId) {
 
   logger.debug("[meta] Refreshing Meta (Facebook) access token");
 
-  const response = await fetch(
+  const response = await metaFetch(
     `${META_API_BASE}/oauth/access_token?` +
       `grant_type=fb_exchange_token&` +
       `client_id=${META_APP_ID}&` +
@@ -267,7 +281,7 @@ async function refreshInstagramLoginToken(shopId, auth) {
   const url = `${INSTAGRAM_GRAPH_BASE}/refresh_access_token?` +
     `grant_type=ig_refresh_token&` +
     `access_token=${auth.page_access_token}`;
-  const response = await fetch(url);
+  const response = await metaFetch(url);
   const data = await response.json();
 
   if (data.error) {
@@ -325,7 +339,7 @@ export async function metaGraphAPIInstagram(endpoint, accessToken, options = {})
     ...options.headers,
   };
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(fullUrl, {
+    const res = await metaFetch(fullUrl, {
       method: options.method || "GET",
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -888,7 +902,7 @@ export async function processManualToken(shopId, userAccessToken) {
     `client_secret=${META_APP_SECRET}&` +
     `fb_exchange_token=${cleanToken}`;
 
-  const longLivedResponse = await fetch(longLivedTokenUrl);
+  const longLivedResponse = await metaFetch(longLivedTokenUrl);
   const longLivedData = await longLivedResponse.json();
 
   if (longLivedData.error) {
@@ -959,7 +973,7 @@ export async function metaGraphAPI(endpoint, accessToken, options = {}) {
   logger.debug(`[meta] Making API request to: ${fullUrl.replace(accessToken, '***TOKEN***')}`);
 
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(fullUrl, {
+    const response = await metaFetch(fullUrl, {
       method: options.method || "GET",
       headers: {
         "Content-Type": "application/json",
@@ -1053,7 +1067,7 @@ export async function checkWebhookStatus(shopId, pageId) {
 
     const checkUrl = `https://graph.facebook.com/${META_API_VERSION}/${pageId}/subscribed_apps`;
     
-    const response = await fetch(`${checkUrl}?access_token=${auth.page_access_token}`);
+    const response = await metaFetch(`${checkUrl}?access_token=${auth.page_access_token}`);
     const result = await response.json();
     
     if (result.error) {
@@ -1093,7 +1107,7 @@ export async function subscribeToWebhooks(shopId, pageId, _igBusinessId) {
     // This subscribes to messages and comments for Instagram
     const subscribeUrl = `https://graph.facebook.com/${META_API_VERSION}/${pageId}/subscribed_apps`;
     
-    const response = await fetch(subscribeUrl, {
+    const response = await metaFetch(subscribeUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -4,8 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { getAttributionRecords, getMessages, getMessageCount, getAnalytics, getProAnalytics, getProductMappings, getMissedOpportunityComments } from "../lib/db.server";
-import { getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
-import { cached } from "../lib/loader-cache.server";
+import { getMetaAuth, getMetaAuthWithRefresh, getInstagramMediaByIds } from "../lib/meta.server";
+import { cached, peekCached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
 import { PLANS } from "../lib/plans";
 
@@ -50,17 +50,21 @@ export const loader = async ({ request }) => {
   const proContextPromise = (async () => {
     if (plan?.name !== "PRO") return { mediaPosts: [], productMappings: [] };
     const [metaAuth, productMappings] = await Promise.all([
-      getMetaAuthWithRefresh(shop.id).catch(() => null),
+      getMetaAuth(shop.id).catch(() => null),
       getProductMappings(shop.id).catch(() => []).then((m) => m || []),
     ]);
+    if (shop.id) void getMetaAuthWithRefresh(shop.id).catch(() => null);
     let mediaPosts = [];
     if (metaAuth && productMappings.length > 0) {
       const mediaIds = [...new Set(productMappings.map((m) => m.ig_media_id).filter(Boolean))].sort();
-      mediaPosts = await cached(
-        `igmediaids:${shop.id}:${mediaIds.join(",")}`,
-        IG_MEDIA_TTL_MS,
-        () => getInstagramMediaByIds(shop.id, mediaIds),
-      ).catch(() => []);
+      const cacheKey = `igmediaids:${shop.id}:${mediaIds.join(",")}`;
+      const warm = peekCached(cacheKey);
+      if (warm !== undefined) {
+        mediaPosts = warm;
+      } else {
+        cached(cacheKey, IG_MEDIA_TTL_MS, () => getInstagramMediaByIds(shop.id, mediaIds)).catch(() => []);
+        mediaPosts = [];
+      }
     }
     return { mediaPosts, productMappings };
   })();

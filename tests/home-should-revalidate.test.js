@@ -16,6 +16,7 @@ describe("home shouldRevalidate", () => {
       "load-more-media",
       "search-products",
       "check-message-access",
+      "load-trial-status",
       "record-review-prompt",
     ]) {
       expect(shouldRevalidate({ formData: formDataWith(action), defaultShouldRevalidate: true })).toBe(false);

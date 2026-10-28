@@ -7,8 +7,8 @@ import { addDocumentResponseHeaders } from "./shopify.server";
 import { startScheduler } from "./lib/scheduler.server";
 
 // How long deferred loader data may keep streaming after the shell is sent.
-// The home page streams Instagram media + the product catalog; give slow
-// Instagram API responses headroom before the stream is aborted.
+// Home and analytics no longer defer Meta or catalog on the first paint.
+// Keep a bound so a leftover deferred route cannot hang the renderer.
 export const streamTimeout = 10000;
 
 // Start the in-process scheduler exactly once when the server module loads.
