@@ -4,7 +4,6 @@
  */
 
 import { unauthenticated } from "../shopify.server";
-import { markShopUninstalled } from "./db.server";
 import { cached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { expandSizeAliases } from "./variant-match";
@@ -46,17 +45,27 @@ function isExpectedAdminApiMiss(error) {
   return isStoreFrozenError(error) || isShopNotFoundError(error);
 }
 
+// A shop whose refresh failed is skipped for a while instead of retried and
+// logged on every revenue tick. Memory only: this path must never write.
+const ADMIN_CLIENT_BACKOFF_MS = 6 * 60 * 60 * 1000;
+const _adminClientBackoff = new Map(); // shopDomain -> until (ms)
+
 /**
  * Admin GraphQL client for a shop's stored offline session, or null when the
- * shop has no usable session. When Shopify reports the token as revoked
- * (uninstall that our app/uninstalled webhook missed), the shop is marked
- * inactive so it drops off the admin dashboard and stops being retried.
+ * shop has no usable session.
+ *
+ * Never marks a shop uninstalled or deletes its session. A failed refresh is
+ * not proof of an uninstall: installed shops return the same HTTP 500. Only
+ * the app/uninstalled webhook may do that.
  */
 async function getAdminClient(shopDomain) {
   if (!shopDomain) return null;
   if (isShopifyAutomatedReviewShop(shopDomain)) return null;
+  const backoffUntil = _adminClientBackoff.get(shopDomain);
+  if (backoffUntil && backoffUntil > Date.now()) return null;
   try {
     const { admin } = await unauthenticated.admin(shopDomain);
+    _adminClientBackoff.delete(shopDomain);
     return admin;
   } catch (error) {
     if (error?.constructor?.name === "SessionNotFoundError") {
@@ -67,20 +76,15 @@ async function getAdminClient(shopDomain) {
       logger.debug(`[shopify-data] admin client skipped for ${shopDomain}: ${error?.message || error}`);
       return null;
     }
-    if (isTokenRevokedError(error)) {
-      console.warn(
-        `[shopify-data] token revoked for ${shopDomain} (app uninstalled); marking shop inactive`,
-      );
-      await markShopUninstalled(shopDomain).catch((e) =>
-        console.error(`[shopify-data] failed to mark ${shopDomain} inactive:`, e?.message || e),
-      );
-      return null;
-    }
-    const detail =
-      error instanceof Response
+    const detail = isTokenRevokedError(error)
+      ? "refresh token rejected"
+      : error instanceof Response
         ? `HTTP ${error.status}`
         : error?.message || String(error);
-    console.error(`[shopify-data] admin client unavailable for ${shopDomain}: ${detail}`);
+    console.warn(
+      `[shopify-data] admin client unavailable for ${shopDomain}: ${detail}; skipping for 6h`,
+    );
+    _adminClientBackoff.set(shopDomain, Date.now() + ADMIN_CLIENT_BACKOFF_MS);
     return null;
   }
 }

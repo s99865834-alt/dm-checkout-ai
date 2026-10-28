@@ -23,6 +23,8 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import logger from "./logger.server";
 
+const SESSION_DELETE_TOPICS = new Set(["app/uninstalled", "shop/redact"]);
+
 function isRevokedTokenFailure(thrown) {
   // Bare 500 Response: thrown only by the library's refresh-token helper in
   // the webhook path (HMAC failures are 401/400 and happen earlier).
@@ -63,12 +65,15 @@ export async function authenticateWebhookTolerant(request) {
       `[webhook-auth] Token refresh failed for ${shop} (tokens revoked — expected post-uninstall); proceeding with header context`
     );
 
-    // The stored tokens are dead weight and every future webhook would trip
-    // over refreshing them — remove the session rows now.
-    try {
-      await db.session.deleteMany({ where: { shop } });
-    } catch (e) {
-      console.error(`[webhook-auth] Failed deleting dead sessions for ${shop}:`, e?.message);
+    // Only an uninstall or shop redaction proves the tokens are dead. Any
+    // other topic (orders/create and so on) arrives from installed shops, and
+    // a refresh hiccup there must not cost the merchant their session.
+    if (SESSION_DELETE_TOPICS.has(topicHeader.toLowerCase())) {
+      try {
+        await db.session.deleteMany({ where: { shop } });
+      } catch (e) {
+        console.error(`[webhook-auth] Failed deleting dead sessions for ${shop}:`, e?.message);
+      }
     }
 
     let payload = null;
