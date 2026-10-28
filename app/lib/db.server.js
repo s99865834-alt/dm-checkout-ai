@@ -2473,6 +2473,8 @@ export async function getProAnalytics(shopId, options = {}) {
  * (one Shopify session per store). Page in SQL, never in JS.
  */
 
+const COMPED_AFTER_MS = 365 * 24 * 60 * 60 * 1000;
+
 function merchantShopsQuery(select, { count = undefined, head = false } = {}) {
   return supabase
     .from("shops")
@@ -2504,7 +2506,9 @@ async function getAdminPlanCounts() {
   const { count: trialing, error: trialError } = await merchantShopsQuery("id", {
     count: "exact",
     head: true,
-  }).gt("beta_trial_expires_at", new Date().toISOString());
+  })
+    .gt("beta_trial_expires_at", new Date().toISOString())
+    .lte("beta_trial_expires_at", new Date(Date.now() + COMPED_AFTER_MS).toISOString());
   if (trialError) {
     console.error("getAdminPlanCounts trial error", trialError);
   }
@@ -2792,6 +2796,8 @@ async function buildAdminStoresResult(shops) {
         betaTrial = {
           daysLeft: Math.ceil(msLeft / (24 * 60 * 60 * 1000)),
           expiresAt: s.beta_trial_expires_at,
+          // Expiry set years out (e.g. 2099) is a free account, not a trial.
+          comped: msLeft > COMPED_AFTER_MS,
         };
       }
     }
