@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useFetcher, useSearchParams, useNavigate, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
+import { getMetaAuth, getMetaAuthWithRefresh, getInstagramAccountInfo, getInstagramMedia, deleteMetaAuth, ensureInstagramWebhookSubscription, checkInstagramMessageAccess } from "../lib/meta.server";
 import { getSettings, updateSettings, updateFeaturedProduct, getBrandVoice, updateBrandVoice, getProductMappings, saveProductMapping, deleteProductMapping, getMissedCommentCount, getAttributedRevenueThisMonth, getAttributionCount, shopHasLinkClick, getLastInboundMessageAt, recordReviewPrompt, getCompetingToolStatus, getStoryMessageCount, getRecentCommentCount, countTemplateEchoConversations } from "../lib/db.server";
 import { getCurrentSubscription, getTrialStatus, applySubscriptionToShopPlan } from "../lib/billing.server";
 import { generateReplyPreview } from "../lib/reply-preview.server";
@@ -130,7 +130,11 @@ export const loader = async ({ request }) => {
     let recentComments = 0;
     [metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, attributionCount, hasLinkClick, lastInboundMessageAt, messageAccess, competingTool, storyMessages, recentComments, awayMessage] =
       await Promise.all([
-        getMetaAuthWithRefresh(shop.id),
+        // DB only. Token refresh talks to Meta and used to sit on the
+        // critical path, so a hung Graph call held the first paint for tens
+        // of seconds and blew LCP. The row still tells us whether Instagram
+        // is connected. Refresh in the background after we return.
+        getMetaAuth(shop.id),
         getSettings(shop.id),
         getBrandVoice(shop.id),
         getProductMappings(shop.id).catch(() => []),
@@ -144,8 +148,9 @@ export const loader = async ({ request }) => {
           ? getAttributedRevenueThisMonth(shop.id).catch(() => ({ total: 0, currency: "USD" }))
           : Promise.resolve({ total: 0, currency: "USD" }),
         // Free-trial countdown for the banner. Failure-safe and cached: a
-        // billing API hiccup should never block the dashboard, and the Shopify
-        // call only runs once per TTL instead of on every page load.
+        // billing API hiccup should never block the dashboard. Serve a warm
+        // value if we have one; on a miss ship null and refresh in the
+        // background so Shopify billing cannot hold LCP.
         //
         // The same subscription reconciles shop.plan, which is the safety net
         // behind the app_subscriptions/update webhook: a missed delivery would
@@ -153,20 +158,24 @@ export const loader = async ({ request }) => {
         // Free of extra cost because this fetch already has to happen, and
         // scoped to non-Free shops, which are exactly the ones that can be
         // stale in the direction that costs money.
-        plan?.name !== "FREE"
-          ? cached(`trial:${shop.id}`, TRIAL_TTL_MS, async () => {
-              try {
-                const subscription = await getCurrentSubscription(admin);
-                await applySubscriptionToShopPlan(shop, subscription).catch((err) =>
-                  console.error("[home] Error reconciling plan:", err.message),
-                );
-                return getTrialStatus(subscription);
-              } catch (err) {
-                console.error("[home] Error fetching trial status:", err.message);
-                return null;
-              }
-            })
-          : Promise.resolve(null),
+        (() => {
+          if (plan?.name === "FREE") return Promise.resolve(null);
+          const warm = peekCached(`trial:${shop.id}`);
+          if (warm !== undefined) return Promise.resolve(warm);
+          cached(`trial:${shop.id}`, TRIAL_TTL_MS, async () => {
+            try {
+              const subscription = await getCurrentSubscription(admin);
+              await applySubscriptionToShopPlan(shop, subscription).catch((err) =>
+                console.error("[home] Error reconciling plan:", err.message),
+              );
+              return getTrialStatus(subscription);
+            } catch (err) {
+              console.error("[home] Error fetching trial status:", err.message);
+              return null;
+            }
+          }).catch(() => null);
+          return Promise.resolve(null);
+        })(),
         // Review-prompt eligibility: first attributed order OR 20+ sent replies.
         getAttributionCount(shop.id),
         shopHasLinkClick(shop.id),
@@ -242,6 +251,7 @@ export const loader = async ({ request }) => {
       cached(`igsub:${shopId}`, IG_SUBSCRIBE_TTL_MS, () =>
         ensureInstagramWebhookSubscription(shopId),
       ).catch(() => null);
+      void getMetaAuthWithRefresh(shopId).catch(() => null);
     }
     // Warm the feed cache while the shell ships. Same keys the client
     // load-home-feed action reads, so the grid usually hits cache.
@@ -302,6 +312,29 @@ export const action = async ({ request }) => {
         checkInstagramMessageAccess(shop.id),
       ).catch(() => "unknown");
       return { success: true, actionType: "check-message-access", messageAccess };
+    }
+
+    // Cold home load skips Shopify billing so LCP can paint. The banner still
+    // has to show: this action reads the same cache the loader warms, so it
+    // is usually a memory hit by the time the client asks.
+    if (actionType === "load-trial-status") {
+      if (plan?.name === "FREE") {
+        return { success: true, actionType: "load-trial-status", trialStatus: null };
+      }
+      if (!shop?.id) return { error: "Shop not found" };
+      const trialStatus = await cached(`trial:${shop.id}`, TRIAL_TTL_MS, async () => {
+        try {
+          const subscription = await getCurrentSubscription(admin);
+          await applySubscriptionToShopPlan(shop, subscription).catch((err) =>
+            console.error("[home] Error reconciling plan:", err.message),
+          );
+          return getTrialStatus(subscription);
+        } catch (err) {
+          console.error("[home] Error fetching trial status:", err.message);
+          return null;
+        }
+      });
+      return { success: true, actionType: "load-trial-status", trialStatus };
     }
 
     // ── Disconnect Instagram ───────────────────────────────────────────────
@@ -659,6 +692,19 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageAccessUi, accessFetcher.state, accessFetcher.data]);
 
+  const trialFetcher = useFetcher();
+  const trialStatusUi =
+    trialFetcher.data?.actionType === "load-trial-status"
+      ? trialFetcher.data.trialStatus
+      : trialStatus;
+  useEffect(() => {
+    if (plan?.name === "FREE") return;
+    if (trialStatus) return;
+    if (trialFetcher.state !== "idle" || trialFetcher.data) return;
+    trialFetcher.submit({ action: "load-trial-status" }, { method: "post" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan?.name, trialStatus, trialFetcher.state, trialFetcher.data]);
+
   // Separate fetchers so actions don't conflict
   const connectFetcher = useFetcher();      // OAuth connect / disconnect
   const automationFetcher = useFetcher();   // Automation settings + brand voice
@@ -916,15 +962,15 @@ export default function Index() {
           </s-text>
         </s-banner>
       )}
-      {trialStatus && (
-        <s-banner tone={trialStatus.daysLeft <= 3 ? "warning" : "success"}>
+      {trialStatusUi && (
+        <s-banner tone={trialStatusUi.daysLeft <= 3 ? "warning" : "success"}>
           <s-text variant="strong">
-            {plan?.name === "GROWTH" ? "Growth" : "Pro"} free trial: {trialStatus.daysLeft}{" "}
-            {trialStatus.daysLeft === 1 ? "day" : "days"} left
+            {plan?.name === "GROWTH" ? "Growth" : "Pro"} free trial: {trialStatusUi.daysLeft}{" "}
+            {trialStatusUi.daysLeft === 1 ? "day" : "days"} left
           </s-text>
           <s-text>
-            {" "}You have full access — billing starts{" "}
-            {new Date(trialStatus.trialEndsAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
+            {" "}You have full access. Billing starts{" "}
+            {new Date(trialStatusUi.trialEndsAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.
           </s-text>
         </s-banner>
       )}

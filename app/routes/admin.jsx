@@ -154,7 +154,11 @@ export const loader = async ({ request }) => {
       const trial = managedTrial
         ? { ...managedTrial, source: "managed" }
         : s.beta_trial
-          ? { daysLeft: s.beta_trial.daysLeft, trialEndsAt: s.beta_trial.expiresAt, source: "beta" }
+          ? {
+              daysLeft: s.beta_trial.daysLeft,
+              trialEndsAt: s.beta_trial.expiresAt,
+              source: s.beta_trial.comped ? "comped" : "beta",
+            }
           : null;
       return { ...s, trial };
     });
@@ -675,6 +679,7 @@ export default function Admin() {
                     <StoreCell row={row} />
                   </td>
                   <td style={styles.td}>
+                    <div style={styles.badgeRow}>
                     <span style={planBadgeStyle(row.plan)}>{formatPlan(row.plan)}</span>
                     <CommentWindowBadge row={row} />
                     {/* Whether this merchant is running checkout discounts.
@@ -692,7 +697,11 @@ export default function Admin() {
                         )}
                       </span>
                     )}
-                    {row.trial && (
+                    {row.trial?.source === "comped" ? (
+                      <span style={styles.compedBadge} title="Free Pro access granted by us, no end date">
+                        Comped
+                      </span>
+                    ) : row.trial ? (
                       <span
                         style={styles.trialBadge}
                         title={
@@ -704,7 +713,8 @@ export default function Admin() {
                       >
                         Trial · {row.trial.daysLeft}d
                       </span>
-                    )}
+                    ) : null}
+                    </div>
                   </td>
                   <td style={styles.td}>
                     {row.instagram_username ? (
@@ -1213,6 +1223,23 @@ const styles = {
     fontSize: "0.8125rem",
     color: "#64748b",
     fontStyle: "italic",
+    whiteSpace: "nowrap",
+  },
+  badgeRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "0.35rem",
+  },
+  compedBadge: {
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#1e293b",
+    border: "1px solid #6d28d9",
+    borderRadius: "4px",
+    color: "#c4b5fd",
+    whiteSpace: "nowrap",
   },
   badge: {
     marginLeft: "0.5rem",
@@ -1223,7 +1250,6 @@ const styles = {
     color: "#94a3b8",
   },
   trialBadge: {
-    marginLeft: "0.5rem",
     fontSize: "0.7rem",
     fontWeight: 600,
     padding: "0.15rem 0.4rem",

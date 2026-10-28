@@ -6,6 +6,7 @@ const HOME_FEED_ACTIONS_NO_REVALIDATE = new Set([
   "load-more-media",
   "search-products",
   "check-message-access",
+  "load-trial-status",
   "record-review-prompt",
 ]);
 
