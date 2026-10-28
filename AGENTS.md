@@ -65,6 +65,23 @@ So before calling any feature done:
 - **Say what you did not verify.** "Tests pass" and "I watched it work on a
   real store" are different claims. Don't let one stand in for the other.
 
+## Destructive writes to merchant state
+
+On 2026-10-28 a fix for log noise treated "HTTP 500 on token refresh" as an
+uninstall. Installed shops return that too. The revenue job, which visits every
+active shop every 10 minutes, deactivated 34 live stores, forced them to Free,
+and deleted their Shopify sessions within an hour of deploy. Their Instagram
+replies stopped.
+
+- **Only Shopify's app/uninstalled webhook may deactivate a shop or delete its
+ sessions.** An error code is a guess, not a signal.
+ `tests/uninstall-guardrail.test.js` enforces this; do not widen its allowlist.
+- **Before any change that writes to `shops`, `Session`, plans, or billing
+ state from a background job or loop, query production for how many live
+ rows it would touch, and show Stephan the number before committing.**
+- To quiet noise, log once and back off in memory. Never "clean up" rows to
+ make a log line stop.
+
 ## Don't drop tracked work
 
 When the todo list gets replaced for a new task, pending items from the old one
