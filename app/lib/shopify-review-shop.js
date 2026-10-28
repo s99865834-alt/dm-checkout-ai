@@ -44,3 +44,23 @@ export function isShopNotFoundError(error) {
   const msg = String(error.message || "");
   return /GraphQL Client: Not Found/i.test(msg) || /404\s+Not Found/i.test(msg);
 }
+
+/**
+ * Offline-token refresh failed because Shopify revoked the tokens.
+ *
+ * That happens on uninstall: Shopify kills the access token and the refresh
+ * token, then our code still has a Session row and tries to use it. The
+ * library throws a bare HTTP 500 Response for most of those refreshes, or
+ * 400 invalid_subject_token when it surfaces the API body. Same signal the
+ * webhook path already treats as "shop is gone".
+ */
+export function isRevokedOfflineTokenError(error) {
+  if (!error) return false;
+  if (typeof Response !== "undefined" && error instanceof Response) {
+    return error.status === 500;
+  }
+  return (
+    error?.response?.code === 400 &&
+    error?.response?.body?.error === "invalid_subject_token"
+  );
+}
