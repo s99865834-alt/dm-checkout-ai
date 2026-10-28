@@ -3,6 +3,7 @@ import {
   isShopifyAutomatedReviewShop,
   excludeAutomatedReviewShops,
   isMalformedShopifyHostError,
+  isRevokedOfflineTokenError,
   isShopNotFoundError,
 } from "../app/lib/shopify-review-shop";
 
@@ -55,6 +56,24 @@ describe("isMalformedShopifyHostError", () => {
     expect(isMalformedShopifyHostError(new Response("nope", { status: 401 }))).toBe(false);
     expect(isMalformedShopifyHostError(new Error("shop not found"))).toBe(false);
     expect(isMalformedShopifyHostError(null)).toBe(false);
+  });
+});
+
+describe("isRevokedOfflineTokenError", () => {
+  it("matches the bare 500 the library throws when refresh is revoked", () => {
+    expect(isRevokedOfflineTokenError(new Response("refresh failed", { status: 500 }))).toBe(true);
+    expect(isRevokedOfflineTokenError(new Response("nope", { status: 401 }))).toBe(false);
+  });
+
+  it("matches invalid_subject_token from the token endpoint", () => {
+    expect(
+      isRevokedOfflineTokenError({
+        response: { code: 400, body: { error: "invalid_subject_token" } },
+      }),
+    ).toBe(true);
+    expect(isRevokedOfflineTokenError({ response: { code: 400, body: { error: "invalid_grant" } } })).toBe(
+      false,
+    );
   });
 });
 
