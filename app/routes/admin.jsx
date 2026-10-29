@@ -17,6 +17,7 @@ import { getStoreManagedTrial, peekStoreManagedTrial } from "../lib/shopify-data
 import { cached, peekCached } from "../lib/loader-cache.server";
 import { describeOffer } from "../lib/discount-rules";
 import { mapWithConcurrency } from "../lib/concurrency";
+import { getRecentBrokenLinks } from "../lib/link-health.server";
 
 // Re-assert each connected account's Instagram webhook subscription at most
 // once a day (see ensureInstagramWebhookSubscription for why this matters).
@@ -165,6 +166,7 @@ export const loader = async ({ request }) => {
 
     const queueOverview = await getOutboundQueueOverview({ shopId, status });
     const queueItems = await getOutboundQueueItems({ shopId, status, limit: 50 });
+    const brokenLinks = await getRecentBrokenLinks({ days: 7 });
     return data(
       {
         authenticated: true,
@@ -177,6 +179,7 @@ export const loader = async ({ request }) => {
         queueOverview,
         queueItems,
         queueFilters: { shopId, status },
+        brokenLinks,
       },
       { headers: sessionHeaders },
     );
@@ -498,6 +501,7 @@ export default function Admin() {
     queueOverview,
     queueItems,
     queueFilters,
+    brokenLinks,
     error: loaderError,
   } = useLoaderData() ?? {};
   const actionData = useActionData();
@@ -808,6 +812,48 @@ export default function Admin() {
           )}
         </div>
       )}
+
+      <div style={styles.sectionHeader}>
+        <h2 style={styles.sectionTitle}>Broken links (last 7 days)</h2>
+      </div>
+      <div style={styles.tableWrap} className="adminTableWrap">
+        <table style={styles.table} className="adminTable">
+          <thead>
+            <tr>
+              <th style={styles.th}>Found</th>
+              <th style={styles.th}>Shop</th>
+              <th style={styles.th}>Why</th>
+              <th style={styles.th}>Destination</th>
+              <th style={styles.th}>Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            {brokenLinks && brokenLinks.length > 0 ? (
+              brokenLinks.map((row) => (
+                <tr key={row.id}>
+                  <td style={styles.td}>{new Date(row.created_at).toLocaleString()}</td>
+                  <td style={styles.td}>
+                    <span style={styles.domain} title={row.shops?.shopify_domain || ""}>
+                      {storeNameById.get(row.shop_id) || row.shops?.shopify_domain || row.shop_id}
+                    </span>
+                  </td>
+                  <td style={styles.td}>{row.context?.reason || "unknown"}</td>
+                  <td style={styles.td} title={row.context?.url || ""}>
+                    {(row.context?.url || "").split("?")[0].replace(/^https?:\/\//, "").slice(0, 60)}
+                  </td>
+                  <td style={styles.td}>{row.context?.link_id || ""}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} style={styles.tdEmpty}>
+                  No broken links found. Sent links are re-checked every 6 hours.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div style={styles.sectionHeader}>
         <h2 style={styles.sectionTitle}>DM Queue</h2>

@@ -25,6 +25,11 @@ const DISCOUNT_POOLS_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
 // stored figures instead of racing a per-page-load budget, which used to
 // leave most shops blank and a different set of them blank on each refresh.
 const STORE_REVENUE_INTERVAL_MS = 10 * 60 * 1000;  // every 10 minutes
+// Sent-link health: re-check the last day of links for ones that stopped
+// opening (product deleted, sold out, page gone). First pass waits so a burst
+// of deploys does not run it on every boot.
+const LINK_HEALTH_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
+const LINK_HEALTH_FIRST_RUN_MS = 15 * 60 * 1000;
 const STARTUP_DELAY_MS = 10 * 1000;              // wait 10s after boot
 
 let started = false;
@@ -89,6 +94,16 @@ async function tickStoreRevenue() {
   }
 }
 
+async function tickLinkHealth() {
+  try {
+    const { runSentLinkCheck } = await import("./link-health.server");
+    const result = await runSentLinkCheck();
+    if (result?.broken > 0) logger.debug("[scheduler] link-health tick", result);
+  } catch (err) {
+    console.error("[scheduler] link-health tick error:", err?.message || err);
+  }
+}
+
 /**
  * Start the in-process scheduler. Idempotent — calling twice is a no-op.
  * Returns false if scheduling is disabled by environment.
@@ -121,6 +136,10 @@ export function startScheduler() {
     setInterval(tickDiscountPools, DISCOUNT_POOLS_INTERVAL_MS);
     setInterval(tickStoreRevenue, STORE_REVENUE_INTERVAL_MS);
   }, STARTUP_DELAY_MS);
+  setTimeout(() => {
+    tickLinkHealth();
+    setInterval(tickLinkHealth, LINK_HEALTH_INTERVAL_MS);
+  }, LINK_HEALTH_FIRST_RUN_MS);
 
   return true;
 }

@@ -465,6 +465,16 @@ export async function generateAgentReply({
         const shortUrl = await getTrackedLinkUrl(shop, link.linkId);
         linksCreated.push({ productId: gid, variantId: variantGid, url: link.url, linkId: link.linkId });
         allowedUrls.add(shortUrl);
+        if (link.fallback) {
+          return {
+            link_url: shortUrl,
+            note: link.fallback === "browse"
+              ? "This product is no longer available, so this link opens the store's full catalog. Paste it exactly as-is, say this item isn't available right now, and invite them to browse. Do not call it a checkout link."
+              : link.fallbackReason === "sold_out" || link.fallbackReason === "variant_sold_out"
+                ? "This item is sold out right now, so this link opens its product page instead of checkout. Paste it exactly as-is and say plainly that it's sold out at the moment. Do not call it a checkout link."
+                : "This link opens the product page, where they can pick an option and buy. Paste it exactly as-is and call it the product page.",
+          };
+        }
         return {
           checkout_url: shortUrl,
           note: "Paste this URL into your reply exactly as-is.",

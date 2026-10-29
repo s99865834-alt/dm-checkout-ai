@@ -694,6 +694,93 @@ export async function getShopifyProductContextForReply(shopDomain, productId) {
   }
 }
 
+// Product availability for links, checked before each send. Short TTL: a
+// merchant who restocks or republishes should see links recover within minutes.
+const PRODUCT_LINK_TTL_MS = 5 * 60 * 1000;
+// A reply must never wait long on this. Past the budget the answer is
+// "unknown" and the link goes out as it always has.
+const PRODUCT_LINK_BUDGET_MS = 2500;
+const _productLinkCache = new Map(); // `${shopDomain}|${numericProductId}` -> { node, at }
+
+const PRODUCT_LINK_STATUS_QUERY = `query ProductLinkStatus($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Product {
+      id
+      handle
+      status
+      onlineStoreUrl
+      variants(first: 100) {
+        nodes {
+          id
+          availableForSale
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * Admin `Product` nodes for link checks, keyed by numeric product id. A
+ * deleted product maps to null. Returns null when we cannot tell (no session,
+ * API error, too slow), and callers must then behave as if nothing were known.
+ *
+ * @param {string} shopDomain
+ * @param {string[]} productIds - gids or numeric ids
+ * @param {{ admin?: object }} [opts] - an embedded request's admin client, if the caller has one
+ * @returns {Promise<Map<string, object|null>|null>}
+ */
+export async function getProductLinkNodes(shopDomain, productIds, { admin = null } = {}) {
+  if (!shopDomain || !Array.isArray(productIds)) return null;
+  const ids = [...new Set(productIds.map((id) => String(id ?? "").match(/(\d+)$/)?.[1]).filter(Boolean))];
+  const result = new Map();
+  const missing = [];
+  for (const id of ids) {
+    const hit = _productLinkCache.get(`${shopDomain}|${id}`);
+    if (hit && Date.now() - hit.at < PRODUCT_LINK_TTL_MS) result.set(id, hit.node);
+    else missing.push(id);
+  }
+  if (missing.length === 0) return result;
+
+  const lookup = async () => {
+    const client = admin || (await getAdminClient(shopDomain));
+    if (!client) return null;
+    const fetched = new Map();
+    for (let i = 0; i < missing.length; i += 100) {
+      const chunk = missing.slice(i, i + 100);
+      const response = await shopGraphql(client, PRODUCT_LINK_STATUS_QUERY, {
+        ids: chunk.map((id) => `gid://shopify/Product/${id}`),
+      });
+      const nodes = response?.data?.nodes;
+      if (!Array.isArray(nodes)) return null;
+      chunk.forEach((id, idx) => fetched.set(id, nodes[idx]?.id ? nodes[idx] : null));
+    }
+    return fetched;
+  };
+
+  // Caught here rather than around the race, so a lookup that loses the race
+  // and fails later cannot surface as an unhandled rejection.
+  const pending = lookup().catch((error) => {
+    if (!isExpectedAdminApiMiss(error)) {
+      logger.debug(`[shopify-data] product link check failed for ${shopDomain}: ${error?.message || error}`);
+    }
+    return null;
+  });
+  let timer;
+  const fetched = await Promise.race([
+    pending,
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), PRODUCT_LINK_BUDGET_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!fetched) return null;
+  for (const [id, node] of fetched) {
+    _productLinkCache.set(`${shopDomain}|${id}`, { node, at: Date.now() });
+    result.set(id, node);
+  }
+  return result;
+}
+
 /**
  * Title + featured image for DM link previews. Kept tiny so Instagram's
  * crawler is not waiting on the full product-context query.

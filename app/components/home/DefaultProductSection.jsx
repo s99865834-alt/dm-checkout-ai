@@ -18,7 +18,7 @@ import { useRevalidator } from "react-router";
  * cart attribute and can never be attributed to an order. With one, they sell
  * something. That's why this and story automation are the same tier.
  */
-export function DefaultProductSection({ settings, shopifyProducts, fetcher }) {
+export function DefaultProductSection({ settings, linkProblem, shopifyProducts, fetcher }) {
   const revalidator = useRevalidator();
 
   const savedProductId = settings?.featured_product_id || "";
@@ -63,7 +63,13 @@ export function DefaultProductSection({ settings, shopifyProducts, fetcher }) {
         haven&apos;t mapped yet too.
       </span>
 
-      {savedProductId ? (
+      {savedProductId &&
+      linkProblem?.productId === savedProductId &&
+      (linkProblem.variantId || "") === savedVariantId ? (
+        <s-banner tone="warning" heading="Default product needs attention">
+          <s-text>{savedTitle || "Your saved product"}: {linkProblem.text}</s-text>
+        </s-banner>
+      ) : savedProductId ? (
         <span className="srGridTextSuccess">
           Currently offering: {savedTitle || "your saved product"}
           {savedVariantId && variants.find((v) => v.id === savedVariantId)

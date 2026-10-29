@@ -211,7 +211,25 @@ const ProductPicker = memo(function ProductPicker({ mediaId, products, busy, onS
   );
 });
 
-export function PostsSection({ mediaData, shopifyProducts, productMappings, disabledPostIds, postFetcher }) {
+const sameId = (a, b) => {
+  const n = (id) => (id == null || id === "" ? "" : (String(id).match(/(\d+)$/)?.[1] ?? String(id)));
+  return n(a) === n(b);
+};
+
+/**
+ * The server's warning for this post, if it still describes the current
+ * mapping. A post remapped since the feed loaded drops its old warning
+ * instead of blaming the new product.
+ */
+const problemForMapping = (linkProblems, mapping) => {
+  const problem = mapping && linkProblems?.[mapping.ig_media_id];
+  if (!problem) return null;
+  if (!sameId(problem.productId, mapping.product_id)) return null;
+  if (!sameId(problem.variantId, mapping.variant_id)) return null;
+  return problem;
+};
+
+export function PostsSection({ mediaData, shopifyProducts, productMappings, linkProblems, disabledPostIds, postFetcher }) {
   const revalidator = useRevalidator();
 
   // Instagram media pagination: accumulated pages + cursor for the next one.
@@ -351,12 +369,28 @@ export function PostsSection({ mediaData, shopifyProducts, productMappings, disa
   }, []);
 
   const postBusy = postFetcher.state !== "idle";
+  const problemCount = (localMappings || []).filter((m) => problemForMapping(linkProblems, m)).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <span className="srCardDesc">
         Map posts to Shopify products so the AI knows which product to link when customers DM or comment. Use the toggles to enable or disable automation per post.
       </span>
+
+      {problemCount > 0 && (
+        <s-banner
+          tone="warning"
+          heading={
+            problemCount === 1
+              ? "1 mapped post links to a product customers can't buy right now"
+              : `${problemCount} mapped posts link to products customers can't buy right now`
+          }
+        >
+          <s-text>
+            Customers still get a working link, but it opens your catalog or a product page instead of checkout. Look for &ldquo;Link needs attention&rdquo; on the posts below. Older posts appear after &ldquo;Load more posts&rdquo;.
+          </s-text>
+        </s-banner>
+      )}
 
       {!mediaData ? (
         <span className="srCardDesc">Fetching your Instagram posts…</span>
@@ -420,7 +454,32 @@ export function PostsSection({ mediaData, shopifyProducts, productMappings, disa
                   </s-box>
 
                   {/* Product mapping */}
-                  {mapping ? (
+                  {problemForMapping(linkProblems, mapping) ? (
+                    <s-banner tone="warning" heading="Link needs attention">
+                      <s-text>
+                        {mappedProduct?.title || (mapping.product_handle ? `Product: ${mapping.product_handle}` : "Mapped product")}
+                        {mappedVariant && ` (${mappedVariant.title})`}
+                        {": "}
+                        {problemForMapping(linkProblems, mapping).text}
+                      </s-text>
+                      <s-button
+                        slot="secondary-actions"
+                        variant="secondary"
+                        onClick={() => setSelectedMedia(media.id)}
+                        disabled={postBusy}
+                      >
+                        Change product
+                      </s-button>
+                      <s-button
+                        slot="secondary-actions"
+                        variant="secondary"
+                        onClick={() => handleDeleteMapping(media.id)}
+                        disabled={postBusy}
+                      >
+                        Remove mapping
+                      </s-button>
+                    </s-banner>
+                  ) : mapping ? (
                     <s-box padding="tight" borderWidth="base" borderRadius="base" background="success-subdued">
                       <div className="srGridStatusBox" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                         <span className="srGridTextSuccess">Mapped to Product</span>
