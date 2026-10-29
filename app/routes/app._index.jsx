@@ -15,6 +15,7 @@ import {
   MAX_DISCOUNT_AMOUNT,
 } from "../lib/discount-rules";
 import { cached, peekCached, invalidateCached } from "../lib/loader-cache.server";
+import { getLinkProblems } from "../lib/link-health.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
@@ -527,8 +528,17 @@ export const action = async ({ request }) => {
         const metaAuthRow = await getMetaAuthWithRefresh(shop.id);
         const igBusinessId = metaAuthRow?.ig_business_id || null;
         const hasIg = !!metaAuthRow && (!!igBusinessId || metaAuthRow.auth_type === "instagram");
-        const data = await loadHomeFeed({ shopId: shop.id, admin, igBusinessId, hasIg });
-        return { success: true, actionType: "load-home-feed", ...data };
+        const [data, linkProblems] = await Promise.all([
+          loadHomeFeed({ shopId: shop.id, admin, igBusinessId, hasIg }),
+          // Mapped posts whose product would no longer open. Best-effort:
+          // null hides the warnings rather than failing the grid.
+          Promise.all([getProductMappings(shop.id), getSettings(shop.id)])
+            .then(([mappings, settingsRow]) =>
+              getLinkProblems(shop.shopify_domain || session.shop, { mappings, settings: settingsRow, admin }),
+            )
+            .catch(() => null),
+        ]);
+        return { success: true, actionType: "load-home-feed", ...data, linkProblems };
       } catch (err) {
         console.error("[home] Error loading Instagram feed:", err);
         return { error: "Failed to load your Instagram posts. Reload the page to try again." };
@@ -883,6 +893,7 @@ export default function Index() {
       mediaData={homeFeed.mediaData ?? { data: [], paging: {} }}
       shopifyProducts={homeFeed.shopifyProducts || []}
       productMappings={productMappings}
+      linkProblems={homeFeed.linkProblems?.posts || null}
       disabledPostIds={settings?.disabled_post_ids || []}
       postFetcher={postFetcher}
     />
@@ -895,6 +906,7 @@ export default function Index() {
   ) : homeFeed ? (
     <DefaultProductSection
       settings={settings}
+      linkProblem={homeFeed.linkProblems?.defaultProduct || null}
       shopifyProducts={homeFeed.shopifyProducts || []}
       fetcher={defaultProductFetcher}
     />

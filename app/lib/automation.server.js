@@ -766,6 +766,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
                 inboundChannel: "dm",
                 triggerChannel: originChannel,
                 shop,
+                linkFallback: linkFallbackOf(checkoutLink),
                 choiceConfirmation,
                 recentMessages: (threadContext?.messages || [])
                   .filter((m) => m.id !== message.id)
@@ -906,6 +907,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             inboundChannel: "dm",
             triggerChannel: originChannel,
             shop,
+            linkFallback: linkFallbackOf(checkoutLink),
             lastProductLink: {
               url: lastProductLink.url,
               product_id: lastProductLink.product_id,
@@ -1114,6 +1116,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             inboundChannel: "dm",
             triggerChannel: "dm",
             shop,
+            linkFallback: linkFallbackOf(checkoutLink),
             lastProductLink: null,
             recentMessages: (threadContext?.messages || [])
               .filter((m) => m.id !== message.id)
@@ -1643,6 +1646,7 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
         inboundChannel: "dm",
         triggerChannel: "dm",
         shop,
+        linkFallback: linkFallbackOf(checkoutLink),
         sharedPost: kind === "share",
         storyMention: kind === "story_mention",
         storyReply: kind === "story_reply",
@@ -2114,6 +2118,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
         inboundChannel: "comment",
         triggerChannel: "comment",
         shop,
+        linkFallback: linkFallbackOf(checkoutLinkResult),
         lastProductLink: {
           url: productPageUrlForMessage || checkoutUrlForMessage,
           product_id: productMapping.product_id,
@@ -2444,6 +2449,26 @@ function isComplimentOnly(text) {
 // Em dashes read as AI-written. The prompts ban them, but models slip, so
 // every customer-facing reply is also stripped deterministically (a comma
 // reads naturally in a DM). Mirrors sales-agent's sanitizeReplyText.
+/** What a checkout link fell back to, for the reply prompt; null when it is a real checkout link. */
+export function linkFallbackOf(link) {
+  return link?.fallback ? { kind: link.fallback, reason: link.fallbackReason || null } : null;
+}
+
+/**
+ * Tells the model the "checkout link" it was handed is not one. Without this
+ * it writes "grab yours here" over a link to a sold-out page.
+ */
+export function linkFallbackPrompt(fallback) {
+  if (!fallback) return "";
+  if (fallback.kind === "browse") {
+    return "- LINK NOTE: this product is no longer available, so the link opens the store's full catalog instead. Say briefly that this one isn't available right now and invite them to browse. Do not call it a checkout link and do not promise this product.";
+  }
+  if (fallback.reason === "sold_out" || fallback.reason === "variant_sold_out") {
+    return "- LINK NOTE: this item is sold out right now, so the link opens its product page, not checkout. Say plainly that it's sold out at the moment and that the page will show when it's back. Do not call it a checkout link.";
+  }
+  return "- LINK NOTE: the link opens the product page, where they can pick an option and buy. Call it the product page, not a checkout link.";
+}
+
 function stripEmDashes(text) {
   if (!text) return text;
   return text.replace(/\s*—\s*/g, ", ").replace(/,\s+([.!?,;])/g, "$1");
@@ -2642,6 +2667,7 @@ ${safeChannelContext?.originChannel ? `- Conversation origin: ${safeChannelConte
 ${safeChannelContext?.inboundChannel ? `- Current inbound channel: ${safeChannelContext.inboundChannel === "comment" ? "Instagram comment" : "Instagram DM"}` : ""}
 ${safeChannelContext?.lastProductLink?.url ? `- Most recent product link previously sent in this thread: ${safeChannelContext.lastProductLink.url}` : ""}
 ${safeChannelContext?.isHomepageFallback ? browseDestinationPrompt(safeChannelContext.browseDestinations, safeChannelContext.postCaption) : ""}
+${linkFallbackPrompt(safeChannelContext?.linkFallback)}
 ${safeChannelContext?.choiceConfirmation ? `- The customer was asked which one they want and picked: "${safeChannelContext.choiceConfirmation}". Confirm that choice by name and send the checkout link. Keep it brief, and do not ask them to pick again.` : ""}
 ${safeChannelContext?.sharedPost ? `- SHARED POST, NO TEXT: The customer forwarded one of your Instagram posts into this DM thread and wrote nothing at all. Acknowledge that they shared the post and treat it as interest in that product, then give the link. Never quote them or refer to anything they "said" or "asked" — they sent no words, and inventing some is an obvious tell. Keep it to two short sentences.` : ""}
 ${safeChannelContext?.storyReply ? `- STORY REACTION, NO TEXT: The customer reacted to your Instagram story without writing anything (a heart, a sticker, an image). Never quote them or refer to anything they "said". They watched your story and responded to it, so acknowledge the reaction warmly, then offer the product with the link as an invitation rather than a pitch. No urgency, no hype. Two short sentences.` : ""}

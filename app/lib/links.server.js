@@ -14,9 +14,12 @@
 import { randomBytes } from "crypto";
 import supabase from "./supabase.server";
 import logger from "./logger.server";
-import { sessionStorage } from "../shopify.server";
-import shopify from "../shopify.server";
-import { getShopifyProductContextForReply, getShopPrimaryDomainHost } from "./shopify-data.server";
+import {
+  getProductLinkNodes,
+  getShopifyProductContextForReply,
+  getShopPrimaryDomainHost,
+} from "./shopify-data.server";
+import { productLinkStatus } from "./product-link-status";
 import { isCheckoutLinkId } from "./checkout-link-id";
 import { appendAttributionParams, extractLinkIdFromRef } from "./link-attribution";
 import { claimDiscountCode } from "./discount-pool.server";
@@ -221,7 +224,18 @@ export async function buildProductPageLink(shop, productId, variantId = null, pr
     return null;
   }
 
-  let handle = (productHandle || "").trim() || null;
+  // A deleted, draft, or archived product's page is a 404. Returning null
+  // sends callers to the checkout link, which falls back to the catalog.
+  const status = await checkProductLink(shop, productId, null);
+  if (status?.state === "gone") {
+    logger.warn(
+      `[buildProductPageLink] ${shop.shopify_domain}: product ${productId} is ${status.reason}; skipping PDP link`,
+    );
+    return null;
+  }
+
+  // The live handle wins over a stored one: a renamed product keeps working.
+  let handle = status?.handle || (productHandle || "").trim() || null;
   if (!handle && shop.shopify_domain) {
     try {
       const raw = await getShopifyProductContextForReply(shop.shopify_domain, productId);
@@ -285,47 +299,26 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   // Extract numeric IDs from GID format
   // Product ID format: gid://shopify/Product/123456789
   // Variant ID format: gid://shopify/ProductVariant/123456789
-  const productIdMatch = productId.match(/\/(\d+)$/);
+  const productIdMatch = String(productId).match(/\/(\d+)$/);
 
-  // If variant_id is null, try to fetch the first variant from Shopify
-  let finalVariantId = variantId;
-  if (!finalVariantId) {
-    try {
-      // Get session from storage using shop domain
-      const sessionId = `${shop.shopify_domain}_${process.env.SHOPIFY_API_KEY}`;
-      const session = await sessionStorage.loadSession(sessionId);
-
-      if (session && session.accessToken) {
-        // Create GraphQL client using the session
-        const admin = new shopify.clients.Graphql({ session });
-
-        const response = await admin.graphql(`
-          query getProduct($id: ID!) {
-            product(id: $id) {
-              id
-              variants(first: 1) {
-                nodes {
-                  id
-                }
-              }
-            }
-          }
-        `, {
-          variables: { id: productId },
-        });
-
-        const json = await response.json();
-        const variants = json.data?.product?.variants?.nodes || [];
-        if (variants.length > 0) {
-          finalVariantId = variants[0].id;
-          logger.debug(`[buildCheckoutLink] Fetched first variant: ${finalVariantId}`);
-        }
-      }
-    } catch (error) {
-      // If we can't fetch the variant, continue without it
-      console.warn(`[buildCheckoutLink] Could not fetch default variant for product ${productId}:`, error.message);
-    }
+  // Accept both gid format (gid://shopify/Product/123) and bare numeric IDs;
+  // callers hold both formats depending on where the ID came from.
+  const productNumericId = productIdMatch
+    ? productIdMatch[1]
+    : /^\d+$/.test(String(productId))
+      ? String(productId)
+      : null;
+  if (!productNumericId) {
+    throw new Error("Invalid product ID format");
   }
+
+  // Null means we could not check (no session, slow API), and the link goes
+  // out exactly as it would have before the check existed.
+  const status = await checkProductLink(shop, productId, variantId);
+  if (status && status.state !== "ok") {
+    return buildFallbackLink(shop, status, linkId, variantId);
+  }
+  const finalVariantId = status?.variantId || variantId;
 
   // Validate variant_id is actually a variant ID (not a product ID)
   // Handle both GID format (gid://shopify/ProductVariant/123) and numeric format (123)
@@ -348,17 +341,6 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
     }
   }
 
-  // Accept both gid format (gid://shopify/Product/123) and bare numeric IDs;
-  // callers hold both formats depending on where the ID came from.
-  const productNumericId = productIdMatch
-    ? productIdMatch[1]
-    : /^\d+$/.test(String(productId))
-      ? String(productId)
-      : null;
-  if (!productNumericId) {
-    throw new Error("Invalid product ID format");
-  }
-
   // Always use the stateless cart permalink. We previously called MCP
   // update_cart here to get a "real" checkout URL back, but that URL is
   // a stateful checkout-session token: it has a TTL, expires once the
@@ -367,12 +349,12 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   // created in an anonymous session). DMs are long-lived and can be
   // clicked hours or days later, so Shopify's permalink — which
   // regenerates a fresh cart on every click — is the right primitive.
-  let checkoutUrl;
-  if (variantNumericId) {
-    checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
-  } else {
-    checkoutUrl = `https://${shopHost}/cart/add?id=${productNumericId}&quantity=${qty}`;
+  // /cart/add?id= takes a variant id. Given a product id it answers 422, so
+  // with no variant the best working link is the product page or the catalog.
+  if (!variantNumericId) {
+    return buildFallbackLink(shop, { state: "product_page", reason: "no_variant", handle: status?.handle || null }, linkId, null);
   }
+  const checkoutUrl = `https://${shopHost}/cart/${variantNumericId}:${qty}`;
 
   // Attribution on every checkout permalink, same ref shape as browse/PDP.
   // `attributes[ref]` persists on the cart and lands in note_attributes even
@@ -413,10 +395,56 @@ export async function buildCheckoutLink(shop, productId, variantId = null, qty =
   return {
     url: finalUrl,
     linkId: linkId,
+    fallback: null,
     discountCode: discount?.code || null,
     discountType: discount?.type || null,
     discountValue: discount?.value || null,
     discountCurrency: discount?.currency || null,
+  };
+}
+
+/** Link status for one product, or null when it could not be checked. */
+async function checkProductLink(shop, productId, variantId) {
+  try {
+    const nodes = await getProductLinkNodes(shop?.shopify_domain, [productId]);
+    if (!nodes) return null;
+    const numeric = String(productId).match(/(\d+)$/)?.[1];
+    return productLinkStatus(nodes.get(numeric) ?? null, variantId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The link to send when checkout would not open: the product page while the
+ * product is still live, otherwise the whole catalog. Keeps the checkout
+ * link_id, so the click and any sale still credit this DM.
+ */
+function buildFallbackLink(shop, status, linkId, variantId) {
+  const host = getShopPublicHost(shop);
+  const variantNumeric = status.reason === "variant_sold_out"
+    ? String(variantId || "").match(/(\d+)$/)?.[1]
+    : null;
+  let url = null;
+  let fallback = "browse";
+  if (status.state === "product_page" && status.handle && host) {
+    url = `https://${host}/products/${status.handle}${variantNumeric ? `?variant=${variantNumeric}` : ""}`;
+    fallback = "product_page";
+  }
+  if (!url) url = getShopBrowseUrl(shop);
+  if (!url) throw new Error("Shop domain is required");
+  logger.warn(
+    `[links] ${shop?.shopify_domain}: checkout would not open (${status.reason}); sending ${fallback} link ${linkId}`,
+  );
+  return {
+    url: appendAttributionParams(url, linkId, { campaign: "dm_to_buy" }),
+    linkId,
+    fallback,
+    fallbackReason: status.reason,
+    discountCode: null,
+    discountType: null,
+    discountValue: null,
+    discountCurrency: null,
   };
 }
 
