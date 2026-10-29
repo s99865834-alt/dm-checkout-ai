@@ -100,8 +100,12 @@ function isTrackedLinkUrl(url, shortBase) {
 export async function shortenUrlsInReply(shop, messageId, text) {
   if (!text) return text;
   const urlRegex = /https?:\/\/[^\s)]+/g;
-  const urls = text.match(urlRegex);
-  if (!urls || urls.length === 0) return text;
+  // "browse here: https://shop/collections/all." ends a sentence; the full
+  // stop is not part of the path, and keeping it sends customers to a 404.
+  const urls = (text.match(urlRegex) || [])
+    .map((u) => u.replace(/[.,!?;:'"]+$/, ""))
+    .filter(Boolean);
+  if (urls.length === 0) return text;
 
   const shortBase = getShortLinkBase();
   let result = text;

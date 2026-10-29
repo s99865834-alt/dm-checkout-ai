@@ -29,8 +29,17 @@ vi.mock("../app/lib/shopify-data.server", () => ({
   getShopifyProductContextForReply: vi.fn(),
 }));
 
+const insertedUrls = [];
+
 vi.mock("../app/lib/supabase.server", () => ({
-  default: { from: () => ({ insert: async () => ({ error: null }) }) },
+  default: {
+    from: () => ({
+      insert: async (row) => {
+        insertedUrls.push(row.url);
+        return { error: null };
+      },
+    }),
+  },
 }));
 
 vi.mock("../app/lib/logger.server", () => ({
@@ -41,6 +50,7 @@ const SHOP = { id: "shop-1", shopify_domain: "donna-henry.myshopify.com" };
 
 beforeEach(() => {
   getShopPrimaryDomainHost.mockReset();
+  insertedUrls.length = 0;
 });
 
 describe("getTrackedLinkUrl", () => {
@@ -72,6 +82,21 @@ describe("getTrackedLinkUrl", () => {
       const url = await getTrackedLinkUrl({ id: "s", shopify_domain: domain }, "AbCdEf12");
       expect(url).toBe(`https://${domain}/a/go/AbCdEf12`);
     }
+  });
+
+  it("does not fold sentence punctuation into a shortened link's destination", async () => {
+    getShopPrimaryDomainHost.mockResolvedValue("donnahenry.co.uk");
+    const { shortenUrlsInReply } = await import("../app/lib/links.server");
+
+    const out = await shortenUrlsInReply(
+      SHOP,
+      "m1",
+      "Browse everything here: https://donnahenry.co.uk/collections/all. Any questions?",
+    );
+
+    expect(out).toMatch(/^Browse everything here: https:\/\/donnahenry\.co\.uk\/a\/go\/info_[0-9a-f]{12}\. Any questions\?$/);
+    expect(insertedUrls).toHaveLength(1);
+    expect(insertedUrls[0]).toMatch(/^https:\/\/donnahenry\.co\.uk\/collections\/all\?ref=/);
   });
 
   it("falls back to the short-link domain only when there is no shop domain at all", async () => {
