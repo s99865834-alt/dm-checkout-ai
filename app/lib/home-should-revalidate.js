@@ -15,6 +15,13 @@ export function isReadOnlyHomeAction(formData) {
   return Boolean(actionType && HOME_FEED_ACTIONS_NO_REVALIDATE.has(actionType));
 }
 
+// The app layout's shop/plan only change through writes (billing, Instagram
+// connect/disconnect), so it skips read-only home actions and plain navigation.
+export function layoutShouldRevalidate({ formMethod, formData }) {
+  if (isReadOnlyHomeAction(formData)) return false;
+  return Boolean(formMethod && formMethod.toUpperCase() !== "GET");
+}
+
 export function shouldRevalidate({ formData, defaultShouldRevalidate }) {
   if (isReadOnlyHomeAction(formData)) return false;
   return defaultShouldRevalidate;
