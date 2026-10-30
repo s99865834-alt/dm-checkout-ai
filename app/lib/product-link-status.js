@@ -27,7 +27,9 @@ export function productLinkStatus(node, variantId = null) {
   if (node.status !== "ACTIVE") {
     return { state: "gone", reason: "unpublished", variantId: null, handle };
   }
-  if (!node.onlineStoreUrl) {
+  // Not onlineStoreUrl: it comes back null for products that are published to
+  // Online Store when the storefront is password protected.
+  if (!node.publishedAt) {
     return { state: "gone", reason: "not_on_online_store", variantId: null, handle };
   }
 
