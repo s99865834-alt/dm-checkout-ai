@@ -20,13 +20,27 @@ export const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRA
 // per attempt. Callers that must stay on the critical path should not be
 // hitting Meta at all.
 const META_FETCH_TIMEOUT_MS = 8000;
+// Sends get far longer. Aborting a POST does not stop Meta delivering it, so a
+// short limit only loses track of replies, and a comment gets one private
+// reply ever: 5 of Love By Luna's giveaway replies were cut off at 8s.
+const META_SEND_TIMEOUT_MS = 30000;
 
 function metaFetch(url, init = {}) {
+  const method = String(init.method || "GET").toUpperCase();
+  const timeoutMs = method === "GET" ? META_FETCH_TIMEOUT_MS : META_SEND_TIMEOUT_MS;
   return fetch(url, {
     ...init,
-    signal: init.signal ?? AbortSignal.timeout(META_FETCH_TIMEOUT_MS),
+    signal: init.signal ?? AbortSignal.timeout(timeoutMs),
   });
 }
+
+function isTimeoutError(error) {
+  return error?.name === "TimeoutError" || error?.name === "AbortError";
+}
+
+// Instagram allows one private reply per comment, and says so with this
+// subcode when asked for a second.
+const PRIVATE_REPLY_EXISTS_SUBCODE = 2534023;
 
 /**
  * Save Meta authentication data for a shop
@@ -530,25 +544,44 @@ export async function sendInstagramPrivateReply(shopId, commentId, message) {
   if (!auth) {
     throw new Error("No Meta auth found for shop");
   }
+  let send;
   if (auth.auth_type === "instagram") {
     if (!auth.ig_business_id) {
       throw new Error("No Instagram business account ID available for private reply");
     }
-    const endpoint = `/${auth.ig_business_id}/messages`;
-    return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
-      method: "POST",
-      body: {
-        recipient: { comment_id: String(commentId) },
-        message: { text: message },
-      },
-    });
+    send = () =>
+      metaGraphAPIWithRefresh(shopId, `/${auth.ig_business_id}/messages`, "page", {
+        method: "POST",
+        body: {
+          recipient: { comment_id: String(commentId) },
+          message: { text: message },
+        },
+      });
+  } else {
+    send = () =>
+      metaGraphAPIWithRefresh(shopId, `/${encodeURIComponent(commentId)}/private_replies`, "page", {
+        method: "POST",
+        body: { message },
+      });
   }
 
-  const endpoint = `/${encodeURIComponent(commentId)}/private_replies`;
-  return metaGraphAPIWithRefresh(shopId, endpoint, "page", {
-    method: "POST",
-    body: { message },
-  });
+  try {
+    return await send();
+  } catch (error) {
+    if (!isTimeoutError(error)) throw error;
+    // A timed-out send may still have been delivered. Asking again is safe:
+    // Instagram refuses a second private reply, and that refusal is the proof
+    // the first one landed.
+    console.warn(`[meta] Private reply to comment ${commentId} timed out; checking by retrying once`);
+    try {
+      return await send();
+    } catch (retryError) {
+      if (retryError?.meta?.error_subcode === PRIVATE_REPLY_EXISTS_SUBCODE) {
+        return { delivered_before_timeout: true };
+      }
+      throw retryError;
+    }
+  }
 }
 
 /**

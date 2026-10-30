@@ -395,6 +395,24 @@ describe("a reply Instagram refuses", () => {
     );
   });
 
+  it("treats a commenter Instagram cannot find as handled, not an error", async () => {
+    // Love By Luna, 30 Oct 2026: "True" on the giveaway post, subcode 2534014.
+    mappedPost();
+    const err = new Error("Instagram API error: The requested user cannot be found. (Code: 100)");
+    err.meta = { message: "The requested user cannot be found.", type: "IGApiException", code: 100, error_subcode: 2534014 };
+    sendInstagramPrivateReply.mockRejectedValue(err);
+
+    const msg = comment("True");
+    const res = await handleIncomingComment(msg, "media-1", shop, growthPlan);
+
+    expect(res.sent).toBe(false);
+    expect(markReplyUndelivered).toHaveBeenCalledWith(
+      shop.id,
+      `dm_reply_comment_${msg.external_id}`,
+      "instagram_user_unavailable"
+    );
+  });
+
   it("keeps an unreachable thread out of the competing-tool count", async () => {
     mappedPost();
     sendInstagramPrivateReply.mockRejectedValue(threadArchivedOrGone());

@@ -97,6 +97,22 @@ describe("metaGraphAPIInstagram transient retry", () => {
   });
 });
 
+describe("Meta request time limits", () => {
+  // Oct 29-30 2026: an 8s limit meant for page loads also cut off five of
+  // Love By Luna's giveaway replies mid-send. A comment gets one private
+  // reply ever, so a send must be given time to finish.
+  it("gives sends far longer than reads", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ id: "ok" })));
+
+    await metaGraphAPIInstagram("/me", "token");
+    await metaGraphAPIInstagram("/123/messages", "token", { method: "POST", body: {} });
+
+    expect(timeoutSpy.mock.calls.map((c) => c[0])).toEqual([8000, 30000]);
+    timeoutSpy.mockRestore();
+  });
+});
+
 describe("metaGraphAPI (Facebook Login) transient retry", () => {
   it("retries a transient error and returns the eventual success", async () => {
     const fetchMock = vi

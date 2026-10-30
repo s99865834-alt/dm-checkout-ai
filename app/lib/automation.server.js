@@ -1471,6 +1471,13 @@ const EXPECTED_PRIVATE_REPLY_REJECTIONS = {
     reason: "instagram_thread_unavailable",
     detail: "could not be answered: the commenter's DM thread is archived, deleted, or closed to us",
   },
+  // "The requested user cannot be found": Instagram will not deliver to this
+  // commenter at all, typically a deactivated, deleted, or restricted account.
+  // Seen once, on Love By Luna's giveaway post on 30 Oct.
+  2534014: {
+    reason: "instagram_user_unavailable",
+    detail: "could not be answered: Instagram cannot find or reach the commenter's account",
+  },
 };
 
 const STORY_CONTENT_TYPES = new Set(["story_reply", "story_mention"]);
