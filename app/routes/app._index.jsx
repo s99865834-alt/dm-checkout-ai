@@ -108,7 +108,9 @@ async function loadHomeFeed({ shopId, admin, igBusinessId, hasIg }) {
 }
 
 export const loader = async ({ request }) => {
+  const startedAt = Date.now();
   const { shop, plan, admin } = await getShopWithPlan(request);
+  const authMs = Date.now() - startedAt;
 
   let metaAuth = null;
   let settings = null;
@@ -262,6 +264,15 @@ export const loader = async ({ request }) => {
   // Pre-filled question for the pre-connection preview card. Pure read off the
   // cached store context, so it adds no API call to the loader.
   const previewQuestion = suggestedPreviewQuestion(shop?.store_context_json);
+
+  // LCP is mostly this loader, so split it: Shopify auth (session queue plus
+  // any token refresh) versus our own reads.
+  const totalMs = Date.now() - startedAt;
+  if (totalMs >= 800) {
+    console.warn(
+      `[home] slow loader for ${shop?.shopify_domain || "unknown"}: ${totalMs}ms total, auth ${authMs}ms, data ${totalMs - authMs}ms`,
+    );
+  }
 
   return { shop, plan, metaAuth, settings, brandVoice, productMappings, missedComments, monthRevenue, trialStatus, reviewEligible, lastInboundMessageAt, messageAccess, competingTool, storyMessages, unmappedComments, awayMessage, previewQuestion };
 };

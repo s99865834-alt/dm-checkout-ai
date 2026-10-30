@@ -11,12 +11,32 @@
  */
 
 let exclusive = Promise.resolve();
+let depth = 0;
+
+// A merchant page load waits here behind every background session lookup,
+// which is invisible in Postgres stats (each query is under 0.1ms) and is the
+// first suspect when the home page LCP is slow. Logged so it can be measured.
+const SLOW_WAIT_MS = 250;
 
 export function runExclusive(fn) {
-  const run = exclusive.then(fn, fn);
+  const queuedAt = Date.now();
+  const ahead = depth;
+  depth += 1;
+  const timed = () => {
+    const waited = Date.now() - queuedAt;
+    if (waited >= SLOW_WAIT_MS) {
+      console.warn(`[prisma-queue] waited ${waited}ms behind ${ahead} queries`);
+    }
+    return fn();
+  };
+  const run = exclusive.then(timed, timed);
   exclusive = run.then(
-    () => undefined,
-    () => undefined,
+    () => {
+      depth -= 1;
+    },
+    () => {
+      depth -= 1;
+    },
   );
   return run;
 }
