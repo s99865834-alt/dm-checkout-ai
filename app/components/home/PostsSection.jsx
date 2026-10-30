@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 
 /**
@@ -295,9 +295,14 @@ export function PostsSection({ mediaData, shopifyProducts, productMappings, link
     setMediaAfterCursor(paging.next ? paging.cursors?.after || null : null);
   }, [mediaFetcher.state, mediaFetcher.data]);
 
-  // After postFetcher completes: update mappings locally or revalidate for toggle-post
+  // After postFetcher completes: update mappings locally or revalidate for toggle-post.
+  // fetcher.data persists after the action and revalidator changes identity on
+  // every revalidation, so each result must be handled once or this loops.
+  const handledRef = useRef(null);
   useEffect(() => {
     if (postFetcher.state !== "idle" || !postFetcher.data?.success) return;
+    if (handledRef.current === postFetcher.data) return;
+    handledRef.current = postFetcher.data;
     const { actionType } = postFetcher.data;
 
     if (actionType === "save-mapping" && postFetcher.data.mapping) {
