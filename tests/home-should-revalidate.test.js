@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shouldRevalidate } from "../app/lib/home-should-revalidate.js";
+import { shouldRevalidate as layoutShouldRevalidate } from "../app/routes/app.jsx";
 
 function formDataWith(action) {
   return {
@@ -36,5 +37,23 @@ describe("home shouldRevalidate", () => {
         defaultShouldRevalidate: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("app layout shouldRevalidate", () => {
+  it("skips the shop and plan reload after read-only home actions", () => {
+    for (const action of ["load-home-feed", "search-products", "check-message-access", "load-trial-status"]) {
+      expect(layoutShouldRevalidate({ formMethod: "POST", formData: formDataWith(action) })).toBe(false);
+    }
+  });
+
+  it("still reloads shop and plan after writes, including unknown actions", () => {
+    for (const action of ["disconnect", "save-mapping", "update-automation-settings", null]) {
+      expect(layoutShouldRevalidate({ formMethod: "POST", formData: formDataWith(action) })).toBe(true);
+    }
+  });
+
+  it("does not reload on plain navigation", () => {
+    expect(layoutShouldRevalidate({ formMethod: undefined, formData: undefined })).toBe(false);
   });
 });

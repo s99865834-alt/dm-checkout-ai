@@ -10,10 +10,12 @@ const HOME_FEED_ACTIONS_NO_REVALIDATE = new Set([
   "record-review-prompt",
 ]);
 
-export function shouldRevalidate({ formData, defaultShouldRevalidate }) {
+export function isReadOnlyHomeAction(formData) {
   const actionType = formData?.get?.("action");
-  if (actionType && HOME_FEED_ACTIONS_NO_REVALIDATE.has(actionType)) {
-    return false;
-  }
+  return Boolean(actionType && HOME_FEED_ACTIONS_NO_REVALIDATE.has(actionType));
+}
+
+export function shouldRevalidate({ formData, defaultShouldRevalidate }) {
+  if (isReadOnlyHomeAction(formData)) return false;
   return defaultShouldRevalidate;
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
+import { isReadOnlyHomeAction } from "../lib/home-should-revalidate";
 
 // shop.plan is the source of truth in the DB. It's written authoritatively
 // by /app/billing/activate (after Managed Pricing approval, using the
@@ -27,7 +28,8 @@ export const loader = async ({ request }) => {
 // switches used to re-run it on every navigation — auth plus shop fetch for
 // data that can't have changed — which added a full loader's latency to
 // every screen switch.
-export const shouldRevalidate = ({ formMethod }) => {
+export const shouldRevalidate = ({ formMethod, formData }) => {
+  if (isReadOnlyHomeAction(formData)) return false;
   return Boolean(formMethod && formMethod.toUpperCase() !== "GET");
 };
 
