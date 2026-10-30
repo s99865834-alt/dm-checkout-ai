@@ -708,7 +708,7 @@ const PRODUCT_LINK_STATUS_QUERY = `query ProductLinkStatus($ids: [ID!]!) {
       id
       handle
       status
-      onlineStoreUrl
+      publishedAt
       variants(first: 100) {
         nodes {
           id

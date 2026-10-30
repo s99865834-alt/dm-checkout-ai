@@ -36,7 +36,8 @@ const product = (overrides = {}) => ({
   id: "gid://shopify/Product/1",
   handle: "luna-set",
   status: "ACTIVE",
-  onlineStoreUrl: "https://lovebyluna.co/products/luna-set",
+  publishedAt: "2026-01-05T10:00:00Z",
+  onlineStoreUrl: null,
   variants: {
     nodes: [
       { id: "gid://shopify/ProductVariant/10", availableForSale: false },
@@ -60,10 +61,14 @@ describe("productLinkStatus", () => {
   });
 
   it("treats a product missing from the Online Store as gone", () => {
-    expect(productLinkStatus(product({ onlineStoreUrl: null }))).toMatchObject({
+    expect(productLinkStatus(product({ publishedAt: null }))).toMatchObject({
       state: "gone",
       reason: "not_on_online_store",
     });
+  });
+
+  it("trusts publishedAt over a null onlineStoreUrl on a password-protected store", () => {
+    expect(productLinkStatus(product({ onlineStoreUrl: null })).state).toBe("ok");
   });
 
   it("never swaps a sold-out mapped variant for a different one", () => {
