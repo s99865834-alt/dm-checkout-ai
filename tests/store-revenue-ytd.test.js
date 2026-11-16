@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { storeRevenueYtdSearch } from "../app/lib/shopify-data.server";
+
+vi.mock("../app/lib/supabase.server", () => ({ default: {} }));
+vi.mock("../app/shopify.server", () => ({ unauthenticated: {} }));
 
 describe("storeRevenueYtdSearch", () => {
   it("includes closed and cancelled orders, not only the ones still open", () => {
