@@ -110,12 +110,27 @@ async function shopGraphql(admin, query, variables = undefined) {
 // ---------------------------------------------------------------------------
 // Store total revenue (year-to-date)
 // ---------------------------------------------------------------------------
-// Sums a merchant's total Shopify sales for the current calendar year using
+// Sums a merchant's Shopify order totals for the current calendar year using
 // their offline Admin session. Uses the orders connection (read_orders) since
 // the app doesn't hold read_reports/ShopifyQL scope. Results are cached
 // in-process for an hour so the admin dashboard doesn't re-paginate Shopify on
 // every load. Best-effort: returns null on any failure so a single bad token
 // never breaks the dashboard.
+//
+// The search names every order status. Omitting status makes Shopify return
+// open orders only, so a fulfilled order would vanish the day it is closed.
+// read_orders still only returns the last 60 days. Earlier months of the
+// calendar year stay invisible until Shopify grants read_all_orders.
+// https://shopify.dev/docs/api/admin-graphql/latest/objects/Order
+
+/**
+ * Order search for the year-to-date revenue sum.
+ * Statuses are explicit because an omitted status means open orders only.
+ * @param {string} yearStart YYYY-MM-DD
+ */
+export function storeRevenueYtdSearch(yearStart) {
+  return `created_at:>=${yearStart} (status:open OR status:closed OR status:cancelled)`;
+}
 
 const _revenueYtdCache = new Map(); // shopDomain -> { value, at }
 const REVENUE_YTD_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -131,9 +146,10 @@ async function _fetchStoreTotalRevenueYTD(shopDomain) {
   }
 
   const yearStart = `${new Date().getUTCFullYear()}-01-01`;
+  const orderSearch = storeRevenueYtdSearch(yearStart);
   const query = `
     query StoreRevenueYTD($cursor: String) {
-      orders(first: 250, after: $cursor, query: "created_at:>=${yearStart}") {
+      orders(first: 250, after: $cursor, query: "${orderSearch}") {
         pageInfo { hasNextPage endCursor }
         nodes {
           currentTotalPriceSet { shopMoney { amount currencyCode } }
