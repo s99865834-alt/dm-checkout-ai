@@ -1,9 +1,10 @@
-import { Outlet, useLoaderData, useRouteError, useNavigate, useNavigation } from "react-router";
+import { Outlet, useLoaderData, useLocation, useRouteError, useNavigate, useNavigation } from "react-router";
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { layoutShouldRevalidate } from "../lib/home-should-revalidate";
+import { FREE_PLAN_ENDS_AT } from "../lib/entitlements";
 
 // shop.plan is the source of truth in the DB. It's written authoritatively
 // by /app/billing/activate (after Managed Pricing approval, using the
@@ -34,6 +35,7 @@ export default function App() {
   const { apiKey, shop, plan } = useLoaderData();
   const navigate = useNavigate();
   const navigation = useNavigation();
+  const location = useLocation();
   const navRef = useRef(null);
 
   // Show Shopify admin's native loading bar while a client-side navigation's
@@ -75,8 +77,69 @@ export default function App() {
         <s-link href="/app/billing/select">Billing</s-link>
         <s-link href="/app/support">Support</s-link>
       </s-app-nav>
-      <Outlet context={{ shop, plan }} />
+      {plan?.locked && !location.pathname.startsWith("/app/billing") ? (
+        <ChoosePlanScreen />
+      ) : (
+        <>
+          {plan?.freePlan?.inGrace && <FreePlanEndingBanner />}
+          <Outlet context={{ shop, plan }} />
+        </>
+      )}
     </AppProvider>
+  );
+}
+
+const FREE_PLAN_END_LABEL = FREE_PLAN_ENDS_AT.toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  timeZone: "America/Los_Angeles",
+});
+
+function FreePlanEndingBanner() {
+  return (
+    <s-banner tone="warning" heading={`The Free plan ends on ${FREE_PLAN_END_LABEL}`}>
+      <s-paragraph>
+        Choose Basic ($39/month) or Pro ($99/month) to keep Instagram replies running after that date.
+        Both plans start with 14 days free.
+      </s-paragraph>
+      <s-button slot="secondary-actions" href="/app/billing/select">
+        Choose a plan
+      </s-button>
+    </s-banner>
+  );
+}
+
+// Every page but billing renders this for a shop with no plan, so there is no
+// way into a feature that would silently do nothing.
+function ChoosePlanScreen() {
+  return (
+    <s-page heading="Choose a plan to keep using SocialRepl">
+      <s-section>
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Instagram replies are paused until you choose a plan. Your settings and post mappings are
+            saved, and everything switches back on as soon as you subscribe.
+          </s-paragraph>
+          <s-paragraph>
+            <s-text type="strong">Basic, $39/month:</s-text> comment-to-DM, multi-turn conversations,
+            brand voice, checkout links with discount codes, order attribution, and 1,000 messages a
+            month.
+          </s-paragraph>
+          <s-paragraph>
+            <s-text type="strong">Pro, $99/month:</s-text> everything in Basic, plus story replies,
+            follow-up messages, per-post analytics, and 10,000 messages a month.
+          </s-paragraph>
+          <s-paragraph>
+            Both plans start with 14 days free, and you are not charged if you cancel before the trial
+            ends.
+          </s-paragraph>
+          <s-button variant="primary" href="/app/billing/select">
+            Choose a plan
+          </s-button>
+        </s-stack>
+      </s-section>
+    </s-page>
   );
 }
 

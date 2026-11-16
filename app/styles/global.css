@@ -1916,6 +1916,10 @@ s-page .srBtnCompact {
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
+.srMarketingLanding .srPlanGrid2 {
+  max-width: 760px;
+  grid-template-columns: repeat(2, 1fr);
+}
 .srMarketingLanding .srPlanCard {
   position: relative;
   background: #fff;
@@ -2021,7 +2025,8 @@ s-page .srBtnCompact {
   margin-top: auto;
 }
 @media (max-width: 900px) {
-  .srMarketingLanding .srPlanGrid3 { grid-template-columns: 1fr; }
+  .srMarketingLanding .srPlanGrid3,
+  .srMarketingLanding .srPlanGrid2 { grid-template-columns: 1fr; }
   .srMarketingLanding .srPlanCardFeatured { transform: none; }
 }
 

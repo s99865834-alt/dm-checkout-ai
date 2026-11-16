@@ -649,6 +649,12 @@ export const action = async ({ request }) => {
                     if (!usageData) return;
                     const plan = usageData.plan;
 
+                    if (plan.locked) {
+                      incCounter("automations_skipped");
+                      logger.debug(`[webhook] DM ${result.id} not answered: shop has no plan`);
+                      return;
+                    }
+
                     if (parsed.isStoryEvent && !plan.stories) {
                       incCounter("story_events_gated");
                       logger.debug(
@@ -698,6 +704,12 @@ export const action = async ({ request }) => {
                     const usageData = await getShopPlanAndUsage(shopId);
                     if (!usageData) return;
                     const plan = usageData.plan;
+
+                    if (plan.locked) {
+                      incCounter("automations_skipped");
+                      logger.debug(`[webhook] DM ${result.id} not answered: shop has no plan`);
+                      return;
+                    }
 
                     if (parsed.isStoryEvent && !plan.stories) {
                       incCounter("story_events_gated");
@@ -833,6 +845,14 @@ export const action = async ({ request }) => {
                   logger.debug(`[webhook] Already replied to comment ${parsed.commentId}, skipping classification and automation`);
                 } else if (result?.id && parsed.commentText) {
                   withAutomationLimit(async () => {
+                    const usageData = await getShopPlanAndUsage(shopId);
+                    if (!usageData) return;
+                    if (usageData.plan.locked) {
+                      incCounter("automations_skipped");
+                      logger.debug(`[webhook] Comment ${result.id} not answered: shop has no plan`);
+                      return;
+                    }
+
                     const classification = await classifyMessage(parsed.commentText, { shopId, channel: "comment" });
                     if (classification.intent === null || classification.error) return;
 
@@ -852,9 +872,6 @@ export const action = async ({ request }) => {
                     if (!updatedMessage || !parsed.mediaId) return;
 
                     updatedMessage.ai_entities = classification.entities || null;
-
-                    const usageData = await getShopPlanAndUsage(shopId);
-                    if (!usageData) return;
 
                     const { data: shopData } = await supabase
                       .from("shops")

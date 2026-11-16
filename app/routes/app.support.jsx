@@ -127,19 +127,13 @@ export default function SupportPage() {
               <p className="srFaqAnswer">On the Home page, scroll to "Your Instagram Posts." Select a post, choose a Shopify product and variant, then click "Save mapping." The AI will use this to send the right checkout links.</p>
             </details>
             <details className="srFaqItem">
-              <summary className="srFaqSummary">Why did comment automation stop working?</summary>
+              <summary className="srFaqSummary">Why did the app stop replying?</summary>
               <div className="srFaqAnswer">
                 <p>
-                  On the Free plan, comment-to-DM automation runs free for 14 days after you connect
-                  Instagram. That window exists so you can watch it answer your real customers, and
-                  see any sales it drives in Analytics, before deciding whether it&apos;s worth paying
-                  for. When the window ends, comment automation switches off and your DM automation
-                  keeps running as normal.
-                </p>
-                <p>
-                  Your Home page shows how many comments with buying interest came in after the window
-                  closed, and Analytics lists the actual comments so you can see exactly what went
-                  unanswered. Comment automation continues on Growth ($39/mo).
+                  The Free plan has been retired. Stores without a Basic ($39/mo) or Pro ($99/mo)
+                  plan no longer get automated replies, though incoming messages are still recorded.
+                  Both plans start with a 14-day free trial, and your settings and post mappings are
+                  kept, so replies switch back on as soon as you choose one under Billing.
                 </p>
               </div>
             </details>
@@ -161,7 +155,7 @@ export default function SupportPage() {
                   haven&apos;t mapped yet. Without one set, the app stays quiet rather than guessing.
                 </p>
                 <p>
-                  If you&apos;re on Free or Growth, story replies are still recorded, and your Home
+                  If you&apos;re on Basic, story replies are still recorded, and your Home
                   page will tell you how many arrived this month so you can judge whether Pro is
                   worth it for your account rather than guessing.
                 </p>

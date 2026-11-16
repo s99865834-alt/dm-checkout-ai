@@ -374,7 +374,7 @@ export async function refundUsage(shopId, delta = 1) {
 export async function getShopPlanAndUsage(shopId) {
   const { data, error } = await supabase
     .from("shops")
-    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at, comment_trial_started_at")
+    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at, comment_trial_started_at, created_at")
     .eq("id", shopId)
     .single();
 

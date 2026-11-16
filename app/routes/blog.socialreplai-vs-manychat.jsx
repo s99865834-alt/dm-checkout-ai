@@ -20,7 +20,7 @@ const FAQS = [
   },
   {
     q: "Which is cheaper, SocialReplAI or ManyChat?",
-    a: "They price on different axes. SocialReplAI prices by message volume: free for 25 messages/month after a 14-day Growth demo, $39/month for 1,000 (7-day free trial, comments always on), $99/month for 10,000 (30-day free trial, story replies and follow-ups). ManyChat prices primarily by contact count, starting free and scaling up as your contact list grows. For low volume both are cheap; at scale, compare your expected message volume against your contact growth.",
+    a: "They price on different axes. SocialReplAI prices by message volume: $39/month for 1,000 (Basic, comments included) and $99/month for 10,000 (Pro, story replies and follow-ups), both with a 14-day free trial. ManyChat prices primarily by contact count, starting free and scaling up as your contact list grows. For low volume both are cheap; at scale, compare your expected message volume against your contact growth.",
   },
 ];
 
@@ -92,7 +92,7 @@ export default function VsManyChat() {
           </tr>
           <tr>
             <td>Pricing model</td>
-            <td>By message volume: Free (25/mo after a 14-day demo), $39/mo (1,000, 7-day trial), $99/mo (10,000, 30-day free trial)</td>
+            <td>By message volume: $39/mo (1,000) or $99/mo (10,000), both with a 14-day free trial</td>
             <td>By contact count: free tier, paid plans scale with contacts</td>
           </tr>
           <tr>
@@ -128,9 +128,8 @@ export default function VsManyChat() {
         build or maintain when your catalog changes. Every reply can carry a
         checkout link with the right variant pre-loaded, and every link is
         tracked through to the order, so the dashboard shows revenue per
-        conversation source. Setup is minutes, and the free plan (25
-        messages/month after a 14-day Growth demo) lets you verify it converts
-        before paying.
+        conversation source. Setup is minutes, and the 14-day free trial
+        lets you verify it converts before paying.
       </p>
 
       <h2>SocialReplAI's limitations, stated plainly</h2>
@@ -140,8 +139,7 @@ export default function VsManyChat() {
         or campaign flows; it responds to customers who DM or comment, and
         sends follow-ups to people already in a conversation. It requires a
         Shopify store and an Instagram Business or Creator account linked to a
-        Facebook Page. Comment-to-DM is on Free for 14 days after you connect
-        Instagram, then it continues on Growth ($39/month). If any of those
+        Facebook Page. Plans start at $39/month after a 14-day free trial. If any of those
         are dealbreakers,
         ManyChat or another multi-channel platform is the better fit.
       </p>

@@ -3,10 +3,9 @@ import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { PLANS } from "../lib/plans";
-import { getCurrentSubscription, cancelCurrentSubscription, getTrialStatus } from "../lib/billing.server";
-import { updateShopPlan } from "../lib/db.server";
+import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { managedPricingUrl } from "../lib/billing-url";
-import { cached, invalidateCached } from "../lib/loader-cache.server";
+import { cached } from "../lib/loader-cache.server";
 
 // The active-subscription lookup is a live Shopify GraphQL call — it made
 // every visit to the Billing tab wait on Shopify. Subscriptions only change
@@ -28,8 +27,7 @@ export const loader = async ({ request }) => {
   // shop.plan is read straight from the DB. It's written authoritatively by:
   //   - /app/billing/activate (Managed Pricing return URL — uses the plan=
   //     query param Shopify appends after charge approval)
-  //   - the FREE downgrade action below (cancels the active subscription
-  //     and writes shop.plan = "FREE")
+  //   - the app/subscriptions/update webhook (cancellations from Shopify admin)
   // We deliberately do NOT re-derive shop.plan from getCurrentSubscription
   // here. That race-conditions with both write paths above and was silently
   // reverting just-confirmed plan changes.
@@ -48,7 +46,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { admin, session, shop } = await getShopWithPlan(request);
+  const { session, shop } = await getShopWithPlan(request);
 
   if (!shop) {
     throw new Response("Shop not found", { status: 404 });
@@ -57,24 +55,8 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const planName = formData.get("plan");
 
-  if (!planName || (planName !== "FREE" && planName !== "GROWTH" && planName !== "PRO")) {
+  if (planName !== "GROWTH" && planName !== "PRO") {
     throw new Response("Invalid plan", { status: 400 });
-  }
-
-  // Downgrade to FREE: cancel the active Shopify subscription via Billing API
-  // so the merchant is no longer charged. No external redirect required.
-  if (planName === "FREE") {
-    try {
-      await cancelCurrentSubscription(admin);
-      await updateShopPlan(shop.id, "FREE");
-      // Trial status is cached for the home-page banner; the subscription
-      // was just cancelled, so recompute it on the next load.
-      invalidateCached(`trial:${shop.id}`);
-      return { downgraded: true, planName: "FREE" };
-    } catch (error) {
-      console.error("Error cancelling subscription:", error);
-      return { error: error.message };
-    }
   }
 
   // Under Managed Pricing, plan selection happens on Shopify's hosted page;
@@ -124,56 +106,36 @@ export default function BillingSelect() {
     }
   }, [fetcher.data]);
 
-  useEffect(() => {
-    if (fetcher.data?.downgraded) {
-      // Refresh so the Current Plan badge updates to FREE.
-      window.location.reload();
-    }
-  }, [fetcher.data]);
-
   const plans = [
     {
-      name: "FREE",
-      price: "$0",
-      period: "month",
-      config: PLANS.FREE,
-      description: "See it work on real customers",
-      features: [
-        `${PLANS.FREE.cap} messages/month`,
-        "DM automation with AI",
-        "Comment-to-DM, multi-turn, and brand voice for 14 days",
-        "Store question answering",
-        "Checkout links",
-        "Basic analytics",
-      ],
-    },
-    {
       name: "GROWTH",
+      label: "Basic",
       price: "$39",
       period: "month",
       config: PLANS.GROWTH,
       description: "Sell from comments and real conversations",
       badge: "Most popular",
-      trialNote: "First 7 days free. Billing starts after your trial.",
+      trialNote: "First 14 days free. Billing starts after your trial.",
       features: [
-        "Comment-to-DM, always on",
+        "Comment-to-DM automation",
         "Multi-turn conversations",
         "Brand voice customization",
         "Custom reply language",
+        "Checkout links and store question answering",
         "Order attribution + full analytics",
         "1,000 messages/month",
       ],
     },
     {
       name: "PRO",
+      label: "Pro",
       price: "$99",
       period: "month",
       config: PLANS.PRO,
       description: "Sell from stories and follow up",
-      badge: "30-day free trial",
-      trialNote: "First 30 days free. Billing starts after your trial.",
+      trialNote: "First 14 days free. Billing starts after your trial.",
       features: [
-        "Everything in Growth",
+        "Everything in Basic",
         "Story replies answered automatically",
         "Default product for stories and unmapped posts",
         "Follow-up messages",
@@ -187,7 +149,26 @@ export default function BillingSelect() {
   const planOrder = ["FREE", "GROWTH", "PRO"];
   const isCurrentPlan = (planName) => planName === currentPlanName;
   const canUpgrade = (planName) => planOrder.indexOf(planName) > planOrder.indexOf(currentPlanName);
-  const canDowngrade = (planName) => planOrder.indexOf(planName) < planOrder.indexOf(currentPlanName);
+  const freePlan = currentPlan?.freePlan;
+
+  const compareRows = [
+    ["Monthly Messages", "1,000", "10,000"],
+    ["DM Automation", true, true],
+    ["Checkout Links", true, true],
+    ["Store Question Answering", true, true],
+    ["Multi-language Replies", true, true],
+    ["Comment-to-DM Automation", true, true],
+    ["Multi-turn Conversations", true, true],
+    ["Brand Voice", true, true],
+    ["Custom Reply Language", true, true],
+    ["Order Attribution + Full Analytics", true, true],
+    ["Story Replies", false, true],
+    ["Default Product", false, true],
+    ["Follow-up Messages", false, true],
+    ["Per-post Analytics", false, true],
+    ["Priority Support", false, true],
+  ];
+  const cell = (v) => (v === true ? "✓" : v === false ? "-" : v);
 
   return (
     <s-page heading="Choose Your Plan">
@@ -211,6 +192,26 @@ export default function BillingSelect() {
         </s-section>
       )}
 
+      {currentPlan?.locked && (
+        <s-section>
+          <s-banner tone="warning" heading="Instagram replies are paused">
+            <s-paragraph>
+              Choose a plan to switch them back on. Your settings and post mappings are saved.
+            </s-paragraph>
+          </s-banner>
+        </s-section>
+      )}
+
+      {freePlan?.inGrace && (
+        <s-section>
+          <s-banner tone="info" heading={`Free plan: ${freePlan.daysLeft} ${freePlan.daysLeft === 1 ? "day" : "days"} left`}>
+            <s-paragraph>
+              The Free plan is being retired. Choose Basic or Pro before it ends to keep replies running.
+            </s-paragraph>
+          </s-banner>
+        </s-section>
+      )}
+
       {trialStatus && (
         <s-section>
           <s-banner tone={trialStatus.daysLeft <= 3 ? "warning" : "success"}>
@@ -231,12 +232,11 @@ export default function BillingSelect() {
           {plans.map((plan) => {
             const isCurrent = isCurrentPlan(plan.name);
             const upgrade = canUpgrade(plan.name);
-            const downgrade = canDowngrade(plan.name);
 
             return (
               <div key={plan.name} className={`srBillPlanCard${isCurrent ? " srBillPlanCardCurrent" : ""}`}>
                 <div className="srBillPlanHead">
-                  <span className="srBillPlanName">{plan.name}</span>
+                  <span className="srBillPlanName">{plan.label}</span>
                   {isCurrent && (
                     <s-badge tone="success">Current Plan</s-badge>
                   )}
@@ -267,13 +267,14 @@ export default function BillingSelect() {
                     <button className="srPrimaryBtn" disabled style={{ opacity: 0.5, cursor: "default" }}>
                       Current Plan
                     </button>
-                  ) : upgrade ? (
-                    <PlanActionButton fetcher={fetcher} planName={plan.name} variant="primary" label={`Upgrade to ${plan.name}`} />
-                  ) : downgrade && plan.name === "FREE" ? (
-                    <PlanActionButton fetcher={fetcher} planName="FREE" variant="secondary" label="Switch to Free" />
-                  ) : downgrade ? (
-                    <PlanActionButton fetcher={fetcher} planName={plan.name} variant="secondary" label={`Switch to ${plan.name}`} />
-                  ) : null}
+                  ) : (
+                    <PlanActionButton
+                      fetcher={fetcher}
+                      planName={plan.name}
+                      variant={upgrade ? "primary" : "secondary"}
+                      label={upgrade ? `Choose ${plan.label}` : `Switch to ${plan.label}`}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -321,110 +322,18 @@ export default function BillingSelect() {
             <thead>
               <tr>
                 <th className="srTh srTextLeft">Feature</th>
-                <th className="srTh srTextCenter">Free</th>
-                <th className="srTh srTextCenter">Growth</th>
+                <th className="srTh srTextCenter">Basic</th>
                 <th className="srTh srTextCenter">Pro</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td><span className="srTextStrong">Monthly Messages</span></td>
-                <td className="srTextCenter">{PLANS.FREE.cap.toLocaleString("en-US")}</td>
-                <td className="srTextCenter">1,000</td>
-                <td className="srTextCenter">10,000</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">DM Automation</span></td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Checkout Links</span></td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Basic Analytics</span></td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Store Question Answering</span></td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Multi-language Replies</span></td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Comment-to-DM Automation</span></td>
-                <td className="srTextCenter">First 14 days</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Brand Voice</span></td>
-                <td className="srTextCenter">First 14 days</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Custom Reply Language</span></td>
-                <td className="srTextCenter">First 14 days</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Order Attribution + Full Analytics</span></td>
-                <td className="srTextCenter">Revenue total</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                {/* Matches PLANS.GROWTH.converse, which has been true all
-                    along. The table was under-selling Growth. */}
-                <td><span className="srTextStrong">Multi-turn Conversations</span></td>
-                <td className="srTextCenter">First 14 days</td>
-                <td className="srTextCenter">✓</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Story Replies</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Default Product</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Follow-up Messages</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Per-post Analytics</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
-              <tr>
-                <td><span className="srTextStrong">Priority Support</span></td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">—</td>
-                <td className="srTextCenter">✓</td>
-              </tr>
+              {compareRows.map(([feature, basic, pro]) => (
+                <tr key={feature}>
+                  <td><span className="srTextStrong">{feature}</span></td>
+                  <td className="srTextCenter">{cell(basic)}</td>
+                  <td className="srTextCenter">{cell(pro)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
           </div>

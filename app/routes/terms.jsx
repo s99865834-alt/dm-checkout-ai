@@ -69,8 +69,7 @@ export default function TermsOfService() {
           The Service is offered through subscription plans with different features and usage limits:
         </p>
         <ul>
-          <li><strong>Free Plan:</strong> Limited features and message caps</li>
-          <li><strong>Growth Plan:</strong> Enhanced features for growing businesses</li>
+          <li><strong>Basic Plan:</strong> Comment and DM automation for growing businesses</li>
           <li><strong>Pro Plan:</strong> Full feature access with advanced analytics</li>
         </ul>
         <p>
