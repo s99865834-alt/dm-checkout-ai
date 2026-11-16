@@ -19,7 +19,6 @@ import { getLinkProblems } from "../lib/link-health.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
-import { PLANS } from "../lib/plans";
 import { shouldRevalidate } from "../lib/home-should-revalidate";
 
 export { shouldRevalidate };
@@ -988,7 +987,7 @@ export default function Index() {
       {trialStatusUi && (
         <s-banner tone={trialStatusUi.daysLeft <= 3 ? "warning" : "success"}>
           <s-text variant="strong">
-            {plan?.name === "GROWTH" ? "Growth" : "Pro"} free trial: {trialStatusUi.daysLeft}{" "}
+            {plan?.name === "GROWTH" ? "Basic" : "Pro"} free trial: {trialStatusUi.daysLeft}{" "}
             {trialStatusUi.daysLeft === 1 ? "day" : "days"} left
           </s-text>
           <s-text>
@@ -1006,7 +1005,7 @@ export default function Index() {
               <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 New DMs won't receive automated responses until next month.
-                Upgrade to Growth for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
+                Upgrade to Basic for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
@@ -1019,7 +1018,7 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">You've used {shop.usage_count} of {plan.cap} messages this month ({Math.round((shop.usage_count / plan.cap) * 100)}%).</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Upgrade to Growth for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
+                Upgrade to Basic for 1,000 messages/mo plus comment automation, multi-turn conversations, and brand voice.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">View plans</s-button>
@@ -1037,11 +1036,11 @@ export default function Index() {
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                 {(monthRevenue.total || 0) >= 39
-                  ? "Growth costs $39/mo and keeps comment automation, brand voice, and multi-turn conversations. It would already be paying for itself."
-                  : "Growth ($39/mo) keeps comment automation, brand voice, and multi-turn conversations on after the 14-day window."}
+                  ? "Basic costs $39/mo and keeps comment automation, brand voice, and multi-turn conversations. It would already be paying for itself."
+                  : "Basic ($39/mo) keeps comment automation, brand voice, and multi-turn conversations on after the 14-day window."}
               </span>
             </div>
-            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Basic</s-button>
           </div>
         </s-banner>
       )}
@@ -1066,11 +1065,11 @@ export default function Index() {
                 {plan.commentTrial.daysLeft === 1 ? "day" : "days"}
               </span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                You are running Growth&apos;s selling loop for this window: comments get a DM with a
+                You are running Basic&apos;s selling loop for this window: comments get a DM with a
                 checkout link, and conversations continue past the first reply. Your allowance
                 is raised to {plan.cap} messages so comment volume doesn&apos;t cut it short.
-                Keeping it costs $39/mo on Growth. Analytics on Free shows messages, links, and
-                clicks. Order attribution stays on Growth.
+                Keeping it costs $39/mo on Basic. Analytics on Free shows messages, links, and
+                clicks. Order attribution stays on Basic.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="secondary" size="slim">See plans</s-button>
@@ -1090,11 +1089,11 @@ export default function Index() {
                 {plan.commentTrial?.expired
                   ? "Your free comment window has ended, so these went without a reply. "
                   : "Comment replies aren't included on Free. "}
-                On Growth ($39/mo) each of these customers would have received a DM with an answer
+                On Basic ($39/mo) each of these customers would have received a DM with an answer
                 and a checkout link. The actual comments are listed in Analytics.
               </span>
             </div>
-            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+            <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Basic</s-button>
           </div>
         </s-banner>
       )}
@@ -1239,8 +1238,8 @@ export default function Index() {
               next to the title on a phone and squeezed the copy. */}
           <div className="srVStack">
             <span className="srCardDesc">
-              You're on Free. Connect Instagram for a 14-day Growth demo
-              (comments, multi-turn, brand voice), then {PLANS.FREE.cap} DMs/month.
+              Connect Instagram to watch it reply to your customers. Your Free plan ends
+              soon, so choose Basic or Pro to keep replies running after that.
             </span>
             <div className="srBannerActions">
               <s-button
@@ -1353,7 +1352,7 @@ export default function Index() {
               <div className="srPlanSide">
                 <div className="srPlanBadgeRow">
                   <s-badge tone={plan.name === "FREE" ? "subdued" : plan.name === "GROWTH" ? "info" : "success"}>
-                    {plan.name}
+                    {plan.name === "GROWTH" ? "BASIC" : plan.name}
                   </s-badge>
                   {shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > new Date() && (
                     <s-badge tone="success">Trial</s-badge>
@@ -1558,10 +1557,10 @@ export default function Index() {
                           that makes a merchant distrust the whole dashboard. */}
                       <span className="srCardDesc">
                         {plan?.commentTrial?.granting
-                          ? `Auto-reply to comments with private DMs. Growth demo: ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
+                          ? `Auto-reply to comments with private DMs. Basic demo: ${plan.commentTrial.daysLeft} more ${plan.commentTrial.daysLeft === 1 ? "day" : "days"}.`
                           : plan?.comments
                             ? "Auto-reply to comments with private DMs"
-                            : "Upgrade to Growth to unlock comment automation"}
+                            : "Upgrade to Basic to unlock comment automation"}
                       </span>
                     </div>
                     <label className="srToggle" aria-label="Comment automation">
@@ -1589,7 +1588,7 @@ export default function Index() {
                       <span className="srCardDesc">
                         {plan?.discounts
                           ? "Discounts one unit of the product in the link we send, and nothing else in the cart. Anything else the customer adds, including more of the same product, stays full price. Each code works on a single order."
-                          : "Upgrade to Growth to add one-time product discounts to the links you send"}
+                          : "Upgrade to Basic to add one-time product discounts to the links you send"}
                       </span>
                       {plan?.discounts && discountEnabled && (
                         <div

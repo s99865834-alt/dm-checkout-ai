@@ -56,7 +56,7 @@ export function MarketingNav() {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Install free
+          Start free trial
         </a>
       </div>
     </header>

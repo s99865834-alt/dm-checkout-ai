@@ -1,7 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import { GoogleAnalytics } from "../../components/marketing/GoogleAnalytics";
 import { appStoreUrl } from "../../components/marketing/MarketingChrome";
-import { PLANS } from "../../lib/plans";
 
 const SHOPIFY_APP_STORE_URL =
   typeof process !== "undefined" && process.env?.SHOPIFY_APP_STORE_URL
@@ -29,19 +28,12 @@ const JSON_LD = {
   offers: [
     {
       "@type": "Offer",
-      name: "Free",
-      price: "0",
-      priceCurrency: "USD",
-      description: `${PLANS.FREE.cap} messages/mo · DM automation with AI · Comment-to-DM, multi-turn, and brand voice for 14 days · Checkout links · Basic analytics`,
-    },
-    {
-      "@type": "Offer",
-      name: "Growth",
+      name: "Basic",
       price: "39",
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "7-day free trial · Comment-to-DM always on · Brand voice customization · Multi-turn conversations · Custom reply language · Order attribution + full analytics · 1,000 messages/mo",
+        "14-day free trial · Comment-to-DM automation · Brand voice customization · Multi-turn conversations · Custom reply language · Order attribution + full analytics · 1,000 messages/mo",
     },
     {
       "@type": "Offer",
@@ -50,7 +42,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "30-day free trial · Story replies answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
+        "14-day free trial · Story replies answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
     },
   ],
   creator: {
@@ -82,8 +74,8 @@ const FAQS = [
     a: "With comment-to-DM automation: when someone comments on one of your posts, SocialReplAI automatically sends them a private DM with an AI-written message and a checkout link for the product featured in that post — links in public comments aren't clickable, but DM links are.",
   },
   {
-    q: "Is comment-to-DM automation included in the free plan?",
-    a: `For your first 14 days after connecting Instagram, yes, including multi-turn conversations and brand voice. We'd rather you watch it answer your real customers than take our word for it. After 14 days, comment automation continues on Growth ($39/mo). DM automation stays free permanently, up to ${PLANS.FREE.cap} messages a month.`,
+    q: "Is there a free trial?",
+    a: "Yes. Both plans start with 14 days free, so you can watch it answer your real customers before you pay. Basic ($39/mo) includes comment-to-DM, multi-turn conversations, and brand voice. Pro ($99/mo) adds story replies and follow-ups. Cancel before the trial ends and you aren't charged.",
   },
   {
     q: "Can SocialReplAI reply to Instagram story replies?",
@@ -107,11 +99,11 @@ const FAQS = [
   },
   {
     q: "Can I customize the brand voice?",
-    a: "Yes, on Growth and Pro. Pick from preset tones (Casual, Professional, Friendly, and others) and add custom voice instructions, for example \"always use emojis\" or \"don't discount.\" The AI sticks to your style. Free includes brand voice for the first 14 days after you connect Instagram.",
+    a: "Yes, on both plans. Pick from preset tones (Casual, Professional, Friendly, and others) and add custom voice instructions, for example \"always use emojis\" or \"don't discount.\" The AI sticks to your style.",
   },
   {
     q: "Does SocialReplAI reply in other languages?",
-    a: "Yes. On Growth and Pro, you can set a reply language. Leave it on Auto and the AI answers each customer in the same language they messaged in, or force a specific language (such as Brazilian Portuguese, Spanish, or French) so every reply goes out in that language regardless of the customer's input.",
+    a: "Yes. On both plans, you can set a reply language. Leave it on Auto and the AI answers each customer in the same language they messaged in, or force a specific language (such as Brazilian Portuguese, Spanish, or French) so every reply goes out in that language regardless of the customer's input.",
   },
   {
     q: "What happens if I reply to a customer myself?",
@@ -233,7 +225,7 @@ export default function LandingPage() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Install free
+            Start free trial
           </a>
         </div>
       </header>
@@ -268,7 +260,7 @@ export default function LandingPage() {
               </a>
             </div>
             <p className="srHeroFinePrint">
-              Free to try · 14-day Growth demo · then {PLANS.FREE.cap} DMs/mo
+              14-day free trial · Plans from $39/mo · Cancel anytime
             </p>
           </div>
           <div className="srHeroArt" aria-hidden="true">
@@ -528,50 +520,26 @@ export default function LandingPage() {
       <section id="pricing" className="srPricing">
         <div className="srSectionHead">
           <span className="srEyebrow">Pricing</span>
-          <h2>Start free. Pay when comments start converting.</h2>
+          <h2>Try it free for 14 days. Pay when comments start converting.</h2>
           <p className="srSectionSub">
-            Free is a 14-day demo of Growth, then {PLANS.FREE.cap} DMs a month. Growth is
-            the plan that sells. Billed in USD every 30 days.
+            Both plans start with a 14-day free trial. Billed in USD every 30 days after that.
           </p>
         </div>
-        <div className="srPlanGrid3">
-          <div className="srPlanCard">
-            <div className="srPlanName">Free</div>
-            <div className="srPlanPrice">
-              <span className="srPlanAmount">$0</span>
-              <span className="srPlanPer">/month</span>
-            </div>
-            <ul className="srPlanFeatures">
-              <li>{PLANS.FREE.cap} messages / month after the demo</li>
-              <li>DM automation with AI</li>
-              <li>Comment-to-DM, multi-turn, and brand voice for 14 days</li>
-              <li>Checkout links</li>
-              <li>Basic analytics</li>
-            </ul>
-            <a
-              className="srBtnSecondary"
-              href={appStoreUrl("landing_pricing_free")}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Get started free
-            </a>
-          </div>
-
+        <div className="srPlanGrid3 srPlanGrid2">
           <div className="srPlanCard srPlanCardFeatured">
             <div className="srPlanBadge">Most popular</div>
-            <div className="srPlanName">Growth</div>
+            <div className="srPlanName">Basic</div>
             <div className="srPlanPrice">
               <span className="srPlanAmount">$39</span>
               <span className="srPlanPer">/month</span>
             </div>
-            <div className="srPlanTrial">7-day free trial</div>
+            <div className="srPlanTrial">14-day free trial</div>
             <p className="srPlanCompare">
               Same price as ManyChat&apos;s Pro plan, but it already knows your Shopify
               catalog, with zero flows to build.
             </p>
             <ul className="srPlanFeatures">
-              <li>Comment-to-DM, always on</li>
+              <li>Comment-to-DM automation</li>
               <li>Multi-turn conversations</li>
               <li>Brand voice customization</li>
               <li>Custom reply language</li>
@@ -584,7 +552,7 @@ export default function LandingPage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Start Growth
+              Start Basic
             </a>
           </div>
 
@@ -594,13 +562,13 @@ export default function LandingPage() {
               <span className="srPlanAmount">$99</span>
               <span className="srPlanPer">/month</span>
             </div>
-            <div className="srPlanTrial">30-day free trial</div>
+            <div className="srPlanTrial">14-day free trial</div>
             <p className="srPlanCompare">
               For stores that post stories daily. Story viewers are your warmest audience,
               and Pro is the only plan that sells to them.
             </p>
             <ul className="srPlanFeatures">
-              <li>Everything in Growth</li>
+              <li>Everything in Basic</li>
               <li>Story replies answered automatically</li>
               <li>Default product for stories and unmapped posts</li>
               <li>Follow-up messages</li>
@@ -638,7 +606,7 @@ export default function LandingPage() {
       <section className="srCta">
         <div className="srCtaInner">
           <h2>Ready to turn Instagram into your best sales channel?</h2>
-          <p>Install free, connect Instagram, and start replying to DMs and comments today.</p>
+          <p>Start your 14-day free trial, connect Instagram, and start replying to DMs and comments today.</p>
           <a
             className="srBtnPrimary srBtnLarge"
             href={appStoreUrl("landing_bottom_cta")}

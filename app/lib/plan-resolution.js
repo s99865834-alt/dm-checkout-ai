@@ -32,7 +32,9 @@ export function planFromSubscription(subscription) {
   if (!subscription || subscription.status !== "ACTIVE") return "FREE";
   const name = (subscription.name || "").toLowerCase();
   if (name.includes("pro")) return "PRO";
-  if (name.includes("growth")) return "GROWTH";
+  // Basic is the merchant-facing name for GROWTH. "growth" stays matched for
+  // subscriptions created before the rename.
+  if (name.includes("growth") || name.includes("basic")) return "GROWTH";
   // Managed Pricing models the free tier as an ACTIVE subscription named
   // "Free" rather than as the absence of one, so this arrives looking exactly
   // like a plan we failed to recognise. Treating it as unknown meant a paid
@@ -64,5 +66,6 @@ export function resolveActivationPlan(subscription, planParam) {
   if (fromSubscription) return fromSubscription;
 
   const normalized = (planParam || "").toUpperCase();
+  if (normalized === "BASIC") return "GROWTH";
   return VALID_PLANS.has(normalized) ? normalized : null;
 }

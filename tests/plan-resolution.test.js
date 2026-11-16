@@ -38,6 +38,10 @@ describe("planFromSubscription", () => {
     ["growth", "GROWTH"],
     ["Growth Plan", "GROWTH"],
     ["SocialReplAI Growth", "GROWTH"],
+    // Growth was renamed Basic in the Partner Dashboard.
+    ["Basic", "GROWTH"],
+    ["basic", "GROWTH"],
+    ["Basic free trial", "GROWTH"],
     // Managed Pricing represents the free tier as an ACTIVE subscription named
     // "Free", not as the absence of one. Donna Henry's install on 23 Oct 2026
     // carried subscription 75765973305 named "Free" with status ACTIVE.
@@ -94,6 +98,7 @@ describe("resolveActivationPlan", () => {
     // our name matching cannot place.
     expect(resolveActivationPlan(active("Enterprise"), "PRO")).toBe("PRO");
     expect(resolveActivationPlan(active("Enterprise"), "growth")).toBe("GROWTH");
+    expect(resolveActivationPlan(active("Enterprise"), "basic")).toBe("GROWTH");
   });
 
   it("returns null when neither the subscription nor the param resolves", () => {

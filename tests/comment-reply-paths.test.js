@@ -157,6 +157,9 @@ const shop = { id: "00000000-0000-0000-0000-000000000001", shopify_domain: "test
 // capability flag is added, and then passes while the real gate rejects.
 const growthPlan = getPlanConfig("GROWTH");
 const freePlan = getPlanConfig("FREE");
+// A shop installed before Free closed, during its grace period.
+const LEGACY_INSTALL = "2026-10-01T00:00:00Z";
+const GRACE_NOW = Date.parse("2026-11-20T00:00:00Z");
 
 let commentSeq = 0;
 function comment(text, overrides = {}) {
@@ -567,8 +570,9 @@ describe("comment reply paths", () => {
   // on a real customer, or they have no reason to believe it does.
   it("FREE plan inside the comment window: replies", async () => {
     const inWindow = effectivePlan(freePlan, {
-      comment_trial_started_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    });
+      created_at: LEGACY_INSTALL,
+      comment_trial_started_at: new Date(GRACE_NOW - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    }, GRACE_NOW);
     expect(inWindow.comments).toBe(true);
     expect(inWindow.converse).toBe(true);
     expect(inWindow.brandVoice).toBe(true);
@@ -581,8 +585,9 @@ describe("comment reply paths", () => {
 
   it("FREE plan with an expired comment window: does not reply", async () => {
     const expired = effectivePlan(freePlan, {
-      comment_trial_started_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
+      created_at: LEGACY_INSTALL,
+      comment_trial_started_at: new Date(GRACE_NOW - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }, GRACE_NOW);
     expect(expired.comments).toBe(false);
     expect(expired.commentTrial.expired).toBe(true);
 

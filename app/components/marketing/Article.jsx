@@ -1,5 +1,4 @@
 import { SITE_URL, postUrl } from "../../lib/blog-posts";
-import { PLANS } from "../../lib/plans";
 import { appStoreUrl } from "./MarketingChrome";
 
 /** Build meta tags for an article route from its post metadata. */
@@ -121,8 +120,8 @@ export function Article({ post, faqs, children }) {
         <h2>Try SocialReplAI on your store</h2>
         <p>
           SocialReplAI replies to Instagram DMs and comments with AI-generated
-          messages and one-click Shopify checkout links. Free includes a 14-day
-          Growth demo, then {PLANS.FREE.cap} DMs per month. No credit card required.
+          messages and one-click Shopify checkout links. Every plan starts with a
+          14-day free trial, from $39/month after that.
         </p>
         <a
           className="srBtnPrimary"
@@ -130,7 +129,7 @@ export function Article({ post, faqs, children }) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Install free from the Shopify App Store
+          Start your free trial on the Shopify App Store
         </a>
       </aside>
     </article>

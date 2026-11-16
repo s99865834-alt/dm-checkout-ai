@@ -26,6 +26,41 @@ import { getPlanConfig } from "./plans";
 export const COMMENT_TRIAL_DAYS = 14;
 
 /**
+ * Free is retired. Every shop needs Basic (internally GROWTH) or Pro.
+ *
+ * Shops installed before FREE_PLAN_CLOSED_AT keep Free as it was until
+ * FREE_PLAN_ENDS_AT, with a banner and an email announcing the date. Shops
+ * installed after it never get Free at all: they choose a plan on first open,
+ * and Shopify's 14-day trial on each plan is their trial.
+ *
+ * A locked shop keeps its data and its Instagram connection. Nothing is
+ * written to shops: the lock is decided here, at read time, so subscribing
+ * switches everything back on immediately.
+ */
+export const FREE_PLAN_CLOSED_AT = new Date("2026-11-18T00:00:00Z");
+// Midnight Pacific on 1 December, after Cyber Monday.
+export const FREE_PLAN_ENDS_AT = new Date("2026-12-01T08:00:00Z");
+
+/**
+ * Where a FREE shop stands in the retirement.
+ * @param {Object|null} shop - shops row (needs created_at)
+ * @param {number} [now]
+ * @returns {{inGrace: boolean, locked: boolean, endsAt: Date, daysLeft: number}}
+ */
+export function freePlanStatus(shop, now = Date.now()) {
+  const installedAt = shop?.created_at ? new Date(shop.created_at).getTime() : NaN;
+  const legacy = Number.isFinite(installedAt) && installedAt < FREE_PLAN_CLOSED_AT.getTime();
+  const msLeft = FREE_PLAN_ENDS_AT.getTime() - now;
+  const inGrace = legacy && msLeft > 0;
+  return {
+    inGrace,
+    locked: !inGrace,
+    endsAt: FREE_PLAN_ENDS_AT,
+    daysLeft: inGrace ? Math.ceil(msLeft / DAY_MS) : 0,
+  };
+}
+
+/**
  * Message allowance while the window is open.
  *
  * Free's standing cap of 25 is a single budget shared by DMs and comments, and
@@ -49,14 +84,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @param {Object|null} shop - shops row
  * @returns {{started: boolean, active: boolean, daysLeft: number, endsAt: Date|null}}
  */
-export function commentTrialStatus(shop) {
+export function commentTrialStatus(shop, now = Date.now()) {
   const startedAt = shop?.comment_trial_started_at;
   if (!startedAt) {
     return { started: false, active: false, daysLeft: 0, endsAt: null };
   }
 
   const endsAt = new Date(new Date(startedAt).getTime() + COMMENT_TRIAL_DAYS * DAY_MS);
-  const msLeft = endsAt.getTime() - Date.now();
+  const msLeft = endsAt.getTime() - now;
 
   return {
     started: true,
@@ -73,11 +108,27 @@ export function commentTrialStatus(shop) {
  * `plan.comments` / `plan.cap` / `plan.stories` reads keep working unchanged.
  *
  * @param {Object|string|null} plan - plan config object or plan name
- * @param {Object|null} shop - shops row (needs comment_trial_started_at)
+ * @param {Object|null} shop - shops row (needs comment_trial_started_at, created_at)
+ * @param {number} [now]
  */
-export function effectivePlan(plan, shop) {
+export function effectivePlan(plan, shop, now = Date.now()) {
   const base = typeof plan === "string" || !plan ? getPlanConfig(plan) : plan;
-  const trial = commentTrialStatus(shop);
+  const freePlan = base.name === "FREE" ? freePlanStatus(shop, now) : null;
+
+  if (freePlan?.locked) {
+    return {
+      ...base,
+      cap: 0,
+      comments: false,
+      converse: false,
+      brandVoice: false,
+      locked: true,
+      freePlan,
+      commentTrial: { ...commentTrialStatus(shop, now), active: false, granting: false, expired: false },
+    };
+  }
+
+  const trial = commentTrialStatus(shop, now);
 
   // Only Free is ever upgraded by the window. Paid plans already have these.
   // Stories, follow-ups, and default product stay Pro: the window is a Growth
@@ -91,6 +142,8 @@ export function effectivePlan(plan, shop) {
     brandVoice: base.brandVoice || trialGrantsGrowth,
     // Never lower an existing cap, only raise it for the window.
     cap: trialGrantsGrowth ? Math.max(base.cap, COMMENT_TRIAL_CAP) : base.cap,
+    locked: false,
+    freePlan,
     commentTrial: {
       ...trial,
       // True only while the window is what's providing access, so the UI can

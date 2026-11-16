@@ -20,8 +20,8 @@ const FAQS = [
     a: "A click means someone tapped the checkout link — interest, not necessarily a sale. Attributed revenue means the click led all the way to a completed Shopify order. Watching both numbers matters: high clicks with low attributed revenue usually points to a problem after the click (price, shipping cost, checkout friction), not a problem with the automated reply itself.",
   },
   {
-    q: "Do I need Growth or Pro to see attribution?",
-    a: "Full order attribution and analytics are on the Growth and Pro plans. The Free plan includes basic analytics — messages sent, click-through rate, and top trigger phrases — so you can see engagement before deciding whether to upgrade for the revenue-level view.",
+    q: "Which plans include attribution?",
+    a: "Both. Full order attribution and analytics are on Basic and Pro, including during the 14-day free trial, so you can see revenue from Instagram before you pay. Pro adds per-post analytics.",
   },
 ];
 

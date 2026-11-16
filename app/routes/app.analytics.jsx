@@ -307,7 +307,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">Message limit reached — analytics are paused.</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    You've used all {plan.cap} messages this month. Upgrade to Growth for 1,000 messages, order attribution, and full analytics.
+                    You've used all {plan.cap} messages this month. Upgrade to Basic for 1,000 messages, order attribution, and full analytics.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade now</s-button>
@@ -320,7 +320,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Growth ($39/mo) includes 1,000 messages, comment automation, multi-turn, brand voice, order attribution, and full analytics.
+                    Basic ($39/mo) includes 1,000 messages, comment automation, multi-turn, brand voice, order attribution, and full analytics.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">View plans</s-button>
@@ -334,8 +334,8 @@ export default function AnalyticsPage() {
                   <span className="srTextStrong">Unlock full analytics</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
                     {plan?.commentTrial?.granting
-                      ? "This page shows messages, links, and clicks. Order attribution and the channel split stay on Growth ($39/mo) after the demo. Per-post analytics is on Pro."
-                      : "Free includes basic overview stats. Growth ($39/mo) adds order attribution and full analytics. Per-post analytics is on Pro."}
+                      ? "This page shows messages, links, and clicks. Order attribution and the channel split stay on Basic ($39/mo) after the demo. Per-post analytics is on Pro."
+                      : "Free includes basic overview stats. Basic ($39/mo) adds order attribution and full analytics. Per-post analytics is on Pro."}
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">Compare plans</s-button>
@@ -699,7 +699,7 @@ export default function AnalyticsPage() {
               comments that got no automated reply this month, shown dimmed.
               Specific real conversations beat an abstract feature pitch —
               and every row here is genuinely a comment the AI would have
-              answered on Growth. */}
+              answered on Basic. */}
           {!plan?.comments && missedOpportunities?.length > 0 && (
             <s-section heading="Missed opportunities">
               <div className="srVStack">
@@ -707,10 +707,10 @@ export default function AnalyticsPage() {
                   <div className="srCardPad srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
                     <span className="srCardDesc" style={{ flex: 1 }}>
                       These comments from this month look like real purchase interest, but comment
-                      replies {plan?.commentTrial?.expired ? "stopped when the 14-day window ended" : "aren't included on standing Free"}. On Growth ($39/mo), each of these customers
+                      replies {plan?.commentTrial?.expired ? "stopped when the 14-day window ended" : "aren't included on standing Free"}. On Basic ($39/mo), each of these customers
                       gets an automatic DM with an answer and a checkout link.
                     </span>
-                    <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Growth</s-button>
+                    <s-button href="/app/billing/select" variant="primary" size="slim">Upgrade to Basic</s-button>
                   </div>
                 </s-box>
                 {missedOpportunities.map((comment) => (
@@ -731,7 +731,7 @@ export default function AnalyticsPage() {
                           Intent: {comment.ai_intent}
                           {comment.ai_confidence && ` (${(comment.ai_confidence * 100).toFixed(0)}%)`}
                         </s-badge>
-                        <s-badge tone="warning">No reply — available on Growth</s-badge>
+                        <s-badge tone="warning">No reply, available on Basic</s-badge>
                       </div>
                     </div>
                   </div>
