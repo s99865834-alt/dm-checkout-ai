@@ -37,7 +37,9 @@ export const COMMENT_TRIAL_DAYS = 14;
  * written to shops: the lock is decided here, at read time, so subscribing
  * switches everything back on immediately.
  */
-export const FREE_PLAN_CLOSED_AT = new Date("2026-11-18T00:00:00Z");
+// The /bfcm offer's setup deadline (Nov 18, 11:59pm Denver). Shops installing
+// from that page wait on a manual Pro grant, so they must not land locked.
+export const FREE_PLAN_CLOSED_AT = new Date("2026-11-19T06:59:00Z");
 // Midnight Pacific on 1 December, after Cyber Monday.
 export const FREE_PLAN_ENDS_AT = new Date("2026-12-01T08:00:00Z");
 
