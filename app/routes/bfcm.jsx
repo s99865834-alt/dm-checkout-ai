@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useLoaderData } from "react-router";
 import { MarketingNav, MarketingFooter, appStoreUrl } from "../components/marketing/MarketingChrome";
 import { GoogleAnalytics } from "../components/marketing/GoogleAnalytics";
+import { FREE_PLAN_CLOSED_AT } from "../lib/entitlements";
 
 // Spots still open on the BFCM offer. Lower this when a shop is granted Pro.
 const SPOTS_LEFT = 44;
 const SPOTS_TOTAL = 100;
 // Nov 18, 2026, 11:59pm Denver time. Setup has to be done before Black Friday.
-const DEADLINE_MS = Date.parse("2026-11-19T06:59:00.000Z");
+const DEADLINE_MS = FREE_PLAN_CLOSED_AT.getTime();
+const PRICING_URL = "/#pricing";
 
 const INSTALL_URL = appStoreUrl("bfcm_pro");
 
@@ -52,7 +54,7 @@ export default function BfcmSplash() {
       <MarketingNav />
       <div className="srBfcmBar">
         <div className="srBfcmBarInner">
-          <strong>{SPOTS_LEFT} of {SPOTS_TOTAL} spots left</strong>
+          {!left.closed && <strong>{SPOTS_LEFT} of {SPOTS_TOTAL} spots left</strong>}
           <span>
             {left.closed
               ? "Setup window closed"
@@ -92,14 +94,14 @@ export default function BfcmSplash() {
               </div>
               <Countdown left={left} />
               <div className="srHeroActions">
-                <a className="srBtnPrimary srBtnLarge" href={INSTALL_URL} target="_blank" rel="noopener noreferrer">
-                  Claim free Pro
-                </a>
+                <ClaimButton closed={left.closed} large label="Claim free Pro" />
               </div>
-              <p className="srHeroFinePrint">
-                Install, then email support@socialrepl.ai with your store URL.
-                Pro is turned on the same day.
-              </p>
+              {!left.closed && (
+                <p className="srHeroFinePrint">
+                  Install, then email support@socialrepl.ai with your store URL.
+                  Pro is turned on the same day.
+                </p>
+              )}
             </div>
             <div className="srHeroArt">
               <img
@@ -136,9 +138,7 @@ export default function BfcmSplash() {
               <li>10,000 messages a month, so a drop does not shut it off.</li>
               <li>Order attribution: see the revenue the conversation drove.</li>
             </ul>
-            <a className="srBtnPrimary" href={INSTALL_URL} target="_blank" rel="noopener noreferrer">
-              Claim one of {SPOTS_LEFT} spots
-            </a>
+            <ClaimButton closed={left.closed} label={`Claim one of ${SPOTS_LEFT} spots`} />
           </div>
         </section>
 
@@ -166,20 +166,34 @@ export default function BfcmSplash() {
           <div className="srCtaInner">
             <h2>Do not go into Black Friday still typing replies by hand.</h2>
             <p>
-              {SPOTS_LEFT} spots. 2 months of Pro, free. The list closes November 18.
+              {left.closed
+                ? "The BFCM list is closed. Every plan still starts with a 14-day free trial."
+                : `${SPOTS_LEFT} spots. 2 months of Pro, free. The list closes November 18.`}
             </p>
-            <a className="srBtnPrimary srBtnLarge" href={INSTALL_URL} target="_blank" rel="noopener noreferrer">
-              Claim free Pro
-            </a>
-            <p className="srBfcmFine">
-              The Shopify listing shows the normal prices. This page is the offer.
-              After 2 months, Pro is $99 a month and you can cancel. No charge during the free months.
-            </p>
+            <ClaimButton closed={left.closed} large label="Claim free Pro" />
+            {!left.closed && (
+              <p className="srBfcmFine">
+                The Shopify listing shows the normal prices. This page is the offer.
+                After 2 months, Pro is $99 a month and you can cancel. No charge during the free months.
+              </p>
+            )}
           </div>
         </section>
       </main>
       <MarketingFooter />
     </div>
+  );
+}
+
+function ClaimButton({ closed, large, label }) {
+  const className = large ? "srBtnPrimary srBtnLarge" : "srBtnPrimary";
+  if (closed) {
+    return <a className={className} href={PRICING_URL}>See plans</a>;
+  }
+  return (
+    <a className={className} href={INSTALL_URL} target="_blank" rel="noopener noreferrer">
+      {label}
+    </a>
   );
 }
 
