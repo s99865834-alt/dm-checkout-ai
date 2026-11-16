@@ -576,8 +576,8 @@ export default function AnalyticsPage() {
                                     <span className="srStatRow"><span className="srStatLabel" title="DMs received from customers this period">Received: </span><span className="srStatValue">{analytics.channelPerformance.dm.sent}</span></span>
                                     <span className="srStatRow"><span className="srStatLabel" title="DMs the AI auto-replied to with a checkout link">AI replied: </span><span className="srStatValue">{analytics.channelPerformance.dm.responded}</span></span>
                                     <span className="srStatRow"><span className="srStatLabel" title="Link clicks on those AI replies">Clicks: </span><span className="srStatValue">{analytics.channelPerformance.dm.clicks}</span></span>
-                                    {analytics.channelPerformance.dm.responded > 0 && (
-                                      <span className="srStatRow"><span className="srStatLabel" title="Clicks ÷ AI replies">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.dm.clicks / analytics.channelPerformance.dm.responded) * 100).toFixed(1)}%</span></span>
+                                    {analytics.channelPerformance.dm.links > 0 && (
+                                      <span className="srStatRow"><span className="srStatLabel" title="Checkout links opened at least once ÷ checkout links sent">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.dm.linksClicked / analytics.channelPerformance.dm.links) * 100).toFixed(1)}%</span></span>
                                     )}
                                   </div>
                                 </div>
@@ -589,8 +589,8 @@ export default function AnalyticsPage() {
                                     <span className="srStatRow"><span className="srStatLabel" title="Comments received on your Instagram posts this period">Received: </span><span className="srStatValue">{analytics.channelPerformance.comment.sent}</span></span>
                                     <span className="srStatRow"><span className="srStatLabel" title="Comments the AI auto-replied to (private DM with checkout link)">AI replied: </span><span className="srStatValue">{analytics.channelPerformance.comment.responded}</span></span>
                                     <span className="srStatRow"><span className="srStatLabel" title="Link clicks on those AI replies">Clicks: </span><span className="srStatValue">{analytics.channelPerformance.comment.clicks}</span></span>
-                                    {analytics.channelPerformance.comment.responded > 0 && (
-                                      <span className="srStatRow"><span className="srStatLabel" title="Clicks ÷ AI replies">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.comment.clicks / analytics.channelPerformance.comment.responded) * 100).toFixed(1)}%</span></span>
+                                    {analytics.channelPerformance.comment.links > 0 && (
+                                      <span className="srStatRow"><span className="srStatLabel" title="Checkout links opened at least once ÷ checkout links sent">CTR: </span><span className="srStatValue">{((analytics.channelPerformance.comment.linksClicked / analytics.channelPerformance.comment.links) * 100).toFixed(1)}%</span></span>
                                     )}
                                   </div>
                                 </div>
