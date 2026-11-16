@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useLocation, useRouteError, useNavigate, useNavigation } from "react-router";
+import { Outlet, useLoaderData, useLocation, useMatches, useRouteError, useNavigate, useNavigation } from "react-router";
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -33,9 +33,14 @@ export const shouldRevalidate = layoutShouldRevalidate;
 
 export default function App() {
   const { apiKey, shop, plan } = useLoaderData();
+  // The layout skips revalidation on navigation, so its plan can be stale after
+  // a plan change. A page loader that also returns the plan has run more recently.
+  const matches = useMatches();
+  const livePlan = matches.findLast((m) => m.data?.plan)?.data.plan ?? plan;
   const navigate = useNavigate();
   const navigation = useNavigation();
   const location = useLocation();
+  const onBilling = location.pathname.startsWith("/app/billing");
   const navRef = useRef(null);
 
   // Show Shopify admin's native loading bar while a client-side navigation's
@@ -77,11 +82,11 @@ export default function App() {
         <s-link href="/app/billing/select">Billing</s-link>
         <s-link href="/app/support">Support</s-link>
       </s-app-nav>
-      {plan?.locked && !location.pathname.startsWith("/app/billing") ? (
+      {livePlan?.locked && !onBilling ? (
         <ChoosePlanScreen />
       ) : (
         <>
-          {plan?.freePlan?.inGrace && <FreePlanEndingBanner />}
+          {livePlan?.freePlan?.inGrace && !onBilling && <FreePlanEndingBanner />}
           <Outlet context={{ shop, plan }} />
         </>
       )}
@@ -122,12 +127,12 @@ function ChoosePlanScreen() {
             saved, and everything switches back on as soon as you subscribe.
           </s-paragraph>
           <s-paragraph>
-            <s-text type="strong">Basic, $39/month:</s-text> comment-to-DM, multi-turn conversations,
+            <strong>Basic, $39/month:</strong> comment-to-DM, multi-turn conversations,
             brand voice, checkout links with discount codes, order attribution, and 1,000 messages a
             month.
           </s-paragraph>
           <s-paragraph>
-            <s-text type="strong">Pro, $99/month:</s-text> everything in Basic, plus story replies,
+            <strong>Pro, $99/month:</strong> everything in Basic, plus story replies,
             follow-up messages, per-post analytics, and 10,000 messages a month.
           </s-paragraph>
           <s-paragraph>
