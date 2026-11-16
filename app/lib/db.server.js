@@ -1,7 +1,7 @@
 import supabase from "./supabase.server";
 import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
-import { commentTrialStatus, effectivePlan } from "./entitlements";
+import { commentTrialStatus, effectivePlan, freePlanStatus } from "./entitlements";
 import { DISCOUNT_TYPES } from "./discount-rules";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
@@ -2516,13 +2516,36 @@ async function getAdminPlanCounts() {
   if (trialError) {
     console.error("getAdminPlanCounts trial error", trialError);
   }
-  const [FREE, GROWTH, PRO, total] = await Promise.all([
-    countPlan("FREE"),
+  // Free rows are few, so grace vs locked is decided by freePlanStatus in JS
+  // rather than re-encoding the cutoff dates as filters.
+  const freeRows = async () => {
+    const { data, error } = await merchantShopsQuery("created_at, beta_trial_expires_at").eq("plan", "FREE");
+    if (error) {
+      console.error("getAdminPlanCounts free rows error", error);
+      return [];
+    }
+    return data || [];
+  };
+  const [GROWTH, PRO, total, free] = await Promise.all([
     countPlan("GROWTH"),
     countPlan("PRO"),
     countPlan(null),
+    freeRows(),
   ]);
-  return { FREE, GROWTH, PRO, trialing: trialing || 0, total };
+  const now = Date.now();
+  const unresolvedFree = free.filter(
+    (s) => !(s.beta_trial_expires_at && new Date(s.beta_trial_expires_at).getTime() > now),
+  );
+  const freeGrace = unresolvedFree.filter((s) => freePlanStatus(s).inGrace).length;
+  return {
+    FREE: free.length,
+    freeGrace,
+    freeLocked: unresolvedFree.length - freeGrace,
+    GROWTH,
+    PRO,
+    trialing: trialing || 0,
+    total,
+  };
 }
 
 export async function getAdminDashboardStores({
@@ -2832,6 +2855,11 @@ async function buildAdminStoresResult(shops) {
       // Free comment-to-DM window. Computed here, like beta_trial above, so
       // the dashboard renders it without repeating the date arithmetic.
       comment_trial: commentTrialStatus(s),
+      // Free is retired: in grace until FREE_PLAN_ENDS_AT, or locked. A beta
+      // or comped grant resolves to Pro, so those shops are never locked.
+      free_plan: (s.plan || "FREE") === "FREE" && !betaTrial && s.created_at
+        ? freePlanStatus(s)
+        : null,
       messages_sent: stats.messagesSent,
       // Replies we wrote and Instagram refused. Usually something else used up
       // the one private reply a comment allows; sometimes the comment was
