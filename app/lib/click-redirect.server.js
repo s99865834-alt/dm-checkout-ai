@@ -8,6 +8,7 @@
 
 import supabase from "./supabase.server";
 import { logClick } from "./db.server";
+import { isMetaScannerIp } from "./meta-scanner";
 import {
   buildTrackedLinkPageHtml,
   isLinkPreviewCrawler,
@@ -96,10 +97,10 @@ async function resolveTrackedLinkDetail(linkId, request) {
   // send in volume and know nothing about. An unmapped post can only answer
   // with an info_ link, so "does anyone click those?" decides how much the
   // product-mapping gap actually costs.
-  if (looksLikeBrowser(request)) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip = forwarded ? forwarded.split(",")[0].trim() : null;
+  if (looksLikeBrowser(request) && !isMetaScannerIp(ip)) {
     const userAgent = request.headers.get("user-agent") || null;
-    const forwarded = request.headers.get("x-forwarded-for");
-    const ip = forwarded ? forwarded.split(",")[0].trim() : null;
     try {
       await logClick({ linkId, userAgent, ip });
     } catch (e) {

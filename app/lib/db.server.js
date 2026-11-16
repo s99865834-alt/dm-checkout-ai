@@ -2290,8 +2290,8 @@ export async function getAnalytics(shopId, planName, options = {}) {
     responseRate: 0,
     topTriggerPhrases: [],
     channelPerformance: {
-      dm: { sent: 0, responded: 0, clicks: 0 },
-      comment: { sent: 0, responded: 0, clicks: 0 },
+      dm: { sent: 0, responded: 0, clicks: 0, links: 0, linksClicked: 0 },
+      comment: { sent: 0, responded: 0, clicks: 0, links: 0, linksClicked: 0 },
     },
     topPosts: [],
   };
@@ -2355,11 +2355,15 @@ export async function getAnalytics(shopId, planName, options = {}) {
           sent: num(t.dm_sent),
           responded: num(t.dm_responded),
           clicks: num(t.dm_clicks),
+          links: num(t.dm_links),
+          linksClicked: num(t.dm_links_clicked),
         },
         comment: {
           sent: num(t.comment_sent),
           responded: num(t.comment_responded),
           clicks: num(t.comment_clicks),
+          links: num(t.comment_links),
+          linksClicked: num(t.comment_links_clicked),
         },
       };
       // Needs a media_id on comment rows before it can be built.
