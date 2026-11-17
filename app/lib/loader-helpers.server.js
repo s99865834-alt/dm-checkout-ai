@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
-import { getShopByDomain, createOrUpdateShop, reactivateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext } from "./db.server";
+import { getShopByDomain, createOrUpdateShop, reactivateShop, ensureUsageMonthCurrent, getStoredStoreContext, saveStoredStoreContext, setShopDevStore } from "./db.server";
+import { fetchIsDevStore } from "./dev-store.server";
 import { getPlanConfig } from "./plans";
 import { effectivePlan } from "./entitlements";
 import { getShopifyStoreInfo } from "./shopify-data.server";
@@ -39,6 +40,18 @@ async function maybeRefreshStoreContext(shop, shopDomain) {
   } catch (err) {
     console.warn(`[loader-helpers] Background store context refresh failed for ${shopDomain}:`, err?.message);
   }
+}
+
+// Shops installed before is_dev_store existed get checked once, on their next
+// app open. The set stops parallel loaders from asking Shopify repeatedly.
+const _devStoreChecks = new Set();
+
+function maybeFlagDevStore(shop, shopDomain, admin) {
+  if (!shop?.id || shop.is_dev_store != null || !admin || _devStoreChecks.has(shopDomain)) return;
+  _devStoreChecks.add(shopDomain);
+  fetchIsDevStore(admin)
+    .then((isDevStore) => (isDevStore === null ? null : setShopDevStore(shopDomain, isDevStore)))
+    .catch(() => {});
 }
 
 /**
@@ -122,6 +135,7 @@ export async function getShopWithPlan(request) {
   // Keep store context fresh so DM automation can answer store_question DMs without
   // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.
   maybeRefreshStoreContext(shop, shopDomain).catch(() => {});
+  maybeFlagDevStore(shop, shopDomain, admin);
 
   return { shop, plan, session, admin };
 }
