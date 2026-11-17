@@ -104,6 +104,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
     usage_count: 0, // Always start at 0 on install/reinstall
     priority_support: false,
     active: true, // Always set to true on install/reinstall
+    installed_at: now.toISOString(),
   };
 
   // Merge defaults, but ensure active and usage_count are explicitly set
@@ -132,6 +133,7 @@ export async function createOrUpdateShop(shopifyDomain, defaults = {}) {
         usage_count: shopData.usage_count, // Explicitly reset to 0 on reinstall
         priority_support: shopData.priority_support,
         active: shopData.active, // Explicitly set to true on reinstall
+        installed_at: shopData.installed_at,
       })
       .eq("shopify_domain", shopifyDomain)
       .select("*")
@@ -374,7 +376,7 @@ export async function refundUsage(shopId, delta = 1) {
 export async function getShopPlanAndUsage(shopId) {
   const { data, error } = await supabase
     .from("shops")
-    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at, comment_trial_started_at, created_at")
+    .select("plan, usage_month, usage_count, monthly_cap, beta_trial_expires_at, comment_trial_started_at, created_at, installed_at")
     .eq("id", shopId)
     .single();
 
@@ -2519,7 +2521,7 @@ async function getAdminPlanCounts() {
   // Free rows are few, so grace vs locked is decided by freePlanStatus in JS
   // rather than re-encoding the cutoff dates as filters.
   const freeRows = async () => {
-    const { data, error } = await merchantShopsQuery("created_at, beta_trial_expires_at").eq("plan", "FREE");
+    const { data, error } = await merchantShopsQuery("created_at, installed_at, beta_trial_expires_at").eq("plan", "FREE");
     if (error) {
       console.error("getAdminPlanCounts free rows error", error);
       return [];
@@ -2561,7 +2563,7 @@ export async function getAdminDashboardStores({
   // the revenue column came to say "not read yet" for every shop while the
   // figures sat in the table.
   const select =
-    "id, shopify_domain, active, created_at, plan, beta_trial_expires_at, comment_trial_started_at, store_revenue_ytd, store_revenue_currency, store_revenue_capped, store_revenue_updated_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name, settings(discount_enabled, discount_type, discount_value)";
+    "id, shopify_domain, active, created_at, installed_at, plan, beta_trial_expires_at, comment_trial_started_at, store_revenue_ytd, store_revenue_currency, store_revenue_capped, store_revenue_updated_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name, settings(discount_enabled, discount_type, discount_value)";
 
   const run = (columns) =>
     applyStoreSearch(
@@ -2857,7 +2859,7 @@ async function buildAdminStoresResult(shops) {
       comment_trial: commentTrialStatus(s),
       // Free is retired: in grace until FREE_PLAN_ENDS_AT, or locked. A beta
       // or comped grant resolves to Pro, so those shops are never locked.
-      free_plan: (s.plan || "FREE") === "FREE" && !betaTrial && s.created_at
+      free_plan: (s.plan || "FREE") === "FREE" && !betaTrial && (s.installed_at || s.created_at)
         ? freePlanStatus(s)
         : null,
       messages_sent: stats.messagesSent,

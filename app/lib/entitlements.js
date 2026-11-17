@@ -45,12 +45,14 @@ export const FREE_PLAN_ENDS_AT = new Date("2026-12-01T08:00:00Z");
 
 /**
  * Where a FREE shop stands in the retirement.
- * @param {Object|null} shop - shops row (needs created_at)
+ * A reinstall counts as a new install, so installed_at wins over created_at.
+ * @param {Object|null} shop - shops row (needs installed_at, created_at)
  * @param {number} [now]
  * @returns {{inGrace: boolean, locked: boolean, endsAt: Date, daysLeft: number}}
  */
 export function freePlanStatus(shop, now = Date.now()) {
-  const installedAt = shop?.created_at ? new Date(shop.created_at).getTime() : NaN;
+  const installed = shop?.installed_at || shop?.created_at;
+  const installedAt = installed ? new Date(installed).getTime() : NaN;
   const legacy = Number.isFinite(installedAt) && installedAt < FREE_PLAN_CLOSED_AT.getTime();
   const msLeft = FREE_PLAN_ENDS_AT.getTime() - now;
   const inGrace = legacy && msLeft > 0;
