@@ -18,8 +18,9 @@ import { getPlanConfig } from "../lib/plans";
 // correctly-set plans. Only a shop with no plan asks Shopify, and only an
 // upgrade is ever written from that check.
 export const loader = async ({ request }) => {
-  const { shop, plan: storedPlan, session, admin, redirect } = await getShopWithPlan(request);
+  const { shop, plan: storedPlan, session, admin } = await getShopWithPlan(request);
   let plan = storedPlan;
+  let choosePlanUrl = null;
 
   if (shop?.id && needsPlanSelection({ plan, pathname: new URL(request.url).pathname, shopDomain: session.shop })) {
     // A subscription whose webhook hasn't landed yet would otherwise bounce a
@@ -34,10 +35,12 @@ export const loader = async ({ request }) => {
     } catch (err) {
       console.error(`[app] Subscription check failed for ${session.shop}:`, err.message);
     }
+    // Opened from the browser, not via the library's redirect: that throws an
+    // App Bridge page whose boundary check fails in the production bundle, and
+    // the merchant saw a bare "200".
     if (mapped === "FREE") {
-      throw redirect(managedPricingUrl(session.shop), { target: "_top" });
-    }
-    if (mapped) {
+      choosePlanUrl = managedPricingUrl(session.shop);
+    } else if (mapped) {
       await applySubscriptionToShopPlan(shop, subscription);
       plan = effectivePlan(getPlanConfig(mapped), { ...shop, plan: mapped });
     }
@@ -47,6 +50,7 @@ export const loader = async ({ request }) => {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     shop,
     plan,
+    choosePlanUrl,
   };
 };
 
@@ -58,7 +62,7 @@ export const loader = async ({ request }) => {
 export const shouldRevalidate = layoutShouldRevalidate;
 
 export default function App() {
-  const { apiKey, shop, plan } = useLoaderData();
+  const { apiKey, shop, plan, choosePlanUrl } = useLoaderData();
   // The layout skips revalidation on navigation, so its plan can be stale after
   // a plan change. A page loader that also returns the plan has run more recently.
   const matches = useMatches();
@@ -68,6 +72,10 @@ export default function App() {
   const location = useLocation();
   const onBilling = location.pathname.startsWith("/app/billing");
   const navRef = useRef(null);
+
+  useEffect(() => {
+    if (choosePlanUrl && !onBilling) window.open(choosePlanUrl, "_top");
+  }, [choosePlanUrl, onBilling]);
 
   // Show Shopify admin's native loading bar while a client-side navigation's
   // loader is running, so tab switches never look like a frozen page.

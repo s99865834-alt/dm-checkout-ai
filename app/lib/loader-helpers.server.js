@@ -57,12 +57,12 @@ async function maybeRefreshStoreContext(shop, shopDomain) {
  * @returns {Promise<{shop: Object, plan: Object, session: Object, admin: Object}>}
  */
 export async function getShopWithPlan(request) {
-  let session, admin, redirect;
+  let session, admin;
   if (_authCache.has(request)) {
-    ({ session, admin, redirect } = _authCache.get(request));
+    ({ session, admin } = _authCache.get(request));
   } else {
-    ({ session, admin, redirect } = await authenticate.admin(request));
-    _authCache.set(request, { session, admin, redirect });
+    ({ session, admin } = await authenticate.admin(request));
+    _authCache.set(request, { session, admin });
   }
   const shopDomain = session.shop;
 
@@ -109,7 +109,7 @@ export async function getShopWithPlan(request) {
     });
   } catch (error) {
     console.error(`[getShopWithPlan] Error resolving shop ${shopDomain}:`, error);
-    return { shop: null, plan: getPlanConfig("FREE"), session, admin, redirect };
+    return { shop: null, plan: getPlanConfig("FREE"), session, admin };
   }
 
   const isBetaActive = shop.beta_trial_expires_at &&
@@ -123,7 +123,7 @@ export async function getShopWithPlan(request) {
   // a live Shopify API call at webhook time. Fire-and-forget: never blocks the page load.
   maybeRefreshStoreContext(shop, shopDomain).catch(() => {});
 
-  return { shop, plan, session, admin, redirect };
+  return { shop, plan, session, admin };
 }
 
 /**
