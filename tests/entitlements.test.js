@@ -186,6 +186,11 @@ describe("Free plan retirement", () => {
     expect(plan.cap).toBe(0);
   });
 
+  it("treats a reinstall after the cutoff as a new install", () => {
+    const reinstalled = legacy({ installed_at: newInstall.created_at });
+    expect(effectivePlan(getPlanConfig("FREE"), reinstalled, NOW).locked).toBe(true);
+  });
+
   it("locks a Free shop whose install date is unknown", () => {
     expect(effectivePlan(getPlanConfig("FREE"), {}, NOW).locked).toBe(true);
     expect(freePlanStatus(null, NOW).locked).toBe(true);
