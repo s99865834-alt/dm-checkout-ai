@@ -2,13 +2,11 @@ import { useEffect, useState } from "react";
 import { useLoaderData } from "react-router";
 import { MarketingNav, MarketingFooter, appStoreUrl } from "../components/marketing/MarketingChrome";
 import { GoogleAnalytics } from "../components/marketing/GoogleAnalytics";
-import { FREE_PLAN_CLOSED_AT } from "../lib/entitlements";
-
 // Spots still open on the BFCM offer. Lower this when a shop is granted Pro.
 const SPOTS_LEFT = 44;
 const SPOTS_TOTAL = 100;
 // Nov 18, 2026, 11:59pm Denver time. Setup has to be done before Black Friday.
-const DEADLINE_MS = FREE_PLAN_CLOSED_AT.getTime();
+const DEADLINE_MS = Date.parse("2026-11-19T06:59:00.000Z");
 const PRICING_URL = "/#pricing";
 
 const INSTALL_URL = appStoreUrl("bfcm_pro");

@@ -252,12 +252,38 @@ function formatRevenue(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
-// Display label for a shop's plan enum (FREE / GROWTH / PRO).
+// Display label for a shop's plan enum. GROWTH is sold as Basic.
 function formatPlan(plan) {
   const p = (plan || "FREE").toUpperCase();
   if (p === "PRO") return "Pro";
-  if (p === "GROWTH") return "Growth";
+  if (p === "GROWTH") return "Basic";
   return "Free";
+}
+
+// Free is retired: a Free store is either in grace until the end date or
+// locked out until it picks Basic or Pro.
+function FreePlanBadge({ row }) {
+  const fp = row.free_plan;
+  if (!fp) return null;
+  const endsAt = new Date(fp.endsAt).toLocaleDateString();
+  if (fp.locked) {
+    return (
+      <span
+        style={styles.commentWindowEnded}
+        title="Free is closed for this store. Replies are off until it chooses Basic or Pro."
+      >
+        Locked
+      </span>
+    );
+  }
+  return (
+    <span
+      style={styles.graceBadge}
+      title={`Legacy Free store. Keeps Free until ${endsAt}, then must choose Basic or Pro.`}
+    >
+      Ends {endsAt} · {fp.daysLeft}d
+    </span>
+  );
 }
 
 // Color-code the plan badge by tier so paying stores stand out at a glance.
@@ -461,6 +487,7 @@ function StoreCell({ row }) {
 // countdown there would imply the feature is about to be taken away.
 function CommentWindowBadge({ row }) {
   if ((row.plan || "FREE").toUpperCase() !== "FREE") return null;
+  if (row.free_plan?.locked) return null;
 
   const trial = row.comment_trial;
   if (!trial?.started) return null;
@@ -633,9 +660,18 @@ export default function Admin() {
       {planCounts && planCounts.total > 0 && (
         <div style={styles.storeSummary}>
           <span style={styles.summaryPill}>{planCounts.total} stores</span>
-          <span style={styles.summaryPill}>{planCounts.FREE} Free</span>
-          <span style={styles.summaryPill}>{planCounts.GROWTH} Growth</span>
           <span style={styles.summaryPill}>{planCounts.PRO} Pro</span>
+          <span style={styles.summaryPill}>{planCounts.GROWTH} Basic</span>
+          {planCounts.freeGrace > 0 && (
+            <span style={styles.summaryPill} title="Legacy Free stores keeping Free until it ends">
+              {planCounts.freeGrace} Free (ending)
+            </span>
+          )}
+          {planCounts.freeLocked > 0 && (
+            <span style={styles.summaryPill} title="Free stores with replies off until they choose a plan">
+              {planCounts.freeLocked} locked
+            </span>
+          )}
           {planCounts.trialing > 0 && (
             <span style={{ ...styles.summaryPill, ...styles.summaryPillTrial }}>
               {planCounts.trialing} on trial
@@ -685,6 +721,7 @@ export default function Admin() {
                   <td style={styles.td}>
                     <div style={styles.badgeRow}>
                     <span style={planBadgeStyle(row.plan)}>{formatPlan(row.plan)}</span>
+                    <FreePlanBadge row={row} />
                     <CommentWindowBadge row={row} />
                     {/* Whether this merchant is running checkout discounts.
                         One switch now: the plan decides who can, the merchant
@@ -767,9 +804,10 @@ export default function Admin() {
                   </td>
                   <td style={styles.td}>
                     <span title={
-                      row.total_revenue_updated_at
-                        ? `Read from Shopify ${formatAge(row.total_revenue_updated_at)}`
-                        : "Not read yet. The background refresh visits every shop in turn."
+                      (row.total_revenue_updated_at
+                        ? `Read from Shopify ${formatAge(row.total_revenue_updated_at)}. `
+                        : "Not read yet. The background refresh visits every shop in turn. ") +
+                      "Open, closed, and cancelled orders. read_orders only includes the last 60 days, so earlier months of the year are missing until Shopify grants read_all_orders."
                     }>
                       {formatStoreRevenue(
                         row.total_revenue_ytd,
@@ -1242,6 +1280,17 @@ const styles = {
     backgroundColor: "#155e75",
     borderRadius: "4px",
     color: "#a5f3fc",
+    whiteSpace: "nowrap",
+  },
+  graceBadge: {
+    display: "inline-block",
+    marginLeft: "0.5rem",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    padding: "0.15rem 0.4rem",
+    backgroundColor: "#78350f",
+    borderRadius: "4px",
+    color: "#fde68a",
     whiteSpace: "nowrap",
   },
   commentWindowEnded: {
