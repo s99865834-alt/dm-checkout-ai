@@ -217,6 +217,18 @@ export async function getShopsForRevenueRefresh(limit = 25) {
   return data || [];
 }
 
+export async function setShopDevStore(shopifyDomain, isDevStore) {
+  const { error } = await supabase
+    .from("shops")
+    .update({ is_dev_store: isDevStore })
+    .eq("shopify_domain", shopifyDomain);
+  if (error) {
+    console.error("setShopDevStore error", error);
+    return;
+  }
+  invalidateCached(`shopplan:${shopifyDomain}`);
+}
+
 export async function updateShopPlan(shopId, plan) {
   const config = getPlanConfig(plan);
 
@@ -2498,55 +2510,37 @@ function applyStoreSearch(query, q) {
   );
 }
 
+// Counted in JS from one fetch: the shop list is small, and grace vs locked
+// comes from freePlanStatus rather than re-encoding the cutoff dates as
+// filters. Dev stores are listed on /admin but are not merchants, so they are
+// left out of every count here.
 async function getAdminPlanCounts() {
-  const countPlan = async (plan) => {
-    let query = merchantShopsQuery("id", { count: "exact", head: true });
-    if (plan) query = query.eq("plan", plan);
-    const { count, error } = await query;
-    if (error) {
-      console.error("getAdminPlanCounts error", error);
-      return 0;
-    }
-    return count || 0;
-  };
-  const { count: trialing, error: trialError } = await merchantShopsQuery("id", {
-    count: "exact",
-    head: true,
-  })
-    .gt("beta_trial_expires_at", new Date().toISOString())
-    .lte("beta_trial_expires_at", new Date(Date.now() + COMPED_AFTER_MS).toISOString());
-  if (trialError) {
-    console.error("getAdminPlanCounts trial error", trialError);
-  }
-  // Free rows are few, so grace vs locked is decided by freePlanStatus in JS
-  // rather than re-encoding the cutoff dates as filters.
-  const freeRows = async () => {
-    const { data, error } = await merchantShopsQuery("created_at, installed_at, beta_trial_expires_at").eq("plan", "FREE");
-    if (error) {
-      console.error("getAdminPlanCounts free rows error", error);
-      return [];
-    }
-    return data || [];
-  };
-  const [GROWTH, PRO, total, free] = await Promise.all([
-    countPlan("GROWTH"),
-    countPlan("PRO"),
-    countPlan(null),
-    freeRows(),
-  ]);
-  const now = Date.now();
-  const unresolvedFree = free.filter(
-    (s) => !(s.beta_trial_expires_at && new Date(s.beta_trial_expires_at).getTime() > now),
+  const { data, error } = await merchantShopsQuery(
+    "plan, created_at, installed_at, beta_trial_expires_at, is_dev_store",
   );
-  const freeGrace = unresolvedFree.filter((s) => freePlanStatus(s).inGrace).length;
+  if (error) {
+    console.error("getAdminPlanCounts error", error);
+    return { FREE: 0, freeGrace: 0, freeLocked: 0, GROWTH: 0, PRO: 0, trialing: 0, total: 0, dev: 0 };
+  }
+  warnIfTruncated("admin plan counts", data);
+  const rows = data || [];
+  const shops = rows.filter((s) => s.is_dev_store !== true);
+  const now = Date.now();
+  const betaActive = (s) => s.beta_trial_expires_at && new Date(s.beta_trial_expires_at).getTime() > now;
+  const free = shops.filter((s) => (s.plan || "FREE") === "FREE");
+  const unresolvedFree = free.filter((s) => !betaActive(s));
+  const freeGrace = unresolvedFree.filter((s) => freePlanStatus(s, now).inGrace).length;
   return {
     FREE: free.length,
     freeGrace,
     freeLocked: unresolvedFree.length - freeGrace,
-    GROWTH,
-    PRO,
-    trialing: trialing || 0,
-    total,
+    GROWTH: shops.filter((s) => s.plan === "GROWTH").length,
+    PRO: shops.filter((s) => s.plan === "PRO").length,
+    trialing: shops.filter(
+      (s) => betaActive(s) && new Date(s.beta_trial_expires_at).getTime() <= now + COMPED_AFTER_MS,
+    ).length,
+    total: shops.length,
+    dev: rows.length - shops.length,
   };
 }
 
@@ -2563,7 +2557,7 @@ export async function getAdminDashboardStores({
   // the revenue column came to say "not read yet" for every shop while the
   // figures sat in the table.
   const select =
-    "id, shopify_domain, active, created_at, installed_at, plan, beta_trial_expires_at, comment_trial_started_at, store_revenue_ytd, store_revenue_currency, store_revenue_capped, store_revenue_updated_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name, settings(discount_enabled, discount_type, discount_value)";
+    "id, shopify_domain, active, created_at, installed_at, is_dev_store, plan, beta_trial_expires_at, comment_trial_started_at, store_revenue_ytd, store_revenue_currency, store_revenue_capped, store_revenue_updated_at, review_prompt_count, review_prompt_last_at, review_prompt_result, store_name:store_context_json->>name, settings(discount_enabled, discount_type, discount_value)";
 
   const run = (columns) =>
     applyStoreSearch(
@@ -2837,6 +2831,7 @@ async function buildAdminStoresResult(shops) {
       store_name: storeNameByShop.get(s.id) || null,
       created_at: s.created_at,
       active: s.active,
+      is_dev_store: s.is_dev_store === true,
       plan: s.plan || "FREE",
       merchant_discount: (() => {
         const st = Array.isArray(s.settings) ? s.settings[0] : s.settings;

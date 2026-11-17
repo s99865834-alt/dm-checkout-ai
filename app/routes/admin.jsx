@@ -478,6 +478,11 @@ function StoreCell({ row }) {
         {row.store_name || row.shopify_domain}
       </a>
       {!row.active && <span style={styles.badge}>inactive</span>}
+      {row.is_dev_store && (
+        <span style={styles.badge} title="Shopify development store. Not counted in the store totals.">
+          Dev
+        </span>
+      )}
     </>
   );
 }
@@ -675,6 +680,11 @@ export default function Admin() {
           {planCounts.trialing > 0 && (
             <span style={{ ...styles.summaryPill, ...styles.summaryPillTrial }}>
               {planCounts.trialing} on trial
+            </span>
+          )}
+          {planCounts.dev > 0 && (
+            <span style={styles.summaryPill} title="Shopify development stores, listed below but left out of these counts">
+              +{planCounts.dev} dev
             </span>
           )}
           {storeQuery && (
