@@ -4,18 +4,44 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
 import { layoutShouldRevalidate } from "../lib/home-should-revalidate";
-import { FREE_PLAN_ENDS_AT } from "../lib/entitlements";
+import { FREE_PLAN_ENDS_AT, effectivePlan } from "../lib/entitlements";
+import { needsPlanSelection } from "../lib/plan-gate";
+import { managedPricingUrl } from "../lib/billing-url";
+import { getCurrentSubscription, applySubscriptionToShopPlan } from "../lib/billing.server";
+import { planFromSubscription } from "../lib/plan-resolution";
+import { getPlanConfig } from "../lib/plans";
 
-// shop.plan is the source of truth in the DB. It's written authoritatively
-// by /app/billing/activate (after Managed Pricing approval, using the
-// plan=… URL param Shopify sends) and by the FREE downgrade action in
-// /app/billing/select. We deliberately do NOT re-sync from the active
-// Shopify subscription here — doing so on every /app/* request races
-// with both of those write paths and silently reverts correctly-set
-// plans (e.g. just-upgraded PRO -> GROWTH, or just-cancelled FREE ->
-// previous paid plan).
+// shop.plan is the source of truth in the DB. It's written by
+// /app/billing/activate after Managed Pricing approval and by the
+// subscriptions webhook. Shops that have a plan are not re-synced here:
+// doing so on every /app/* request raced those write paths and reverted
+// correctly-set plans. Only a shop with no plan asks Shopify, and only an
+// upgrade is ever written from that check.
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan: storedPlan, session, admin, redirect } = await getShopWithPlan(request);
+  let plan = storedPlan;
+
+  if (shop?.id && needsPlanSelection({ plan, pathname: new URL(request.url).pathname, shopDomain: session.shop })) {
+    // A subscription whose webhook hasn't landed yet would otherwise bounce a
+    // merchant who just paid straight back to the plans page.
+    // If Shopify can't be asked, or names a plan we don't know, the in-app
+    // choose-a-plan screen is the fallback rather than a redirect.
+    let mapped = null;
+    let subscription = null;
+    try {
+      subscription = await getCurrentSubscription(admin);
+      mapped = planFromSubscription(subscription);
+    } catch (err) {
+      console.error(`[app] Subscription check failed for ${session.shop}:`, err.message);
+    }
+    if (mapped === "FREE") {
+      throw redirect(managedPricingUrl(session.shop), { target: "_top" });
+    }
+    if (mapped) {
+      await applySubscriptionToShopPlan(shop, subscription);
+      plan = effectivePlan(getPlanConfig(mapped), { ...shop, plan: mapped });
+    }
+  }
 
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
