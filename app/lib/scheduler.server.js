@@ -30,6 +30,10 @@ const STORE_REVENUE_INTERVAL_MS = 10 * 60 * 1000;  // every 10 minutes
 // of deploys does not run it on every boot.
 const LINK_HEALTH_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 const LINK_HEALTH_FIRST_RUN_MS = 15 * 60 * 1000;
+// Pro customer insights. Each shop refreshes weekly; the hourly pass only
+// picks up the few that are due, so AI calls spread out over the week.
+const INSIGHTS_INTERVAL_MS = 60 * 60 * 1000;     // every 1 hour
+const INSIGHTS_FIRST_RUN_MS = 20 * 60 * 1000;
 const STARTUP_DELAY_MS = 10 * 1000;              // wait 10s after boot
 
 let started = false;
@@ -104,6 +108,21 @@ async function tickLinkHealth() {
   }
 }
 
+let insightsRunning = false;
+
+async function tickInsights() {
+  if (insightsRunning) return;
+  insightsRunning = true;
+  try {
+    const { runInsightsTick } = await import("./insights.server");
+    await runInsightsTick();
+  } catch (err) {
+    console.error("[scheduler] insights tick error:", err?.message || err);
+  } finally {
+    insightsRunning = false;
+  }
+}
+
 /**
  * Start the in-process scheduler. Idempotent — calling twice is a no-op.
  * Returns false if scheduling is disabled by environment.
@@ -140,6 +159,10 @@ export function startScheduler() {
     tickLinkHealth();
     setInterval(tickLinkHealth, LINK_HEALTH_INTERVAL_MS);
   }, LINK_HEALTH_FIRST_RUN_MS);
+  setTimeout(() => {
+    tickInsights();
+    setInterval(tickInsights, INSIGHTS_INTERVAL_MS);
+  }, INSIGHTS_FIRST_RUN_MS);
 
   return true;
 }

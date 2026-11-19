@@ -72,53 +72,48 @@ Cut for space (work these into screenshots/captions or the details paragraph if
 room ever allows): follow-up messages for unfinished checkouts, multi-language
 replies, and the analytics dashboard (bullet 3 already carries the revenue story).
 
-### Pricing — CHANGE (Free becomes a demo, Sep 13 2026)
+### Pricing (live since Nov 16 2026: Basic and Pro only)
 
-Prices are unchanged (Free / $39 Growth / $99 Pro). What each plan includes
-changed. Paste these into Partner Dashboard → Apps → SocialReplAI →
-Distribution → Pricing, then into the listing Pricing details.
+Live listing checked Nov 19 2026. Free is closed to new installs. Both plans
+have a 14-day trial in App Pricing. Internally Basic is still `GROWTH`.
 
-Do this **before** merging to `main`. The site and in-app billing now promise
-a 7-day Growth trial. If Managed Pricing does not have that trial set, the
-listing can be rejected under requirement 4.2.1.
+**Basic ($39/month)**, as live:
+1,000 messages/month · Comment-to-DM automation · Multi-turn conversations ·
+Store question answering · Brand voice customization · Checkout links with
+discount codes · Order attribution + full analytics · Replies in your
+customer's language · 14-day free trial
 
-**Free**
-- 25 messages/month
-- DM automation with AI
-- Checkout links
-- Basic analytics
-- Comment-to-DM, multi-turn, and brand voice for first 14 days after connecting Instagram
-- 500 messages during those 14 days
+**Pro ($99/month)**, as live, plus one new line once customer insights is on `main`:
+Everything in Basic · 10,000 messages/month · Story replies answered
+automatically · Default product for stories and posts · Follow-ups for
+unfinished checkouts · Per-post analytics · **Weekly customer insights from
+your DMs and comments** (new) · Priority Support · 14-day free trial
 
-**Growth ($39/month)**
-- 7-day free trial
-- Comment-to-DM, always on
-- Multi-turn conversations
-- Brand voice customization
-- Order attribution + full analytics
-- 1,000 messages/month
+### Customer insights (Pro), listing edits for Nov 2026
 
-**Pro ($99/month)**
-- 30-day free trial
-- Everything in Growth
-- Instagram Stories automation
-- Default product for stories and unmapped posts
-- Follow-up messages
-- Per-post analytics
-- Priority support
-- 10,000 messages/month
+Make these only after the feature is deployed. Listing copy that names a
+feature merchants cannot reach is a 4.x rejection risk and breaks "if it's
+sold, it ships."
 
-Two compliance notes:
+- **Pricing, Pro plan features** (App Pricing, edit Pro): add
+  `Weekly customer insights from your DMs and comments` (51) after
+  "Per-post analytics".
+- **Feature list, bullet 2**: replace
+  `Checkout links with the right product and variant pre-loaded` with
+  `Weekly insights: what customers ask most and what to post next` (62).
+  Bullet 1 already says "with checkout links", so bullet 2 was the repeat.
+- **App details** (466 of 500): replace the last two sentences with
+  "Comment-to-DM turns public comments into private conversations. Weekly
+  insights show what customers ask about most. No flows to build."
+- **Screenshot**: add one of the Customer insights card on Analytics,
+  captured on a test store with real-looking data, not a merchant's
+  customers. Caption: `See what customers ask about most, every week` (45).
+  Keep plan names out of the image (requirement 4.2.2).
+- Do not claim numbers, accuracy, or "AI-powered analytics" in general:
+  the card groups messages and links them; it does not forecast.
 
-- **The 14-day comment window is pricing information** (requirement 4.2). It
-  belongs in Pricing details only. Do not put "free for 14 days" in the
-  introduction, details, features, or screenshots.
 - **Do not claim story mentions.** Story replies are answered on Pro.
   Mentions have never been observed.
-
-Message caps are enforced in our own database, not by Shopify Managed Pricing,
-so dropping Free to 25 needs no billing-API change. The plan description in
-the Partner Dashboard still has to match, or the listing will be wrong.
 
 ### Pricing (historical, Aug 31 2026)
 

@@ -115,6 +115,7 @@ export const action = async ({ request }) => {
           await supabase.from("outbound_dm_queue").delete().eq("shop_id", dbShopId);
           await supabase.from("beta_redemptions").delete().eq("shop_id", dbShopId);
           await supabase.from("meta_auth").delete().eq("shop_id", dbShopId);
+          await supabase.from("shop_insights").delete().eq("shop_id", dbShopId);
           await supabase.from("shops").delete().eq("id", dbShopId);
           logger.debug(`[webhook/compliance] Shop ${shop} data erased`);
         }

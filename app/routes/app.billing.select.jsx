@@ -139,6 +139,7 @@ export default function BillingSelect() {
         "Story replies answered automatically",
         "Default product for stories and unmapped posts",
         "Follow-up messages",
+        "Weekly customer insights: top questions, products asked about, what to post next",
         "Per-post analytics",
         "10,000 messages/month",
         "Priority support",
@@ -165,6 +166,7 @@ export default function BillingSelect() {
     ["Story Replies", false, true],
     ["Default Product", false, true],
     ["Follow-up Messages", false, true],
+    ["Customer Insights (weekly)", false, true],
     ["Per-post Analytics", false, true],
     ["Priority Support", false, true],
   ];

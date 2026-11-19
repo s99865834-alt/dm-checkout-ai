@@ -16,7 +16,7 @@ const FAQS = [
   },
   {
     q: "How much does Instagram DM automation cost?",
-    a: "Pricing varies by tool and volume. SocialReplAI has a Basic plan at $39/month (14-day free trial, 1,000 messages, comment-to-DM, multi-turn, brand voice) and a Pro plan at $99/month (14-day free trial) with story replies, follow-ups, per-post analytics, and 10,000 messages. Most flow-builder tools price by contact count instead of messages.",
+    a: "Pricing varies by tool and volume. SocialReplAI has a Basic plan at $39/month (14-day free trial, 1,000 messages, comment-to-DM, multi-turn, brand voice) and a Pro plan at $99/month (14-day free trial) with story replies, follow-ups, weekly customer insights, per-post analytics, and 10,000 messages. Most flow-builder tools price by contact count instead of messages.",
   },
   {
     q: "Will automated DMs get my Instagram account banned?",
@@ -108,7 +108,7 @@ export default function DmAutomationGuide() {
         free trial, 1,000 messages, comment-to-DM, brand voice, multi-turn
         conversations, order attribution) and Pro ($99/month with a 14-day free
         trial: story replies, follow-up
-        messages, per-post analytics, 10,000 messages, priority support). Flow-builder tools typically price by contact count, which
+        messages, weekly customer insights, per-post analytics, 10,000 messages, priority support). Flow-builder tools typically price by contact count, which
         grows over time even if your message volume does not. Whichever model
         you choose, measure cost against attributed revenue — that is the
         only comparison that matters.

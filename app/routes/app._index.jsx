@@ -1121,7 +1121,7 @@ export default function Index() {
             <div style={{ flex: 1 }}>
               <span className="srTextStrong">You've reached your {plan.cap}-message limit this month.</span>
               <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                Automation is paused until next month. Upgrade to Pro for story replies, follow-ups, per-post analytics, and 10,000 messages/mo.
+                Automation is paused until next month. Upgrade to Pro for story replies, follow-ups, customer insights, per-post analytics, and 10,000 messages/mo.
               </span>
             </div>
             <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>

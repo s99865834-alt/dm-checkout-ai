@@ -185,6 +185,35 @@ async function _fetchStoreTotalRevenueYTD(shopDomain) {
 }
 
 /**
+ * Product titles by GID, for the insights card. Missing or deleted products
+ * are left out, and any failure returns an empty map so the card falls back
+ * to handles instead of failing.
+ * @param {string} shopDomain
+ * @param {string[]} productIds
+ * @returns {Promise<Map<string, string>>}
+ */
+export async function getProductTitles(shopDomain, productIds) {
+  const titles = new Map();
+  const ids = [...new Set((productIds || []).filter((id) => String(id).startsWith("gid://shopify/Product/")))];
+  if (!ids.length) return titles;
+  const admin = await getAdminClient(shopDomain);
+  if (!admin) return titles;
+  try {
+    const response = await shopGraphql(
+      admin,
+      `query ProductTitles($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title } } }`,
+      { ids: ids.slice(0, 50) },
+    );
+    for (const node of response?.data?.nodes || []) {
+      if (node?.id && node?.title) titles.set(node.id, node.title);
+    }
+  } catch (error) {
+    logger.debug(`[shopify-data] product titles failed for ${shopDomain}: ${error?.message || error}`);
+  }
+  return titles;
+}
+
+/**
  * Total Shopify sales for a store, year-to-date. Cached in-process for 1 hour.
  * @param {string} shopDomain
  * @returns {Promise<{amount:number, currencyCode:string|null, capped:boolean}|null>}
