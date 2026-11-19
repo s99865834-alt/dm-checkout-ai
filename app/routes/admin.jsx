@@ -270,9 +270,9 @@ function FreePlanBadge({ row }) {
     return (
       <span
         style={styles.commentWindowEnded}
-        title="Free is closed for this store. Replies are off until it chooses Basic or Pro."
+        title="Installed without choosing Basic or Pro. Replies are off until it subscribes."
       >
-        Locked
+        No plan chosen
       </span>
     );
   }
@@ -674,7 +674,7 @@ export default function Admin() {
           )}
           {planCounts.freeLocked > 0 && (
             <span style={styles.summaryPill} title="Free stores with replies off until they choose a plan">
-              {planCounts.freeLocked} locked
+              {planCounts.freeLocked} no plan
             </span>
           )}
           {planCounts.trialing > 0 && (
