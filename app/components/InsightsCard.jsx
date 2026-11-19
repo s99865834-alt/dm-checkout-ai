@@ -8,12 +8,7 @@ const FLAG_BADGE = {
   asked_no_clicks: { tone: "critical", text: "Link never opened" },
 };
 
-const KIND_BADGE = {
-  complaint: { tone: "critical", text: "Complaint" },
-  interest: { tone: "success", text: "Interest" },
-  feedback: { tone: "info", text: "Feedback" },
-  question: { tone: "info", text: "Question" },
-};
+const TOPICS_SHOWN = 4;
 
 const ACTION_LABEL = { content: "Post idea", store: "Store fix", app: "App setting" };
 
@@ -22,51 +17,69 @@ function formatDay(iso) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function pickQuotes(ids, messagesById, n = 2) {
+function pickQuote(ids, messagesById) {
   const live = ids.map((id) => messagesById[id]).filter((m) => m?.text);
-  const readable = live.filter((m) => m.text.length >= 8 && m.text.length <= 160);
-  return (readable.length >= n ? readable : live).slice(0, n);
+  return live.find((m) => m.text.length >= 12 && m.text.length <= 90) || live[0] || null;
 }
 
+// One line per topic plus one quote; everything else waits behind a click.
 function Topic({ topic, messagesById }) {
   const [open, setOpen] = useState(false);
-  const quotes = pickQuotes(topic.messageIds || [], messagesById);
+  const quote = pickQuote(topic.messageIds || [], messagesById);
   const all = (topic.messageIds || []).map((id) => messagesById[id]).filter(Boolean);
-  const kind = KIND_BADGE[topic.kind] || KIND_BADGE.question;
   return (
-    <div className="srMsgCard">
-      <div className="srVStack">
-        <div className="srHStackSpread">
-          <span className="srTextStrong">{topic.label}</span>
-          <div className="srHStackTight">
-            <s-badge tone={kind.tone}>{kind.text}</s-badge>
-            <s-badge>{`${topic.count} ${topic.count === 1 ? "message" : "messages"}`}</s-badge>
-          </div>
+    <div className="srInsightTopic">
+      <button
+        type="button"
+        className="srInsightTopicHead"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={topic.summary || undefined}
+      >
+        <span className="srInsightTopicLabel">{topic.label}</span>
+        {topic.kind === "complaint" && <s-badge tone="critical">Complaint</s-badge>}
+        <span className="srInsightTopicCount">{topic.count}</span>
+        <span className="srInsightChevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {quote && !open && <span className="srInsightQuote">&ldquo;{quote.text}&rdquo;</span>}
+      {open && (
+        <div className="srInsightMsgs">
+          {all.map((m) => (
+            <div key={m.id} className="srInsightMsg">
+              <span className="srInsightMsgMeta">
+                {m.channel === "comment" ? "Comment" : "DM"} · {formatDay(m.created_at)}
+              </span>
+              <span>{m.text}</span>
+            </div>
+          ))}
+          {topic.count > all.length && (
+            <span className="srInsightMsgMeta">{`Showing ${all.length} of ${topic.count}`}</span>
+          )}
         </div>
-        {topic.summary && <span className="srCardDesc">{topic.summary}</span>}
-        {quotes.map((m) => (
-          <div key={m.id} className="srMsgInner">
-            <span className="srMsgText">&ldquo;{m.text}&rdquo;</span>
-          </div>
-        ))}
-        {all.length > quotes.length && (
-          <button type="button" className="srLinkBtn" onClick={() => setOpen((v) => !v)}>
-            {open ? "Hide messages" : `Show all ${all.length} messages`}
-          </button>
-        )}
-        {open && (
-          <div className="srVStackTight">
-            {all.map((m) => (
-              <div key={m.id} className="srMsgInner">
-                <span className="srTextSubdued">
-                  {m.from_username ? `@${m.from_username}` : "Customer"} · {m.channel === "comment" ? "Comment" : "DM"} · {formatDay(m.created_at)}
-                </span>
-                <span className="srMsgText" style={{ display: "block" }}>{m.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      )}
+    </div>
+  );
+}
+
+function Topics({ topics, messagesById }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? topics : topics.slice(0, TOPICS_SHOWN);
+  return (
+    <div className="srVStackTight">
+      <div className="srHStackSpread">
+        <span className="srTextStrong">What customers are asking</span>
+        <span className="srInsightMsgMeta">Messages</span>
       </div>
+      <div className="srInsightTopics">
+        {shown.map((t, i) => (
+          <Topic key={i} topic={t} messagesById={messagesById} />
+        ))}
+      </div>
+      {topics.length > TOPICS_SHOWN && (
+        <button type="button" className="srLinkBtn" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? "Show fewer" : `Show ${topics.length - TOPICS_SHOWN} more`}
+        </button>
+      )}
     </div>
   );
 }
@@ -174,14 +187,11 @@ export function InsightsCard({ insight, messagesById, canRefresh }) {
     body = (
       <div className="srVStack">
         {topics.length > 0 ? (
-          <div className="srVStack">
-            <span className="srTextStrong">What customers are asking</span>
-            {topics.map((t, i) => (
-              <Topic key={i} topic={t} messagesById={messagesById || {}} />
-            ))}
+          <div className="srVStackTight">
+            <Topics topics={topics} messagesById={messagesById || {}} />
             {data.sampled > 0 && data.sampled < data.relevant && (
-              <span className="srTextSubdued">
-                Topics are grouped from your latest {data.sampled} of {data.relevant} customer messages.
+              <span className="srInsightMsgMeta">
+                {`From your latest ${data.sampled} of ${data.relevant} customer messages.`}
               </span>
             )}
           </div>

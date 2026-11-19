@@ -864,7 +864,82 @@ input[type="date"].srInput {
 .srMissedCard > .srVStack > *:not(:last-child) {
   opacity: 0.6;
 }
-/* Pro customer insights: product table and the Basic preview */
+/* Pro customer insights: topic list, product table, and the Basic preview */
+.srInsightTopics {
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.srInsightTopic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-top: 1px solid #e1e3e5;
+}
+.srInsightTopic:first-child {
+  border-top: none;
+}
+.srInsightTopicHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.srInsightTopicLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303030;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.srInsightTopicCount {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #303030;
+}
+.srInsightChevron {
+  width: 12px;
+  font-size: 11px;
+  color: #8a8a8a;
+}
+.srInsightQuote {
+  font-size: 13px;
+  color: #616161;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.srInsightMsgs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-top: 4px;
+}
+.srInsightMsg {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #303030;
+  overflow-wrap: anywhere;
+}
+.srInsightMsgMeta {
+  font-size: 12px;
+  color: #8a8a8a;
+}
 .srInsightTable {
   display: flex;
   flex-direction: column;
