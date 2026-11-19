@@ -41,6 +41,9 @@ export const PLANS = {
     // creates pools; no pool means claimDiscountCode returns null and the
     // reply goes out without a code.
     discounts: false,
+    // Weekly customer insights card on Analytics. Gated in
+    // insights.server.js -> runInsightsTick() and the analytics route.
+    insights: false,
     prioritySupport: false, // not gated: a human promise
   },
   GROWTH: {
@@ -54,6 +57,7 @@ export const PLANS = {
     stories: false,
     defaultProduct: false,
     discounts: true,
+    insights: false,
     prioritySupport: false, // not gated: a human promise
   },
   PRO: {
@@ -70,6 +74,7 @@ export const PLANS = {
     // default there is nothing for a story reply to sell.
     defaultProduct: true,
     discounts: true,
+    insights: true,
     prioritySupport: true, // not gated: a human promise
   },
 };

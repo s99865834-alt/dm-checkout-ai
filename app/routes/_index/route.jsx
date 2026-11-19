@@ -42,7 +42,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "14-day free trial · Story replies answered automatically · Default product for stories and unmapped posts · Follow-up messages · Per-post analytics · 10,000 messages/mo · Priority support",
+        "14-day free trial · Story replies answered automatically · Default product for stories and unmapped posts · Follow-up messages · Weekly customer insights · Per-post analytics · 10,000 messages/mo · Priority support",
     },
   ],
   creator: {
@@ -75,11 +75,15 @@ const FAQS = [
   },
   {
     q: "Is there a free trial?",
-    a: "Yes. Both plans start with 14 days free, so you can watch it answer your real customers before you pay. Basic ($39/mo) includes comment-to-DM, multi-turn conversations, and brand voice. Pro ($99/mo) adds story replies and follow-ups. Cancel before the trial ends and you aren't charged.",
+    a: "Yes. Both plans start with 14 days free, so you can watch it answer your real customers before you pay. Basic ($39/mo) includes comment-to-DM, multi-turn conversations, and brand voice. Pro ($99/mo) adds story replies, follow-ups, and weekly customer insights. Cancel before the trial ends and you aren't charged.",
   },
   {
     q: "Can SocialReplAI reply to Instagram story replies?",
     a: "Yes, on the Pro plan. Story viewers are typically your warmest audience: they chose to watch and then chose to respond. A story isn't a feed post, so there's nothing to map a product to, which is why Pro also lets you set a default product: the one offered whenever a message arrives with no post behind it. Pro handles follow-ups too, for customers who click a link but don't check out.",
+  },
+  {
+    q: "What are customer insights?",
+    a: "A weekly summary on the Pro plan, built from your last 30 days of Instagram DMs and comments. It groups messages into the questions customers ask most, with real examples you can click through, lists the products people ask about next to how many opened the link and bought, and suggests a few things to post or fix next. The AI only groups and labels messages; every number comes straight from your data.",
   },
   {
     q: "What does SocialRepl.ai actually do?",
@@ -378,6 +382,10 @@ export default function LandingPage() {
               <li>Messages, links sent, clicks, click-through rate.</li>
               <li>Sentiment analysis and customer segmentation.</li>
               <li>Revenue attribution split by DM vs. comment.</li>
+              <li>
+                Pro: weekly customer insights. The questions customers ask most,
+                products that get interest but no sales, and what to post next.
+              </li>
             </ul>
           </div>
           <div className="srFeatureArt">
@@ -572,6 +580,7 @@ export default function LandingPage() {
               <li>Story replies answered automatically</li>
               <li>Default product for stories and unmapped posts</li>
               <li>Follow-up messages</li>
+              <li>Weekly customer insights</li>
               <li>Per-post analytics</li>
               <li>10,000 messages / month</li>
               <li>Priority support</li>

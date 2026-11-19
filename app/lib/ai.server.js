@@ -292,6 +292,41 @@ Entities: Extract any product details mentioned (size, color, product name)`;
 }
 
 /**
+ * One JSON call for the Pro insights pipeline (see runInsightPipeline).
+ * @param {string} prompt
+ * @param {number} maxTokens
+ * @returns {Promise<Object|null>} parsed JSON, or null when AI is unavailable or fails
+ */
+export async function askInsightsJson(prompt, maxTokens = 800) {
+  if (!openai) return null;
+  try {
+    const _aiStart = Date.now();
+    incCounter("openai_requests");
+    const response = await retryWithBackoff(() =>
+      openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You summarize customer messages for a store owner. Always respond with valid JSON only.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: maxTokens,
+        response_format: { type: "json_object" },
+      }),
+    );
+    recordTiming("openai_latency_ms", Date.now() - _aiStart);
+    const content = response.choices[0]?.message?.content;
+    return content ? JSON.parse(content) : null;
+  } catch (error) {
+    console.error("[ai] insights grouping failed:", error?.message || error);
+    return null;
+  }
+}
+
+/**
  * Classify a message and update the database
  * This is a convenience function that combines classification and database update
  * @param {string} messageId - Message ID in database

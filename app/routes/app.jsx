@@ -167,7 +167,7 @@ function ChoosePlanScreen() {
           </s-paragraph>
           <s-paragraph>
             <strong>Pro, $99/month:</strong> everything in Basic, plus story replies,
-            follow-up messages, per-post analytics, and 10,000 messages a month.
+            follow-up messages, weekly customer insights, per-post analytics, and 10,000 messages a month.
           </s-paragraph>
           <s-paragraph>
             Both plans start with 14 days free, and you are not charged if you cancel before the trial

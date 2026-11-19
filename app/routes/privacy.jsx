@@ -126,9 +126,9 @@ export default function PrivacyPolicy() {
           the Service. While the app is installed on your Shopify store,
           message and click data is retained so we can power analytics,
           attribution, and follow-up automation. When you uninstall the app
-          from Shopify, all shop-scoped data — including messages, checkout
-          links, click records, follow-ups, attribution, settings, and
-          brand voice configuration — is automatically deleted within
+          from Shopify, all shop-scoped data, including messages, checkout
+          links, click records, follow-ups, attribution, customer insights,
+          settings, and brand voice configuration, is automatically deleted within
           48 hours of uninstall via Shopify's mandatory{" "}
           <code>shop/redact</code> compliance webhook.
         </p>

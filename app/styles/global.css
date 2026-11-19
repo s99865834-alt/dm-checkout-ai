@@ -864,6 +864,48 @@ input[type="date"].srInput {
 .srMissedCard > .srVStack > *:not(:last-child) {
   opacity: 0.6;
 }
+/* Pro customer insights: product table and the Basic preview */
+.srInsightTable {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.srInsightRow {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.6fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 14px;
+  border-top: 1px solid #e1e3e5;
+}
+.srInsightHead {
+  border-top: none;
+  background: #f6f6f7;
+  font-size: 12px;
+  color: #616161;
+}
+.srInsightPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  filter: blur(2px);
+}
+.srInsightPreviewBar {
+  height: 14px;
+  border-radius: 7px;
+  background: #e3e3e3;
+}
+@media (max-width: 600px) {
+  .srInsightRow {
+    grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  }
+  .srInsightRow > :last-child {
+    grid-column: 1 / -1;
+  }
+}
 .srMsgInner {
   padding: 10px 12px;
   border: 1px solid #e1e3e5;

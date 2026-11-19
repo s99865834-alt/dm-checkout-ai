@@ -8,6 +8,29 @@ import { getMetaAuth, getMetaAuthWithRefresh, getInstagramMediaByIds } from "../
 import { cached, peekCached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
 import { PLANS } from "../lib/plans";
+import { InsightsCard, InsightsTeaser } from "../components/InsightsCard";
+import { generateShopInsights, getShopInsight, getShopInsightForPage } from "../lib/insights.server";
+import { INSIGHTS_WINDOW_DAYS, canRefreshManually } from "../lib/insights";
+
+export const action = async ({ request }) => {
+  const { shop, plan } = await getShopWithPlan(request);
+  const formData = await request.formData();
+  if (formData.get("action") !== "refresh-insights") return null;
+  if (!shop?.id || plan?.insights !== true) {
+    return { insightsError: "Customer insights are on the Pro plan." };
+  }
+  const existing = await getShopInsight(shop.id);
+  if (!canRefreshManually(existing)) {
+    return { insightsError: "Insights were updated in the last day. Try again tomorrow." };
+  }
+  try {
+    await generateShopInsights(shop);
+    return { insightsRefreshed: true };
+  } catch (error) {
+    console.error("[analytics] insights refresh failed:", error?.message || error);
+    return { insightsError: "Could not build insights right now. Please try again in a few minutes." };
+  }
+};
 
 // Mapped-post media for the PRO post filter changes rarely; cache it so the
 // analytics page doesn't hit the Instagram API (one call per mapped post) on
@@ -100,6 +123,8 @@ export const loader = async ({ request }) => {
     analytics,
     proAnalytics,
     missedOpportunities,
+    insightsPage,
+    teaserConversations,
   ] = await Promise.all([
     getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit, linkIds: postFilterLinkIds }),
     getMessages(shop.id, {
@@ -128,6 +153,15 @@ export const loader = async ({ request }) => {
     !plan?.comments
       ? getMissedOpportunityComments(shop.id, { limit: 10 }).catch(() => [])
       : Promise.resolve([]),
+    plan?.insights
+      ? getShopInsightForPage(shop.id).catch(() => ({ insight: null, messagesById: {} }))
+      : Promise.resolve(null),
+    // Real count for the Basic preview, so the pitch is about their own messages.
+    !plan?.insights && plan?.name === "GROWTH"
+      ? getMessageCount(shop.id, {
+          startDate: new Date(Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+        }).catch(() => 0)
+      : Promise.resolve(0),
   ]);
 
   const { mediaPosts, productMappings } = await proContextPromise;
@@ -160,13 +194,17 @@ export const loader = async ({ request }) => {
     productMappings,
     postFilterId,
     missedOpportunities,
+    insight: insightsPage?.insight || null,
+    insightMessages: insightsPage?.messagesById || {},
+    insightCanRefresh: insightsPage ? canRefreshManually(insightsPage.insight) : false,
+    teaserConversations,
   };
 };
 
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
   const { isFree, isPro } = usePlanAccess();
-  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId, missedOpportunities } = useLoaderData();
+  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId, missedOpportunities, insight, insightMessages, insightCanRefresh, teaserConversations } = useLoaderData();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [expandedMessages, setExpandedMessages] = useState(new Set());
@@ -348,7 +386,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">Message limit reached — automation is paused.</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Upgrade to Pro for story replies, follow-ups, per-post analytics, and 10,000 messages/mo.
+                    Upgrade to Pro for story replies, follow-ups, customer insights, per-post analytics, and 10,000 messages/mo.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="primary" size="slim">Go Pro</s-button>
@@ -361,25 +399,22 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1 }}>
                   <span className="srTextStrong">{usagePct}% of your monthly messages used ({shop.usage_count}/{plan.cap}).</span>
                   <span className="srCardDesc" style={{ display: "block", marginTop: "4px" }}>
-                    Pro plan ($99/mo) includes story replies, follow-ups, per-post analytics, and 10,000 messages.
+                    Pro plan ($99/mo) includes story replies, follow-ups, customer insights, per-post analytics, and 10,000 messages.
                   </span>
                 </div>
                 <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>
               </div>
             </s-banner>
           )}
-          {plan?.name === "GROWTH" && !(shop?.usage_count >= plan?.cap * 0.8) && (
-            <s-banner tone="info">
-              <div className="srHStack" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ flex: 1 }}>
-                  <span className="srCardDesc">
-                    Want per-post analytics, follow-up messages, and story replies? <strong>Upgrade to Pro.</strong>
-                  </span>
-                </div>
-                <s-button href="/app/billing/select" variant="secondary" size="slim">Go Pro</s-button>
-              </div>
-            </s-banner>
-          )}
+          {plan?.insights ? (
+            <s-section>
+              <InsightsCard insight={insight} messagesById={insightMessages} canRefresh={insightCanRefresh} />
+            </s-section>
+          ) : plan?.name === "GROWTH" ? (
+            <s-section>
+              <InsightsTeaser conversations={teaserConversations} />
+            </s-section>
+          ) : null}
 
           {/* Analytics Date Range Filter */}
           <s-section heading="Overview">
