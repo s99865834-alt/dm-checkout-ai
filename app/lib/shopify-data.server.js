@@ -192,11 +192,13 @@ async function _fetchStoreTotalRevenueYTD(shopDomain) {
  * @param {string[]} productIds
  * @returns {Promise<Map<string, string>>}
  */
-export async function getProductTitles(shopDomain, productIds) {
+export async function getProductTitles(shopDomain, productIds, { admin: requestAdmin = null } = {}) {
   const titles = new Map();
   const ids = [...new Set((productIds || []).filter((id) => String(id).startsWith("gid://shopify/Product/")))];
   if (!ids.length) return titles;
-  const admin = await getAdminClient(shopDomain);
+  // A page load's admin client works for shops whose stored offline session
+  // no longer refreshes, which on Nov 19 2026 was 39 of 52 active shops.
+  const admin = requestAdmin || (await getAdminClient(shopDomain));
   if (!admin) return titles;
   try {
     const response = await shopGraphql(

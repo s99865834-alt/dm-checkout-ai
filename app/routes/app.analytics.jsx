@@ -13,7 +13,7 @@ import { generateShopInsights, getShopInsight, getShopInsightForPage } from "../
 import { INSIGHTS_WINDOW_DAYS, canRefreshManually } from "../lib/insights";
 
 export const action = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
   const formData = await request.formData();
   if (formData.get("action") !== "refresh-insights") return null;
   if (!shop?.id || plan?.insights !== true) {
@@ -24,7 +24,7 @@ export const action = async ({ request }) => {
     return { insightsError: "Insights were updated in the last day. Try again tomorrow." };
   }
   try {
-    await generateShopInsights(shop);
+    await generateShopInsights(shop, { admin });
     return { insightsRefreshed: true };
   } catch (error) {
     console.error("[analytics] insights refresh failed:", error?.message || error);
@@ -38,7 +38,7 @@ export const action = async ({ request }) => {
 const IG_MEDIA_TTL_MS = 5 * 60 * 1000;
 
 export const loader = async ({ request }) => {
-  const { shop, plan } = await getShopWithPlan(request);
+  const { shop, plan, admin } = await getShopWithPlan(request);
 
   const url = new URL(request.url);
   const channel = url.searchParams.get("channel") || null;
@@ -154,7 +154,7 @@ export const loader = async ({ request }) => {
       ? getMissedOpportunityComments(shop.id, { limit: 10 }).catch(() => [])
       : Promise.resolve([]),
     plan?.insights
-      ? getShopInsightForPage(shop.id).catch(() => ({ insight: null, messagesById: {} }))
+      ? getShopInsightForPage(shop, admin).catch(() => ({ insight: null, messagesById: {} }))
       : Promise.resolve(null),
     // Real count for the Basic preview, so the pitch is about their own messages.
     !plan?.insights && plan?.name === "GROWTH"

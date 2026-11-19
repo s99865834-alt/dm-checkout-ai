@@ -91,7 +91,7 @@ function Products({ products }) {
           const badge = FLAG_BADGE[p.flag];
           return (
             <div key={p.productId} className="srInsightRow" role="row">
-              <span role="cell" className="srTextBody">{p.title}</span>
+              <span role="cell" className="srTextBody">{p.title || "Unnamed product"}</span>
               <span role="cell">{p.messages}</span>
               <span role="cell">{p.clicked}</span>
               <span role="cell">{p.orders}</span>

@@ -41,15 +41,23 @@ export const APP_ACTIONS = [
 const MIN_MESSAGES_FOR_FLAG = 5;
 const MIN_CLICKS_FOR_FLAG = 5;
 
-/** True when a shop has no insights yet, or the last run is a week old. */
+/**
+ * True when a shop has no insights yet or its last run is old enough. A
+ * not-enough result is rechecked daily, not weekly: it cost no AI call, and a
+ * new store crossing the threshold should not wait a week to see anything.
+ */
 export function isInsightDue(row, now = Date.now()) {
   if (!row?.generated_at) return true;
-  return now - new Date(row.generated_at).getTime() >= INSIGHTS_REFRESH_MS;
+  const interval = row.status === "ready" ? INSIGHTS_REFRESH_MS : INSIGHTS_MANUAL_COOLDOWN_MS;
+  return now - new Date(row.generated_at).getTime() >= interval;
 }
 
-/** Merchants can refresh by hand once a day, so a button cannot run up AI spend. */
+/**
+ * Merchants can refresh a real summary by hand once a day, so a button cannot
+ * run up AI spend. Anything short of a summary can be retried at once.
+ */
 export function canRefreshManually(row, now = Date.now()) {
-  if (!row?.generated_at) return true;
+  if (!row?.generated_at || row.status !== "ready") return true;
   return now - new Date(row.generated_at).getTime() >= INSIGHTS_MANUAL_COOLDOWN_MS;
 }
 

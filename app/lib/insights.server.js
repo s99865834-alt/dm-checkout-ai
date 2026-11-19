@@ -22,9 +22,11 @@ function titleFromHandle(handle) {
   return handle.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-async function resolveProductTitles(shop, products) {
+const UNNAMED = "Unnamed product";
+
+async function resolveProductTitles(shop, products, admin = null) {
   const ids = products.map((p) => p.product_id);
-  const titles = await getProductTitles(shop.shopify_domain, ids).catch(() => new Map());
+  const titles = await getProductTitles(shop.shopify_domain, ids, { admin }).catch(() => new Map());
   const missing = ids.filter((id) => !titles.has(id));
   if (missing.length) {
     const { data } = await supabase
@@ -37,7 +39,37 @@ async function resolveProductTitles(shop, products) {
       if (title && !titles.has(row.product_id)) titles.set(row.product_id, title);
     }
   }
-  return products.map((p) => ({ ...p, title: titles.get(p.product_id) || "Unnamed product" }));
+  return products.map((p) => ({ ...p, title: titles.get(p.product_id) || null }));
+}
+
+const _titleFillTried = new Set();
+
+/**
+ * Background runs often cannot reach Shopify, so the first page view fills in
+ * missing product names with that request's admin client and saves them.
+ * Tried once per insight per process, so a deleted product does not cost a
+ * Shopify call on every load.
+ */
+async function fillMissingTitles(shop, insight, admin) {
+  const products = insight?.data?.products || [];
+  const missing = products.filter((p) => !p.title || p.title === UNNAMED);
+  const key = `${shop.id}:${insight?.generated_at}`;
+  if (!admin || !missing.length || _titleFillTried.has(key)) return insight;
+  _titleFillTried.add(key);
+  const resolved = await resolveProductTitles(
+    shop,
+    missing.map((p) => ({ product_id: p.productId })),
+    admin,
+  );
+  const titles = new Map(resolved.filter((p) => p.title).map((p) => [p.product_id, p.title]));
+  if (!titles.size) return insight;
+  const data = {
+    ...insight.data,
+    products: products.map((p) => (titles.has(p.productId) ? { ...p, title: titles.get(p.productId) } : p)),
+  };
+  const { error } = await supabase.from("shop_insights").update({ data }).eq("shop_id", shop.id);
+  if (error) console.error("[insights] title save failed:", error.message);
+  return { ...insight, data };
 }
 
 async function saveInsight(shopId, row) {
@@ -51,8 +83,9 @@ async function saveInsight(shopId, row) {
  * Build and store a shop's insights for the last INSIGHTS_WINDOW_DAYS.
  * Writes only shop_insights.
  * @param {{id: string, shopify_domain: string, store_context_json?: object}} shop
+ * @param {{admin?: object}} [options] - a request's admin client, when there is one
  */
-export async function generateShopInsights(shop) {
+export async function generateShopInsights(shop, { admin = null } = {}) {
   if (_running.has(shop.id)) return { status: "running" };
   _running.add(shop.id);
   try {
@@ -92,7 +125,7 @@ export async function generateShopInsights(shop) {
     if (msgError) throw new Error(`messages fetch failed: ${msgError.message}`);
     const sample = (messages || []).filter((m) => m.text && m.text.trim());
 
-    const products = (await resolveProductTitles(shop, stats?.products || [])).map((p) => ({
+    const products = (await resolveProductTitles(shop, stats?.products || [], admin)).map((p) => ({
       ...p,
       flag: productFlag(p),
     }));
@@ -145,16 +178,16 @@ export async function getShopInsight(shopId) {
  * The stored insight plus the live text of every message it cites. Deleted
  * messages simply drop out, so counts can exceed the quotes shown.
  */
-export async function getShopInsightForPage(shopId) {
-  const insight = await getShopInsight(shopId);
-  if (!insight || insight.status !== "ready") return { insight, messagesById: {} };
-  const ids = [...new Set((insight.data?.topics || []).flatMap((t) => t.messageIds || []))];
-  if (!ids.length) return { insight, messagesById: {} };
-  const { data } = await supabase
-    .from("messages")
-    .select("id, text, from_username, channel, created_at")
-    .eq("shop_id", shopId)
-    .in("id", ids);
+export async function getShopInsightForPage(shop, admin = null) {
+  const stored = await getShopInsight(shop.id);
+  if (!stored || stored.status !== "ready") return { insight: stored, messagesById: {} };
+  const ids = [...new Set((stored.data?.topics || []).flatMap((t) => t.messageIds || []))];
+  const [insight, { data }] = await Promise.all([
+    fillMissingTitles(shop, stored, admin).catch(() => stored),
+    ids.length
+      ? supabase.from("messages").select("id, text, from_username, channel, created_at").eq("shop_id", shop.id).in("id", ids)
+      : Promise.resolve({ data: [] }),
+  ]);
   const messagesById = {};
   for (const m of data || []) messagesById[m.id] = m;
   return { insight, messagesById };
