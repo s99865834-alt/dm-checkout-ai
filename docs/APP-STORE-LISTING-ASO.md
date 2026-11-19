@@ -86,8 +86,8 @@ customer's language · 14-day free trial
 **Pro ($99/month)**, as live, plus one new line once customer insights is on `main`:
 Everything in Basic · 10,000 messages/month · Story replies answered
 automatically · Default product for stories and posts · Follow-ups for
-unfinished checkouts · Per-post analytics · **Weekly customer insights from
-your DMs and comments** (new) · Priority Support · 14-day free trial
+unfinished checkouts · Per-post analytics · **Weekly insights from your DMs &
+comments** (new) · Priority Support · 14-day free trial
 
 ### Customer insights (Pro), listing edits for Nov 2026
 
@@ -96,7 +96,7 @@ feature merchants cannot reach is a 4.x rejection risk and breaks "if it's
 sold, it ships."
 
 - **Pricing, Pro plan features** (App Pricing, edit Pro): add
-  `Weekly customer insights from your DMs and comments` (51) after
+  `Weekly insights from your DMs & comments` (40, the field's max) after
   "Per-post analytics".
 - **Feature list, bullet 2**: replace
   `Checkout links with the right product and variant pre-loaded` with

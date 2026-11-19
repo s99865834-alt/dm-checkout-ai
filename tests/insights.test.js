@@ -207,17 +207,21 @@ describe("productFlag", () => {
 
 describe("refresh timing", () => {
   const now = Date.parse("2026-11-19T12:00:00Z");
-  it("is due with no row or a week-old row", () => {
+  const ago = (ms, status = "ready") => ({ status, generated_at: new Date(now - ms).toISOString() });
+  it("is due with no row or a week-old summary", () => {
     expect(isInsightDue(null, now)).toBe(true);
-    expect(isInsightDue({ generated_at: new Date(now - INSIGHTS_REFRESH_MS).toISOString() }, now)).toBe(true);
-    expect(isInsightDue({ generated_at: new Date(now - 60_000).toISOString() }, now)).toBe(false);
+    expect(isInsightDue(ago(INSIGHTS_REFRESH_MS), now)).toBe(true);
+    expect(isInsightDue(ago(INSIGHTS_MANUAL_COOLDOWN_MS), now)).toBe(false);
   });
-  it("allows one manual refresh a day", () => {
+  it("rechecks a not-enough result daily", () => {
+    expect(isInsightDue(ago(INSIGHTS_MANUAL_COOLDOWN_MS, "not_enough"), now)).toBe(true);
+    expect(isInsightDue(ago(60_000, "not_enough"), now)).toBe(false);
+  });
+  it("allows one manual refresh a day of a real summary, and any time otherwise", () => {
     expect(canRefreshManually(null, now)).toBe(true);
-    expect(canRefreshManually({ generated_at: new Date(now - 60_000).toISOString() }, now)).toBe(false);
-    expect(
-      canRefreshManually({ generated_at: new Date(now - INSIGHTS_MANUAL_COOLDOWN_MS).toISOString() }, now),
-    ).toBe(true);
+    expect(canRefreshManually(ago(60_000), now)).toBe(false);
+    expect(canRefreshManually(ago(INSIGHTS_MANUAL_COOLDOWN_MS), now)).toBe(true);
+    expect(canRefreshManually(ago(60_000, "not_enough"), now)).toBe(true);
   });
 });
 
