@@ -19,6 +19,8 @@ import { getLinkProblems } from "../lib/link-health.server";
 import { PlanGate, usePlanAccess } from "../components/PlanGate";
 import { PostsSection, PostsSectionSkeleton } from "../components/home/PostsSection";
 import { DefaultProductSection } from "../components/home/DefaultProductSection";
+import { ReplyHoursRow } from "../components/home/ReplyHoursRow";
+import { normalizeReplySchedule } from "../lib/reply-schedule";
 import { shouldRevalidate } from "../lib/home-should-revalidate";
 
 export { shouldRevalidate };
@@ -379,6 +381,18 @@ export const action = async ({ request }) => {
               : `Pick an amount between ${MIN_DISCOUNT_AMOUNT} and ${MAX_DISCOUNT_AMOUNT}`,
         };
       }
+      let replySchedule;
+      const rawSchedule = formData.get("reply_schedule");
+      if (rawSchedule) {
+        try {
+          replySchedule = normalizeReplySchedule(JSON.parse(rawSchedule));
+        } catch {
+          return { error: "Reply hours could not be read. Reload and try again." };
+        }
+        if (replySchedule.enabled && replySchedule.days.length === 0) {
+          return { error: "Pick at least one day for your reply hours" };
+        }
+      }
       const brandVoiceTone = formData.get("brand_voice_tone") || null;
       const brandVoiceCustom = formData.get("brand_voice_custom") || "";
       const brandVoiceReplyLang = formData.get("brand_voice_reply_language") || "auto";
@@ -393,6 +407,7 @@ export const action = async ({ request }) => {
             discount_enabled: discountEnabled,
             discount_type: discountType,
             ...(Number.isFinite(discountValue) ? { discount_value: discountValue } : {}),
+            ...(replySchedule ? { reply_schedule: replySchedule } : {}),
           }),
           updateBrandVoice(shop.id, {
             tone: brandVoiceTone || "friendly",
@@ -759,6 +774,7 @@ export default function Index() {
   const [discountEnabled, setDiscountEnabled] = useState(settings?.discount_enabled ?? false);
   const [discountType, setDiscountType] = useState(settings?.discount_type || "percentage");
   const [discountValue, setDiscountValue] = useState(settings?.discount_value ?? 10);
+  const [replySchedule, setReplySchedule] = useState(() => normalizeReplySchedule(settings?.reply_schedule));
   const [brandVoiceTone, setBrandVoiceTone] = useState(brandVoice?.tone || "friendly");
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
   const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
@@ -774,6 +790,7 @@ export default function Index() {
       setDiscountEnabled(settings.discount_enabled ?? false);
       setDiscountType(settings.discount_type || "percentage");
       setDiscountValue(settings.discount_value ?? 10);
+      setReplySchedule(normalizeReplySchedule(settings.reply_schedule));
     }
     if (brandVoice) {
       setBrandVoiceTone(brandVoice.tone || "friendly");
@@ -1529,6 +1546,7 @@ export default function Index() {
           <input type="hidden" name="brand_voice_tone" value={brandVoiceTone || "friendly"} />
           <input type="hidden" name="brand_voice_custom" value={brandVoiceCustom || ""} />
           <input type="hidden" name="brand_voice_reply_language" value={brandVoiceReplyLang || "auto"} />
+          <input type="hidden" name="reply_schedule" value={JSON.stringify(replySchedule)} />
 
           <div className="srAutoTwoCol">
             {/* Left: toggles */}
@@ -1630,7 +1648,7 @@ export default function Index() {
                     </label>
                   </div>
                 </div>
-                <div className="srToggleRow srToggleRowLast">
+                <div className="srToggleRow">
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">Follow-up messages</span>
@@ -1651,6 +1669,7 @@ export default function Index() {
                     </label>
                   </div>
                 </div>
+                <ReplyHoursRow schedule={replySchedule} onChange={setReplySchedule} />
               </div>
             </s-box>
 

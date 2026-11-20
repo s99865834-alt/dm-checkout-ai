@@ -25,6 +25,7 @@ import { REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 import supabase from "./supabase.server";
 import { logError } from "./error-handler.server";
 import logger from "./logger.server";
+import { isAutomationScheduledOn } from "./reply-schedule";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
@@ -208,6 +209,9 @@ export async function processFollowups() {
 
         if (!settings?.followup_enabled) {
           logger.debug(`[followup] Follow-up disabled for shop ${shop.id}`);
+          continue;
+        }
+        if (!isAutomationScheduledOn(settings.reply_schedule)) {
           continue;
         }
 
