@@ -1331,6 +1331,57 @@ s-page .srIGHealthLine,
   margin-bottom: -2px;
 }
 
+.srReplyHours {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.srReplyHoursLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #303030;
+}
+
+.srReplyDays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.srReplyDay {
+  border: 1px solid #c9cccf;
+  background: #fff;
+  color: #303030;
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.srReplyDay[aria-pressed="true"] {
+  background: #303030;
+  border-color: #303030;
+  color: #fff;
+}
+
+.srReplyTimes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.srReplyTimes .srInput {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.srReplyHoursWarn {
+  color: #8e0b21;
+}
+
 /* Toggle row inner: text left, control right */
 .srToggleRowInner {
   display: flex;

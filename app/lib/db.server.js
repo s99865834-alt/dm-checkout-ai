@@ -3,6 +3,7 @@ import { encryptToken, decryptToken } from "./crypto.server";
 import { getPlanConfig } from "./plans";
 import { commentTrialStatus, effectivePlan, freePlanStatus } from "./entitlements";
 import { DISCOUNT_TYPES } from "./discount-rules";
+import { normalizeReplySchedule } from "./reply-schedule";
 import { invalidateCached } from "./loader-cache.server";
 import logger from "./logger.server";
 import { excludeAutomatedReviewShops } from "./shopify-review-shop";
@@ -1563,6 +1564,7 @@ export async function getSettings(shopId) {
         comment_automation_enabled: true,
         followup_enabled: true,
         disabled_post_ids: [],
+        reply_schedule: null,
       };
     }
     console.error("getSettings error", error);
@@ -1624,6 +1626,10 @@ export async function updateSettings(shopId, settings = {}) {
         disabled_post_ids: Array.isArray(settings.disabled_post_ids)
           ? settings.disabled_post_ids
           : current.disabled_post_ids,
+        reply_schedule:
+          settings.reply_schedule !== undefined
+            ? normalizeReplySchedule(settings.reply_schedule)
+            : current.reply_schedule ?? null,
         discount_enabled: bool(settings.discount_enabled, current.discount_enabled),
         discount_type: DISCOUNT_TYPES.includes(settings.discount_type)
           ? settings.discount_type

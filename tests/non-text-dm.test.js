@@ -559,6 +559,36 @@ describe("guards shared with the text pipeline", () => {
     expect(sendDmNow).not.toHaveBeenCalled();
   });
 
+  // Equal start and end covers the whole day, so these hold at any test time.
+  const allDay = (mode) => ({
+    dm_automation_enabled: true,
+    reply_schedule: { enabled: true, mode, timezone: "UTC", days: [0, 1, 2, 3, 4, 5, 6], start: "00:00", end: "00:00" },
+  });
+
+  it("stays silent while reply hours have the AI paused", async () => {
+    getSettings.mockResolvedValue(allDay("outside"));
+
+    const heart = await handleNonTextDm(nonTextDm("heart"), shop, growthPlan);
+    const text = await handleIncomingDm(
+      { id: "msg-hours-1", external_id: "ext-hours-1", channel: "dm", text: "how much is it?", from_user_id: "customer-1", ai_intent: "price_request", ai_confidence: 0.9, created_at: new Date().toISOString() },
+      shop,
+      growthPlan
+    );
+
+    expect(heart).toMatchObject({ sent: false, reason: "Outside reply hours" });
+    expect(text).toMatchObject({ sent: false, reason: "Outside reply hours" });
+    expect(sendDmNow).not.toHaveBeenCalled();
+    expect(incrementUsage).not.toHaveBeenCalled();
+  });
+
+  it("replies when reply hours allow it", async () => {
+    getSettings.mockResolvedValue(allDay("during"));
+
+    const res = await handleNonTextDm(nonTextDm("heart"), shop, growthPlan);
+
+    expect(res.sent).toBe(true);
+  });
+
   it("does not reply twice to the same message", async () => {
     claimMessageReply.mockResolvedValue(false);
 
