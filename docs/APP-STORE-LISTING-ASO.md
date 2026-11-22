@@ -46,7 +46,7 @@ Keep `SocialReplAI`.
 
 > Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it. Comment-to-DM turns public comments into private conversations. Weekly insights show what customers ask about most. No flows to build.
 
-**Replace with**, once reply hours is verified on a real store (494):
+**Replace with** (494):
 
 > Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link for the right product, and each order is attributed to the conversation that drove it. Comment-to-DM turns public comments into private chats. Set reply hours and the AI covers you when you're offline. Weekly insights show what customers ask most. No flows to build.
 
@@ -60,11 +60,15 @@ Keep `SocialReplAI`.
 4. `Answers product questions from your live catalog, pricing, and policies` (71)
 5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
 
-**Replace 1 and 4**, once reply hours is verified. Bullet 1 absorbs the live
-catalog point so bullet 4 can carry reply hours:
+**Replace with** (reply hours verified on a live store Nov 22 2026). The live
+catalog bullet stays: it is the main difference from flow builders. Attribution
+and insights share one bullet instead, since both are about what you learn:
 
-1. `AI answers DMs from your live catalog with checkout links, no flows to build` (76)
+1. `AI replies to Instagram DMs with checkout links, no flows to build` (66)
+2. `Answers product questions from your live catalog, pricing, and policies` (71)
+3. `Comment-to-DM: turns public comments into private conversations that convert` (76)
 4. `Reply hours: the AI covers your DMs when you're offline, or around the clock` (76)
+5. `See the revenue each conversation drove and what customers ask most` (67)
 
 Cut for space: follow-ups for unfinished checkouts, multi-language replies.
 
@@ -85,14 +89,15 @@ automatically · Default product for stories and posts · Follow-ups for
 unfinished checkouts · Per-post analytics · Weekly insights from your DMs &
 comments · Priority Support · 14-day free trial
 
-**Basic, add once reply hours is verified** (App Pricing, edit Basic, 40 max):
+**Basic, add** (App Pricing, edit Basic, 40 max):
 `Reply hours: choose when the AI replies` (39). Pro inherits it via
 "Everything in Basic".
 
 Listing copy that names a feature merchants cannot reach is a 4.x rejection
 risk and breaks "if it's sold, it ships." Customer insights copy went live
 Nov 19 2026. Reply hours shipped Nov 22 2026 (PR #289, every plan, off by
-default) but had not run on a real store yet, so its edits wait for that.
+default) and was verified the same day on dmteststore-2: a DM sent while
+paused was saved and not answered, and the next one after turning it off was.
 
 Do not claim numbers or accuracy for insights: the card groups messages and
 links them; it does not forecast.
