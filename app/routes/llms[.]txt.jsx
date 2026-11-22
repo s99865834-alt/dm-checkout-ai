@@ -23,8 +23,9 @@ SocialRepl.ai is a Shopify app that automatically responds to Instagram DMs and 
 - **Product-to-Post Mapping**: Merchants map Shopify products to Instagram posts via a visual grid, so the app knows which product each post is about.
 - **Click and Revenue Attribution**: Tracks which Instagram interactions lead to clicks and purchases.
 - **Follow-Up Messages**: Sends timed follow-ups to customers who haven't completed checkout.
+- **Reply Hours**: Merchants choose the days, hours, and time zone when the AI replies: outside their own hours (covering nights and weekends) or only during set hours. Off by default, so the AI replies around the clock. Available on every plan. If the merchant replies to a customer manually, the AI also steps aside in that conversation for 6 hours.
 - **Customer Insights (Pro)**: A weekly summary of the last 30 days of DMs and comments: the questions customers ask most with real example messages, the products people ask about next to clicks and orders, and suggested next steps. AI groups the messages; every count comes from the store's own data.
-- **Plans**: Basic ($39/mo with a 14-day free trial, 1,000 messages, comment-to-DM, brand voice, multi-turn conversations), Pro ($99/mo with a 14-day free trial, story replies, a default product for stories and unmapped posts, follow-ups, weekly customer insights, per-post analytics, 10,000 messages).
+- **Plans**: Basic ($39/mo with a 14-day free trial, 1,000 messages, comment-to-DM, brand voice, multi-turn conversations, reply hours), Pro ($99/mo with a 14-day free trial, story replies, a default product for stories and unmapped posts, follow-ups, weekly customer insights, per-post analytics, 10,000 messages).
 
 ## Who it's for
 

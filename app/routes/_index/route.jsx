@@ -23,7 +23,8 @@ const JSON_LD = {
     "Automatically reply to post comments with private DMs and product links",
     "Multi-language replies — auto-match each customer's language or force a specific one",
     "No flow builder — AI handles questions you never scripted, multi-turn to checkout",
-    "Human takeover detection — reply to a customer yourself and the AI steps aside in that conversation",
+    "Human takeover detection: reply to a customer yourself and the AI steps aside in that conversation",
+    "Reply hours: choose the days and times the AI replies, or keep it on around the clock",
   ],
   offers: [
     {
@@ -33,7 +34,7 @@ const JSON_LD = {
       priceCurrency: "USD",
       billingIncrement: "P1M",
       description:
-        "14-day free trial · Comment-to-DM automation · Brand voice customization · Multi-turn conversations · Custom reply language · Order attribution + full analytics · 1,000 messages/mo",
+        "14-day free trial · Comment-to-DM automation · Brand voice customization · Multi-turn conversations · Custom reply language · Reply hours · Order attribution + full analytics · 1,000 messages/mo",
     },
     {
       "@type": "Offer",
@@ -110,8 +111,12 @@ const FAQS = [
     a: "Yes. On both plans, you can set a reply language. Leave it on Auto and the AI answers each customer in the same language they messaged in, or force a specific language (such as Brazilian Portuguese, Spanish, or French) so every reply goes out in that language regardless of the customer's input.",
   },
   {
+    q: "Can I choose when the AI replies?",
+    a: "Yes, on every plan. Turn on Reply hours in the app, pick your days, hours, and time zone, and choose whether the AI replies outside your hours (so it covers nights and weekends while you handle the daytime) or only during them. It applies to DMs, comments, story replies, and follow-ups. Messages that arrive while the AI is paused are saved but not answered, and Instagram only lets businesses reply within 24 hours, so answer those yourself. Leave Reply hours off and the AI replies around the clock.",
+  },
+  {
     q: "What happens if I reply to a customer myself?",
-    a: "The AI steps aside. When you send a manual reply from your Instagram inbox, SocialReplAI detects it and pauses automation for that one conversation for 6 hours — so it never talks over you mid-conversation. Every manual reply resets the clock, your other conversations keep getting automated replies, and the AI picks the thread back up once you've been quiet for 6 hours. Nothing to configure.",
+    a: "The AI steps aside. When you send a manual reply from your Instagram inbox, SocialReplAI detects it and pauses automation for that one conversation for 6 hours, so it never talks over you mid-conversation. Every manual reply resets the clock, your other conversations keep getting automated replies, and the AI picks the thread back up once you've been quiet for 6 hours. Nothing to configure.",
   },
   {
     q: "What happens if I hit my message limit?",
@@ -355,7 +360,6 @@ export default function LandingPage() {
               <li>Knows your products, pricing, and store policies.</li>
               <li>Replies in your customer&apos;s language — auto-detected or set to a language you choose.</li>
               <li>Comment-to-DM flow keeps the conversation private.</li>
-              <li>Steps aside when you reply personally — the AI pauses in that thread so it never talks over you.</li>
             </ul>
           </div>
           <div className="srFeatureArt">
@@ -370,6 +374,33 @@ export default function LandingPage() {
         </div>
 
         <div className="srFeatureRow srFeatureRowReverse">
+          <div className="srFeatureCopy">
+            <span className="srFeatureKicker">Reply hours</span>
+            <h2>The AI covers your DMs when you&apos;re offline.</h2>
+            <p>
+              Answer customers yourself while you&apos;re around and let the AI
+              take nights and weekends. Or leave it on around the clock. You
+              choose, on every plan.
+            </p>
+            <ul className="srFeatureList">
+              <li>Pick the days, the hours, and your time zone.</li>
+              <li>AI replies outside your hours, or only during them.</li>
+              <li>Covers DMs, comments, story replies, and follow-ups.</li>
+              <li>Reply to a customer yourself and the AI steps aside in that chat for 6 hours.</li>
+            </ul>
+          </div>
+          <div className="srFeatureArt">
+            <img
+              src="/landing/feature-hours.png"
+              alt="Reply hours settings with a weekly schedule showing when the AI replies and an Instagram DM answered late at night"
+              loading="lazy"
+              width="1024"
+              height="576"
+            />
+          </div>
+        </div>
+
+        <div className="srFeatureRow">
           <div className="srFeatureCopy">
             <span className="srFeatureKicker">Track</span>
             <h2>Track messages, clicks, and revenue.</h2>
@@ -551,6 +582,7 @@ export default function LandingPage() {
               <li>Multi-turn conversations</li>
               <li>Brand voice customization</li>
               <li>Custom reply language</li>
+              <li>Reply hours: choose when the AI replies</li>
               <li>Order attribution + full analytics</li>
               <li>1,000 messages / month</li>
             </ul>
