@@ -40,37 +40,37 @@ Keep `SocialReplAI`.
 
 > AI answers your Instagram DMs with checkout links, turning conversations into orders.
 
-### App details (the paragraph under the introduction)
+### App details (500 max)
 
-**Currently live:**
+**Live** (checked Nov 19 2026, 466):
 
-> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies to DMs, comments, and story replies in your brand voice, using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it, so you see the revenue Instagram brings you. No flows to build: connect your account, set your tone, and go.
+> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it. Comment-to-DM turns public comments into private conversations. Weekly insights show what customers ask about most. No flows to build.
 
-**Replace with** (456 chars):
+**Replace with** (494):
 
-> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link with the right product pre-loaded, and each order is attributed back to the conversation that drove it. Comment-to-DM turns public comments into private conversations that convert. No flows to build: connect your account and go.
+> Shoppers who DM you about a product are ready to buy, if they get an answer fast. SocialReplAI connects Instagram to your Shopify store and replies using your live catalog, pricing, and policies. Replies include a checkout link for the right product, and each order is attributed to the conversation that drove it. Comment-to-DM turns public comments into private chats. Set reply hours and the AI covers you when you're offline. Weekly insights show what customers ask most. No flows to build.
 
-### Feature list (5 bullets — replace all 5)
+### Feature list (5 bullets, 80 max each)
 
-**Currently live:**
-
-1. AI-Powered Instagram DM Automation with One-Click Checkout Links
-2. Automatically Reply to Post Comments with Private DMs and Product Links
-3. AI Brand Voice That Knows Your Products, Policies, and FAQs
-4. Order Attribution — Track Which Instagram Conversations Drive Sales
-5. Multi-Turn AI Conversations That Guide Customers to Checkout
-
-**Replace with** (80-char max each; ordered by differentiation):
+**Live** (checked Nov 19 2026):
 
 1. `AI replies to Instagram DMs with checkout links, no flows to build` (66)
-2. `Checkout links with the right product and variant pre-loaded` (60)
+2. `Weekly insights: what customers ask most and what to post next` (62)
 3. `Order attribution shows the revenue each conversation drove` (59)
 4. `Answers product questions from your live catalog, pricing, and policies` (71)
 5. `Comment-to-DM: turns public comments into private conversations that convert` (76)
 
-Cut for space (work these into screenshots/captions or the details paragraph if
-room ever allows): follow-up messages for unfinished checkouts, multi-language
-replies, and the analytics dashboard (bullet 3 already carries the revenue story).
+**Replace with** (reply hours verified on a live store Nov 22 2026). The live
+catalog bullet stays: it is the main difference from flow builders. Attribution
+and insights share one bullet instead, since both are about what you learn:
+
+1. `AI replies to Instagram DMs with checkout links, no flows to build` (66)
+2. `Answers product questions from your live catalog, pricing, and policies` (71)
+3. `Comment-to-DM: turns public comments into private conversations that convert` (76)
+4. `Reply hours: the AI covers your DMs when you're offline, or around the clock` (76)
+5. `See the revenue each conversation drove and what customers ask most` (67)
+
+Cut for space: follow-ups for unfinished checkouts, multi-language replies.
 
 ### Pricing (live since Nov 16 2026: Basic and Pro only)
 
@@ -83,34 +83,28 @@ Store question answering · Brand voice customization · Checkout links with
 discount codes · Order attribution + full analytics · Replies in your
 customer's language · 14-day free trial
 
-**Pro ($99/month)**, as live, plus one new line once customer insights is on `main`:
+**Pro ($99/month)**, as live:
 Everything in Basic · 10,000 messages/month · Story replies answered
 automatically · Default product for stories and posts · Follow-ups for
-unfinished checkouts · Per-post analytics · **Weekly insights from your DMs &
-comments** (new) · Priority Support · 14-day free trial
+unfinished checkouts · Per-post analytics · Weekly insights from your DMs &
+comments · Priority Support · 14-day free trial
 
-### Customer insights (Pro), listing edits for Nov 2026
+**Basic, replace with** (App Pricing, edit Basic; 8 features max, 40 chars
+each, so brand voice and reply language share a line to make room):
+1,000 messages/month · Comment-to-DM automation · Multi-turn conversations ·
+Store question answering · `Brand voice in your customer's language` (39) ·
+Checkout links with discount codes · Order attribution + full analytics ·
+`Reply hours: choose when the AI replies` (39). Pro inherits it via
+"Everything in Basic".
 
-Make these only after the feature is deployed. Listing copy that names a
-feature merchants cannot reach is a 4.x rejection risk and breaks "if it's
-sold, it ships."
+Listing copy that names a feature merchants cannot reach is a 4.x rejection
+risk and breaks "if it's sold, it ships." Customer insights copy went live
+Nov 19 2026. Reply hours shipped Nov 22 2026 (PR #289, every plan, off by
+default) and was verified the same day on dmteststore-2: a DM sent while
+paused was saved and not answered, and the next one after turning it off was.
 
-- **Pricing, Pro plan features** (App Pricing, edit Pro): add
-  `Weekly insights from your DMs & comments` (40, the field's max) after
-  "Per-post analytics".
-- **Feature list, bullet 2**: replace
-  `Checkout links with the right product and variant pre-loaded` with
-  `Weekly insights: what customers ask most and what to post next` (62).
-  Bullet 1 already says "with checkout links", so bullet 2 was the repeat.
-- **App details** (466 of 500): replace the last two sentences with
-  "Comment-to-DM turns public comments into private conversations. Weekly
-  insights show what customers ask about most. No flows to build."
-- **Screenshot**: add one of the Customer insights card on Analytics,
-  captured on a test store with real-looking data, not a merchant's
-  customers. Caption: `See what customers ask about most, every week` (45).
-  Keep plan names out of the image (requirement 4.2.2).
-- Do not claim numbers, accuracy, or "AI-powered analytics" in general:
-  the card groups messages and links them; it does not forecast.
+Do not claim numbers or accuracy for insights: the card groups messages and
+links them; it does not forecast.
 
 - **Do not claim story mentions.** Story replies are answered on Pro.
   Mentions have never been observed.
@@ -308,20 +302,25 @@ SocialRepl.ai is a Shopify-native AI sales agent. Unlike generic chat-marketing 
 
 ---
 
-## 4. Screenshot captions (5–8 images, in order)
+## 4. Screenshots (3-6 desktop images, 1600x900, alt text on each)
 
-Create 5–8 screenshots that tell the story in this order. Add short captions on each image.
+Shopify allows 3-6 desktop screenshots, so this set uses every slot. The
+headline is in each image. Feature media (the hero) is separate:
+"Transform Instagram DMs & comments into sales", alt text `Transform Instagram
+DMs and comments into sales with AI replies and checkout links`.
 
-| Order | What to show | Suggested caption |
-|-------|----------------|-------------------|
-| 1 | Home/dashboard with “Connect Instagram” or connected account | Connect your Instagram Business account in one click |
-| 2 | Instagram Feed with product mapping UI | Map products to your Instagram posts |
-| 3 | Example: “Map Product” modal or list of mappings | Link each post to the right product for instant checkout |
-| 4 | Automation controls (DM on/off, comment on/off) | Turn on DM and comment automation |
-| 5 | Example automated reply with checkout link (in app or mock) | One-click checkout links in every reply |
-| 6 | Analytics: messages sent, CTR, top phrases | See messages sent, clicks, and top trigger phrases |
-| 7 | (Optional) Revenue or attribution view | Track revenue from Instagram DMs |
-| 8 | (Optional) Brand voice or settings | Set your brand voice—Friendly, Expert, or Casual |
+| Order | Image | Alt text |
+|-------|-------|----------|
+| 1 | Connect your Instagram account in one click | Connect your Instagram account in one click and turn on DM and comment automation |
+| 2 | Map products to your Instagram posts | Map Shopify products to your Instagram posts so replies link the right item |
+| 3 | AI replies with one-click checkout links | AI replies to comments and DMs with a one-click checkout link |
+| 4 | AI covers your DMs when you're offline (reply hours, added Nov 2026) | Reply hours settings with a weekly schedule of when the AI replies, and an Instagram DM answered at 11:42 PM |
+| 5 | Track messages, clicks and revenue | Track messages, clicks, and revenue from Instagram DMs and comments |
+| 6 | See what customers ask about most, every week (insights) | See what customers ask about most each week, which products get asked about, and what to do next |
+
+Reply hours sits at 4: right after the core story, and early enough to answer
+"I don't need it on all the time" before someone decides. The same image is
+`public/landing/feature-hours.png` on the website.
 
 **Re-shoot check after the Aug 31 tier change.** Any screenshot showing the
 in-app billing comparison table, a plan card, or a usage bar reading "/500" is
@@ -378,7 +377,7 @@ configure, it already knows your catalog."*
 - [ ] Full description includes all three tiers and main features.
 - [ ] **Trial:** Growth's 7-day trial and Pro's 30-day trial are live (Partner Dashboard → Managed Pricing). Listing text must match the trial settings exactly: duration, what's included, post-trial price, cancel path. Do not mention a trial on a plan that does not have one configured.
 - [ ] **Day-0 in-app:** Home shows a short setup path (connect → map → test). The FREE plan is the entry point; no trial redemption flow.
-- [ ] 5–8 screenshots in order: connect → map → automation → reply with link → analytics (and optional attribution/brand voice).
+- [ ] 3-6 screenshots in the order in §4.
 - [ ] Captions on every screenshot.
 - [ ] Icon 1200×1200 and readable at small size.
 - [ ] Pricing clearly shown (Free / Growth / Pro with differentiators).
