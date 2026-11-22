@@ -89,7 +89,11 @@ automatically · Default product for stories and posts · Follow-ups for
 unfinished checkouts · Per-post analytics · Weekly insights from your DMs &
 comments · Priority Support · 14-day free trial
 
-**Basic, add** (App Pricing, edit Basic, 40 max):
+**Basic, replace with** (App Pricing, edit Basic; 8 features max, 40 chars
+each, so brand voice and reply language share a line to make room):
+1,000 messages/month · Comment-to-DM automation · Multi-turn conversations ·
+Store question answering · `Brand voice in your customer's language` (39) ·
+Checkout links with discount codes · Order attribution + full analytics ·
 `Reply hours: choose when the AI replies` (39). Pro inherits it via
 "Everything in Basic".
 
