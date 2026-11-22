@@ -129,35 +129,36 @@ Previous row for context. Superseded by the Sep 13 table above.
 
 ### Languages — NO CHANGE
 
-### Categories — CHANGE via appeal (currently "Marketing – Other")
+### Categories: CHANGE via appeal (live listing is "Selling online - Other", checked 2026-11-19)
 
 Per Shopify's taxonomy (shopify.dev/docs/apps/launch/app-store-review/app-listing-categories),
-there is no social-media tag under Marketing; the accurate tags are:
+there is no social-media or Instagram tag. Where comparable apps sit (live listings, 2026-11-19):
 
-- **Primary: Chat** (Store management → Support → Chat) — tag definition
-  "apps that allow customers to connect with merchants via chat" matches the
-  app's main function (AI answering customer DMs/comments). Closest comparable
-  app (Dondy, WhatsApp commerce automation) is categorized Chat + Abandoned cart.
-- **Secondary: Abandoned cart** (Marketing → Abandoned cart) — justified by
-  Pro follow-up messages that re-engage shoppers who didn't finish checkout.
-- Category changes post-launch require an appeal via the link in the app
-  submission form. Appeal text:
+- Chat: what-o, Perfect Setter, Spur, Lixsa, Crisp (Chat + Helpdesk)
+- Marketing - Other: MooseDM, Drop, Pipr, Massively
+- Selling online - Other: us, MooseDM, Pipr
 
-  > **Requested change:** Primary tag from "Marketing – Other" to "Chat"
-  > (Store management → Support), with "Abandoned cart" as secondary.
+Category sizes: Chat 1,114 apps, Marketing - Other 389, Selling online - Other 145.
+
+- **Primary: Chat** (Store management, Support, Chat). Definition "apps that
+  allow customers to connect with merchants via chat" matches the main
+  function, and it is where the established Instagram DM apps are.
+- **Secondary: Marketing - Other.** Where the Instagram DM marketing apps are.
+- Not Abandoned cart: follow-ups are a Pro add-on, and that category means
+  site cart recovery by email/SMS. Not Analytics: insights are secondary.
+- Changes require an appeal via the link in the app submission form. Appeal text:
+
+  > **Requested change:** Primary tag from "Selling online - Other" to "Chat"
+  > (Store management, Support), with "Marketing - Other" as secondary.
   >
-  > **Reason:** SocialReplAI's main function is conversational: it connects a
+  > **Reason:** SocialReplAI's main function is conversational. It connects a
   > merchant's Instagram Business account to their Shopify store, and AI
-  > replies to customer DMs and comments in real time — answering product,
-  > pricing, and policy questions and including checkout links. This matches
-  > the Chat tag definition ("apps that allow customers to connect with
-  > merchants via chat") more accurately than Marketing – Other. Comparable
-  > apps in this space (e.g., WhatsApp commerce-chat automation apps) are
-  > categorized under Chat.
-  >
-  > The secondary Abandoned cart tag reflects the app's follow-up messaging
-  > feature, which re-engages customers who received a checkout link but
-  > didn't complete their purchase.
+  > replies to customer DMs and comments in real time, answering product,
+  > pricing, and policy questions with checkout links. This matches the Chat
+  > definition ("apps that allow customers to connect with merchants via
+  > chat"). Comparable Instagram DM apps such as what-o and Perfect Setter
+  > are categorized under Chat. Marketing - Other covers comment-to-DM,
+  > which turns public Instagram comments into private sales conversations.
 
 - **Structured features:** check every applicable feature (up to 25 per
   category) — powers merchant comparison filters; editable anytime without appeal.

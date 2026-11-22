@@ -29,6 +29,7 @@ import { sendInstagramPrivateReply, sendInstagramDm, getInstagramMediaByIds } fr
 import supabase from "./supabase.server";
 import { canSendForShop, sendDmNow } from "./queue.server";
 import logger from "./logger.server";
+import { isAutomationScheduledOn } from "./reply-schedule";
 import {
   searchCatalogNormalized,
   resolveVariantViaMcp,
@@ -259,6 +260,9 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     if (settings?.dm_automation_enabled === false) {
       logger.debug(`[automation] DM automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "DM automation disabled" };
+    }
+    if (!isAutomationScheduledOn(settings?.reply_schedule)) {
+      return { sent: false, reason: "Outside reply hours" };
     }
 
     // Keep the store-context cache warm off the back of ordinary traffic.
@@ -1554,6 +1558,9 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
     if (settings?.dm_automation_enabled === false) {
       return { sent: false, reason: "DM automation disabled" };
     }
+    if (!isAutomationScheduledOn(settings?.reply_schedule)) {
+      return { sent: false, reason: "Outside reply hours" };
+    }
 
     const fromUserId = message.from_user_id ?? message.fromUserId;
     if (!fromUserId) return { sent: false, reason: "No sender id" };
@@ -1715,6 +1722,9 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
     if (settings?.comment_automation_enabled === false) {
       logger.debug(`[automation] Comment automation disabled for shop ${shop.id}`);
       return { sent: false, reason: "Comment automation disabled" };
+    }
+    if (!isAutomationScheduledOn(settings?.reply_schedule)) {
+      return { sent: false, reason: "Outside reply hours" };
     }
 
     // Same warm-the-cache call as the DM path: unawaited and throttled, so

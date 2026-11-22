@@ -34,6 +34,10 @@ const LINK_HEALTH_FIRST_RUN_MS = 15 * 60 * 1000;
 // picks up the few that are due, so AI calls spread out over the week.
 const INSIGHTS_INTERVAL_MS = 60 * 60 * 1000;     // every 1 hour
 const INSIGHTS_FIRST_RUN_MS = 20 * 60 * 1000;
+// Weekly merchant email. The hourly check only acts inside the send window
+// and once per week; see weekly-email.js.
+const WEEKLY_EMAIL_INTERVAL_MS = 60 * 60 * 1000;
+const WEEKLY_EMAIL_FIRST_RUN_MS = 25 * 60 * 1000;
 const STARTUP_DELAY_MS = 10 * 1000;              // wait 10s after boot
 
 let started = false;
@@ -123,6 +127,39 @@ async function tickInsights() {
   }
 }
 
+let weeklyEmailRunning = false;
+let weeklyEmailDoneWeek = null;
+
+async function tickWeeklyEmail() {
+  if (weeklyEmailRunning) return;
+  weeklyEmailRunning = true;
+  try {
+    const { isWeeklySendWindow, weekStartUtc } = await import("./weekly-email");
+    const now = new Date();
+    const week = weekStartUtc(now);
+    if (!isWeeklySendWindow(now) || weeklyEmailDoneWeek === week) return;
+    const { weeklyEmailEnabled, sendWeeklyEmails } = await import("./weekly-email.server");
+    if (!weeklyEmailEnabled()) return;
+    // A restart loses the in-memory flag, so check whether this week already ran.
+    const { default: supabase } = await import("./supabase.server");
+    const { count } = await supabase
+      .from("email_sends")
+      .select("id", { count: "exact", head: true })
+      .eq("week_start", week);
+    if (count > 0) {
+      weeklyEmailDoneWeek = week;
+      return;
+    }
+    const result = await sendWeeklyEmails({ now });
+    weeklyEmailDoneWeek = week;
+    console.log("[scheduler] weekly email", JSON.stringify(result));
+  } catch (err) {
+    console.error("[scheduler] weekly email tick error:", err?.message || err);
+  } finally {
+    weeklyEmailRunning = false;
+  }
+}
+
 /**
  * Start the in-process scheduler. Idempotent — calling twice is a no-op.
  * Returns false if scheduling is disabled by environment.
@@ -163,6 +200,10 @@ export function startScheduler() {
     tickInsights();
     setInterval(tickInsights, INSIGHTS_INTERVAL_MS);
   }, INSIGHTS_FIRST_RUN_MS);
+  setTimeout(() => {
+    tickWeeklyEmail();
+    setInterval(tickWeeklyEmail, WEEKLY_EMAIL_INTERVAL_MS);
+  }, WEEKLY_EMAIL_FIRST_RUN_MS);
 
   return true;
 }
