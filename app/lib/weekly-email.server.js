@@ -33,7 +33,7 @@ import {
   planWeeklyEmail,
   weekStartUtc,
 } from "./weekly-email";
-import { buildEmailLinks, renderWeeklyEmail } from "./weekly-email-template";
+import { buildEmailLinks, renderWeeklyEmail, replaceUnsubscribeLink } from "./weekly-email-template";
 import { unsubscribeUrl } from "./email-unsubscribe.server";
 import { postmarkConfigured, sendBatch } from "./postmark.server";
 
@@ -316,8 +316,11 @@ export async function sendTestEmail(shopId) {
   const { items } = await buildWeeklyEmails();
   const item = items.find((i) => i.shop.id === shopId && i.email);
   if (!item) return { ok: false, error: "That store has no email this week" };
+  // The rendered email carries that merchant's real unsubscribe link; clicking
+  // it in a test copy would unsubscribe the merchant, not the tester.
+  const email = replaceUnsubscribeLink(item.email, item.links.unsubscribe, `${EMAIL_SITE_URL}/email/unsubscribe?s=test&t=test`);
   const [result] = await sendBatch([
-    { to, subject: `[Test] ${item.email.subject}`, html: item.email.html, text: item.email.text, metadata: { test: "true" } },
+    { to, subject: `[Test] ${email.subject}`, html: email.html, text: email.text, metadata: { test: "true" } },
   ]);
   return result.ok ? { ok: true, to } : { ok: false, error: result.error };
 }
