@@ -237,6 +237,13 @@ function reportContent({ facts, decision, links }) {
 
 const BUILDERS = { connect: connectContent, setup: setupContent, report: reportContent };
 
+/** Replace a rendered email's unsubscribe link, in both its raw and HTML-escaped forms. */
+export function replaceUnsubscribeLink(email, realUrl, newUrl) {
+  const swap = (body) =>
+    String(body).split(escapeHtml(realUrl)).join(escapeHtml(newUrl)).split(realUrl).join(newUrl);
+  return { ...email, html: swap(email.html), text: swap(email.text) };
+}
+
 /**
  * @param {{decision: object, facts: object, links: object}} input
  * @returns {{subject: string, preheader: string, html: string, text: string}}

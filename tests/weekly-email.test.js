@@ -8,7 +8,7 @@ import {
   normalizeStoreName,
   MAX_CONNECT_NUDGES,
 } from "../app/lib/weekly-email";
-import { renderWeeklyEmail, buildEmailLinks, escapeHtml } from "../app/lib/weekly-email-template";
+import { renderWeeklyEmail, buildEmailLinks, escapeHtml, replaceUnsubscribeLink } from "../app/lib/weekly-email-template";
 import { getPlanConfig } from "../app/lib/plans";
 
 const NOW = new Date("2026-11-20T16:00:00Z"); // a Friday
@@ -221,6 +221,19 @@ describe("renderWeeklyEmail", () => {
     const email = renderWeeklyEmail({ decision: { send: true, kind: "report", extras: [], upsell: null }, facts: f, links });
     expect(email.html).not.toContain("<script>x");
     expect(email.html).toContain(escapeHtml("<b>Evil</b>"));
+  });
+
+  it("swaps the unsubscribe link everywhere for test sends", () => {
+    const real = "https://www.socialrepl.ai/email/unsubscribe?s=shop-1&t=abc";
+    const dummy = "https://www.socialrepl.ai/email/unsubscribe?s=test&t=test";
+    const l = { ...links, unsubscribe: real };
+    const email = renderWeeklyEmail({ decision: { send: true, kind: "connect", extras: [], upsell: null }, facts: facts(), links: l });
+    const swapped = replaceUnsubscribeLink(email, real, dummy);
+    expect(email.html).toContain(escapeHtml(real));
+    for (const body of [swapped.html, swapped.text]) {
+      expect(body).not.toContain("s=shop-1");
+      expect(body).toContain("s=test");
+    }
   });
 
   it("includes the review ask and the upsell only when decided", () => {

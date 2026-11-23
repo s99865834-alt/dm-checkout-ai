@@ -1,22 +1,17 @@
 import crypto from "node:crypto";
 import supabase from "../lib/supabase.server";
+import { subscriptionEffect } from "../lib/postmark-events";
 
-// Bounce, spam complaint and subscription-change events from Postmark. Any of
-// them stops the weekly email for that shop. Configured in Postmark as
-// https://www.socialrepl.ai/webhooks/postmark?token=<POSTMARK_WEBHOOK_TOKEN>.
+// Bounce, spam complaint and subscription-change events from Postmark. Hard
+// bounces, complaints and unsubscribes stop the weekly email for that shop; a
+// re-subscribe from Postmark's confirmation page starts it again. Configured in
+// Postmark as https://www.socialrepl.ai/webhooks/postmark?token=<POSTMARK_WEBHOOK_TOKEN>.
 
 function tokenOk(request) {
   const expected = process.env.POSTMARK_WEBHOOK_TOKEN || "";
   const got = new URL(request.url).searchParams.get("token") || "";
   if (!expected || got.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
-}
-
-function optOutReason(event) {
-  if (event.RecordType === "SpamComplaint") return "spam_complaint";
-  if (event.RecordType === "Bounce" && event.Type === "HardBounce") return "hard_bounce";
-  if (event.RecordType === "SubscriptionChange" && event.SuppressSending === true) return "postmark_unsubscribe";
-  return null;
 }
 
 async function shopIdFor(event) {
@@ -33,12 +28,15 @@ async function shopIdFor(event) {
 export const action = async ({ request }) => {
   if (!tokenOk(request)) return new Response("Unauthorized", { status: 401 });
   const event = await request.json().catch(() => null);
-  const reason = event ? optOutReason(event) : null;
-  if (reason) {
+  const effect = subscriptionEffect(event);
+  if (effect) {
     const shopId = await shopIdFor(event);
     if (shopId) {
-      const { error } = await supabase.from("email_optouts").upsert({ shop_id: shopId, reason }, { onConflict: "shop_id" });
-      if (error) console.error("[postmark] opt-out save failed:", error.message);
+      const { error } =
+        effect.action === "optout"
+          ? await supabase.from("email_optouts").upsert({ shop_id: shopId, reason: effect.reason }, { onConflict: "shop_id" })
+          : await supabase.from("email_optouts").delete().eq("shop_id", shopId).eq("reason", "postmark_unsubscribe");
+      if (error) console.error("[postmark] opt-out update failed:", error.message);
     }
   }
   return new Response("ok", { status: 200 });
