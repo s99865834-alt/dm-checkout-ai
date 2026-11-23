@@ -13,6 +13,10 @@
 
 export const MAX_CONNECT_NUDGES = 3;
 export const MAX_SETUP_CHECKS = 2;
+// The welcome email covers the first days, so the weekly connect reminder waits.
+export const CONNECT_MIN_DAYS_INSTALLED = 3;
+// The setup email says "in 2 weeks", which is only true after two weeks.
+export const SETUP_MIN_DAYS_INSTALLED = 14;
 export const MAX_REVIEW_ASKS = 3;
 export const REVIEW_MIN_DAYS_INSTALLED = 14;
 export const REVIEW_MIN_REPLIES_28D = 20;
@@ -116,8 +120,10 @@ export function planWeeklyEmail(facts, history = [], now = new Date()) {
   if (sent.some((h) => h.week_start === week)) return { send: false, reason: "Already sent this week" };
 
   const count = (kind) => sent.filter((h) => h.kind === kind).length;
+  const installedDays = facts.installedAt ? (now - new Date(facts.installedAt)) / DAY_MS : 0;
 
   if (!facts.igConnected) {
+    if (installedDays < CONNECT_MIN_DAYS_INSTALLED) return { send: false, reason: "Just installed" };
     if (count("connect") >= MAX_CONNECT_NUDGES) return { send: false, reason: "Connect reminders used up" };
     return { send: true, kind: "connect", extras: [], upsell: null };
   }
@@ -125,6 +131,7 @@ export function planWeeklyEmail(facts, history = [], now = new Date()) {
   const w = facts.week || {};
   if (!(w.received > 0)) {
     if (facts.last14Received > 0) return { send: false, reason: "Quiet week" };
+    if (installedDays < SETUP_MIN_DAYS_INSTALLED) return { send: false, reason: "Installed under 2 weeks ago" };
     const lastReport = sent.findIndex((h) => h.kind === "report");
     const sinceReport = lastReport === -1 ? sent : sent.slice(0, lastReport);
     if (sinceReport.filter((h) => h.kind === "setup").length >= MAX_SETUP_CHECKS) {
@@ -136,7 +143,6 @@ export function planWeeklyEmail(facts, history = [], now = new Date()) {
   const extras = [];
   let upsell = null;
   const lastExtra = (name) => sent.find((h) => (h.extras || []).includes(name));
-  const installedDays = facts.installedAt ? (now - new Date(facts.installedAt)) / DAY_MS : 0;
   const earnedIt = facts.last28Responded >= REVIEW_MIN_REPLIES_28D || facts.ordersAllTime >= 1;
   const lastReview = lastExtra("review");
   // reviewed is null when the App Store could not be checked; then nobody is

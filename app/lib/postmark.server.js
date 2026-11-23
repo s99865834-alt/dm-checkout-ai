@@ -9,7 +9,7 @@ export function postmarkConfigured() {
 }
 
 /**
- * @param {{to: string, subject: string, html: string, text: string, unsubscribeUrl?: string, metadata?: object}[]} messages
+ * @param {{to: string, subject: string, html: string, text: string, unsubscribeUrl?: string, metadata?: object, stream?: string}[]} messages
  * @returns {Promise<{ok: boolean, messageId?: string, error?: string}[]>} one result per message, in order
  */
 export async function sendBatch(messages) {
@@ -23,7 +23,7 @@ export async function sendBatch(messages) {
       Subject: m.subject,
       HtmlBody: m.html,
       TextBody: m.text,
-      MessageStream: process.env.POSTMARK_STREAM || "broadcast",
+      MessageStream: m.stream || process.env.POSTMARK_STREAM || "broadcast",
       TrackOpens: true,
       TrackLinks: "None",
       Metadata: m.metadata || {},
