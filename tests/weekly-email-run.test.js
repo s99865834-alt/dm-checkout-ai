@@ -24,6 +24,10 @@ vi.mock("../app/lib/supabase.server", () => {
   });
   return { default: { from } };
 });
+// The run is handed its emails via `build`, so the data layer is never used;
+// mocking it keeps Shopify's app setup (which needs API keys) out of the test.
+vi.mock("../app/lib/db.server", () => ({}));
+vi.mock("../app/lib/insights.server", () => ({}));
 vi.mock("../app/lib/postmark.server", () => ({
   postmarkConfigured: () => true,
   sendBatch: vi.fn(async (messages) => messages.map((_, i) => ({ ok: true, messageId: `pm-${i}` }))),
