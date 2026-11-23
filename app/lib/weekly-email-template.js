@@ -16,6 +16,8 @@ const BRAND = {
 };
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 const PLAN_LABEL = { FREE: "Free", GROWTH: "Basic", PRO: "Pro" };
+// Links and images in emails use the brand domain, which serves this app.
+export const EMAIL_SITE_URL = process.env.EMAIL_SITE_URL || "https://www.socialrepl.ai";
 export const POSTAL_ADDRESS = "Tennyson Labs, 1312 17th Street Unit #2114, Denver, CO 80202";
 
 export function escapeHtml(value) {
@@ -244,32 +246,76 @@ export function replaceUnsubscribeLink(email, realUrl, newUrl) {
   return { ...email, html: swap(email.html), text: swap(email.text) };
 }
 
-/**
- * @param {{decision: object, facts: object, links: object}} input
- * @returns {{subject: string, preheader: string, html: string, text: string}}
- */
-export function renderWeeklyEmail({ decision, facts, links }) {
-  const { subject, preheader, blocks } = BUILDERS[decision.kind]({ decision, facts, links });
-  const footerText = `You're receiving this because SocialRepl.ai is installed on ${facts.shopDomain}. Unsubscribe: ${links.unsubscribe}\n${POSTAL_ADDRESS}`;
-
+/** Shared layout: logo, white card with the blocks and signature, then the footer. */
+function renderShell({ subject, preheader, blocks, logo, footer }) {
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${escapeHtml(subject)}</title></head>
 <body style="margin:0;padding:0;background:${BRAND.wash}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.wash}"><tr><td align="center" style="padding:28px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">
-<tr><td style="padding:0 4px 18px"><img src="${escapeHtml(links.logo)}" width="170" height="38" alt="SocialRepl.ai" style="display:block;border:0"></td></tr>
+<tr><td style="padding:0 4px 18px"><img src="${escapeHtml(logo)}" width="170" height="38" alt="SocialRepl.ai" style="display:block;border:0"></td></tr>
 <tr><td style="background:#ffffff;border-radius:14px;padding:30px 28px 14px">
 ${blocks.map((b) => b.html).join("\n")}
 <p style="margin:4px 0 16px;font:15px/1.55 ${FONT};color:${BRAND.body}">Stephan<br><span style="color:${BRAND.muted}">Founder, SocialRepl.ai</span></p>
 </td></tr>
 <tr><td style="padding:18px 8px 0;font:12px/1.6 ${FONT};color:${BRAND.muted};text-align:center">
-You're receiving this because SocialRepl.ai is installed on ${escapeHtml(facts.shopDomain)}.<br>
-<a href="${escapeHtml(links.unsubscribe)}" style="color:${BRAND.purpleLight}">Unsubscribe</a><br>${escapeHtml(POSTAL_ADDRESS)}
+${footer.html}<br>${escapeHtml(POSTAL_ADDRESS)}
 </td></tr>
 </table></td></tr></table>
 </body></html>`;
-
-  const text = [...blocks.map((b) => b.text), "Stephan\nFounder, SocialRepl.ai", "--", footerText].join("\n\n");
+  const text = [...blocks.map((b) => b.text), "Stephan\nFounder, SocialRepl.ai", "--", `${footer.text}\n${POSTAL_ADDRESS}`].join("\n\n");
   return { subject, preheader, html, text };
+}
+
+/**
+ * @param {{decision: object, facts: object, links: object}} input
+ * @returns {{subject: string, preheader: string, html: string, text: string}}
+ */
+export function renderWeeklyEmail({ decision, facts, links }) {
+  const { subject, preheader, blocks } = BUILDERS[decision.kind]({ decision, facts, links });
+  return renderShell({
+    subject,
+    preheader,
+    blocks,
+    logo: links.logo,
+    footer: {
+      html: `You're receiving this because SocialRepl.ai is installed on ${escapeHtml(facts.shopDomain)}.<br><a href="${escapeHtml(links.unsubscribe)}" style="color:${BRAND.purpleLight}">Unsubscribe</a>`,
+      text: `You're receiving this because SocialRepl.ai is installed on ${facts.shopDomain}. Unsubscribe: ${links.unsubscribe}`,
+    },
+  });
+}
+
+/**
+ * One-time email when a store installs (or reinstalls) the app. Onboarding
+ * only, no plan or upgrade talk, since it goes out on the transactional stream.
+ * @param {{facts: {storeName: string, shopDomain: string}, links: object, reinstall?: boolean}} input
+ */
+export function renderWelcomeEmail({ facts, links, reinstall = false }) {
+  const blocks = [
+    heading(reinstall ? `Welcome back, ${facts.storeName}` : `Welcome to SocialRepl.ai, ${facts.storeName}`),
+    para(
+      "Thanks for installing. Once Instagram is connected, the AI answers DMs and comments about your products, using your live catalog and store policies, with a checkout link for the right item."
+    ),
+    steps([
+      "Connect your Instagram business account from the Home page.",
+      "Map your products to your posts, so every reply links the right item.",
+      "DM your own account a product question to see the reply.",
+    ]),
+    button("Open SocialRepl.ai", links.home),
+    para(
+      "You stay in control. Reply to a customer yourself and the AI steps aside in that chat, and Reply hours lets you choose when it answers."
+    ),
+    para("Stuck on a step? Reply to this email and I'll help."),
+  ];
+  return renderShell({
+    subject: reinstall ? "Welcome back to SocialRepl.ai" : "Welcome to SocialRepl.ai: your first reply in 3 steps",
+    preheader: "Connect Instagram and the AI starts answering DMs with checkout links.",
+    blocks,
+    logo: links.logo,
+    footer: {
+      html: `You're receiving this because SocialRepl.ai was installed on ${escapeHtml(facts.shopDomain)}.<br>We also send a short weekly summary, and each one has an unsubscribe link.`,
+      text: `You're receiving this because SocialRepl.ai was installed on ${facts.shopDomain}. We also send a short weekly summary, and each one has an unsubscribe link.`,
+    },
+  });
 }

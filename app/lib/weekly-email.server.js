@@ -37,14 +37,12 @@ import {
   planWeeklyEmail,
   weekStartUtc,
 } from "./weekly-email";
-import { buildEmailLinks, renderWeeklyEmail, replaceUnsubscribeLink } from "./weekly-email-template";
+import { EMAIL_SITE_URL, buildEmailLinks, renderWeeklyEmail, replaceUnsubscribeLink } from "./weekly-email-template";
 import { unsubscribeUrl } from "./email-unsubscribe.server";
 import { postmarkConfigured, sendBatch } from "./postmark.server";
 import { POSTMARK_UNSUBSCRIBE_PLACEHOLDER } from "./postmark-events";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Links and images in the email use the brand domain, which serves this app.
-export const EMAIL_SITE_URL = process.env.EMAIL_SITE_URL || "https://www.socialrepl.ai";
 
 function ownUnsubscribe() {
   return process.env.EMAIL_UNSUBSCRIBE_HANDLING === "custom";

@@ -106,6 +106,18 @@ describe("planWeeklyEmail: main message", () => {
     ).toMatchObject({ kind: "setup" });
   });
 
+  it("leaves the first days to the welcome email", () => {
+    const f = facts({ igConnected: false, installedAt: "2026-11-18T12:00:00Z" });
+    expect(planWeeklyEmail(f, [], NOW)).toEqual({ send: false, reason: "Just installed" });
+    expect(planWeeklyEmail({ ...f, installedAt: "2026-11-16T12:00:00Z" }, [], NOW)).toMatchObject({ kind: "connect" });
+  });
+
+  it("never sends the two-week setup check to a shop installed under two weeks ago", () => {
+    const f = facts({ week: { received: 0 }, last14Received: 0, installedAt: "2026-11-10T00:00:00Z" });
+    expect(planWeeklyEmail(f, [], NOW)).toEqual({ send: false, reason: "Installed under 2 weeks ago" });
+    expect(planWeeklyEmail({ ...f, installedAt: "2026-11-05T00:00:00Z" }, [], NOW)).toMatchObject({ kind: "setup" });
+  });
+
   it("skips a quiet week for a shop that was busy recently", () => {
     expect(planWeeklyEmail(facts({ week: { received: 0 }, last14Received: 9 }), [], NOW)).toEqual({ send: false, reason: "Quiet week" });
   });

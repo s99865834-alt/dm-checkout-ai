@@ -25,18 +25,26 @@ const merged = new Set([...scopesFromEnv, ...REQUIRED_SCOPES]);
 const scopes = [...merged];
 
 // Dev stores are flagged so /admin can keep them out of the counts, and they
-// don't send install alerts. If Shopify can't say, the alert still goes out.
+// get neither the install alert nor the welcome email. If Shopify can't say,
+// both still go out.
 async function flagDevStoreAndAlert(admin, shopDomain, kind) {
+  let isDevStore = null;
   try {
-    const isDevStore = await fetchIsDevStore(admin);
+    isDevStore = await fetchIsDevStore(admin);
     if (isDevStore !== null) await setShopDevStore(shopDomain, isDevStore);
     if (isDevStore === true) {
       logger.debug(`[afterAuth] ${shopDomain} is a dev store; no ${kind} alert`);
-      return;
+    } else {
+      await sendInstallAlert(shopDomain, kind);
     }
-    await sendInstallAlert(shopDomain, kind);
   } catch (e) {
     console.error(`[afterAuth] ${kind} alert failed for ${shopDomain}:`, e?.message || e);
+  }
+  try {
+    const { sendWelcomeEmail } = await import("./lib/welcome-email.server");
+    await sendWelcomeEmail({ admin, shopDomain, kind, isDevStore });
+  } catch (e) {
+    console.error(`[afterAuth] welcome email failed for ${shopDomain}:`, e?.message || e);
   }
 }
 

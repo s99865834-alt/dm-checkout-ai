@@ -2,12 +2,16 @@ import { useMemo, useState } from "react";
 import { useFetcher, useLoaderData } from "react-router";
 import { getAdminSession, isAdminAuthConfigured } from "../lib/admin-auth.server";
 import { buildWeeklyEmails, sendTestEmail, weeklyEmailEnabled } from "../lib/weekly-email.server";
+import { buildWelcomeEmail, sendWelcomeTest, welcomeEmailEnabled } from "../lib/welcome-email.server";
 import { postmarkConfigured } from "../lib/postmark.server";
+
+const WELCOME_ID = "welcome";
 
 export const action = async ({ request }) => {
   if (!isAdminAuthConfigured() || !getAdminSession(request)) return { ok: false, error: "Sign in at /admin first" };
   const form = await request.formData();
-  return sendTestEmail(String(form.get("shopId") || ""));
+  const shopId = String(form.get("shopId") || "");
+  return shopId === WELCOME_ID ? sendWelcomeTest() : sendTestEmail(shopId);
 };
 
 export const meta = () => [{ title: "Weekly email preview" }, { name: "robots", content: "noindex" }];
@@ -16,11 +20,28 @@ export const meta = () => [{ title: "Weekly email preview" }, { name: "robots", 
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured() || !getAdminSession(request)) return { authenticated: false };
   const { weekStart, items } = await buildWeeklyEmails();
+  const welcome = buildWelcomeEmail({ shopDomain: "your-store.myshopify.com", storeName: "Your Store" });
+  const welcomeRow = {
+    id: WELCOME_ID,
+    domain: "Sent when a store installs",
+    storeName: "Welcome email",
+    recipient: "the store owner",
+    send: true,
+    kind: "welcome",
+    extras: [],
+    reason: null,
+    subject: welcome.subject,
+    preheader: welcome.preheader,
+    html: welcome.html,
+    text: welcome.text,
+  };
   return {
     authenticated: true,
     canTest: postmarkConfigured(),
     sendingOn: weeklyEmailEnabled(),
+    welcomeOn: welcomeEmailEnabled(),
     weekStart,
+    welcomeRow,
     items: items
       .map(({ shop, facts, decision, email }) => ({
         id: shop.id,
@@ -65,7 +86,8 @@ export default function WeeklyEmailPreview() {
     );
   }
 
-  const selected = data.items.find((i) => i.id === selectedId) || data.items.find((i) => i.send) || null;
+  const rows = [data.welcomeRow, ...data.items];
+  const selected = rows.find((i) => i.id === selectedId) || data.items.find((i) => i.send) || data.welcomeRow;
 
   return (
     <div style={{ display: "flex", gap: 20, padding: 20, fontFamily: "system-ui", alignItems: "flex-start" }}>
@@ -76,6 +98,10 @@ export default function WeeklyEmailPreview() {
             ? "Weekly sending is ON: these go out Tuesday from 15:00 UTC."
             : "Weekly sending is OFF. Nothing goes to merchants until WEEKLY_EMAIL_ENABLED=true."}{" "}
           {Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(", ")}
+          <br />
+          {data.welcomeOn
+            ? "Welcome email is ON: sent when a store installs."
+            : "Welcome email is OFF until WELCOME_EMAIL_ENABLED=true."}
         </p>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
@@ -86,7 +112,7 @@ export default function WeeklyEmailPreview() {
             </tr>
           </thead>
           <tbody>
-            {data.items.map((item) => (
+            {rows.map((item) => (
               <tr
                 key={item.id}
                 onClick={() => item.send && setSelectedId(item.id)}

@@ -118,6 +118,7 @@ export const action = async ({ request }) => {
           await supabase.from("shop_insights").delete().eq("shop_id", dbShopId);
           await supabase.from("email_sends").delete().eq("shop_id", dbShopId);
           await supabase.from("email_optouts").delete().eq("shop_id", dbShopId);
+          await supabase.from("email_welcomes").delete().eq("shop_id", dbShopId);
           await supabase.from("shops").delete().eq("id", dbShopId);
           logger.debug(`[webhook/compliance] Shop ${shop} data erased`);
         }
