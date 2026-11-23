@@ -112,6 +112,8 @@ describe("sendWelcomeEmail", () => {
     expect(res.sent).toBe(true);
     const [[msg]] = sendBatch.mock.calls[0];
     expect(msg).toMatchObject({ to: "owner@vela.test", stream: "outbound", metadata: { shop_id: "shop-1", kind: "welcome" } });
+    expect(msg.subject).toBe("Welcome to SocialRepl.ai: your first reply in 3 steps");
+    expect(msg.subject).not.toContain("[Test]");
     expect(msg.unsubscribeUrl).toBeUndefined();
     expect(tables["email_welcomes:update"]).toMatchObject({ status: "sent", provider_message_id: "pm-1" });
   });

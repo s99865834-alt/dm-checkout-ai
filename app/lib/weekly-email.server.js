@@ -278,9 +278,9 @@ async function claimSend(item, weekStart) {
 }
 
 /** Build, claim, and send this week's emails. Returns counts. */
-export async function sendWeeklyEmails({ now = new Date() } = {}) {
+export async function sendWeeklyEmails({ now = new Date(), build = buildWeeklyEmails } = {}) {
   if (!weeklyEmailEnabled()) return { skipped: "Weekly email is not enabled" };
-  const { weekStart, items } = await buildWeeklyEmails({ now });
+  const { weekStart, items } = await build({ now });
   const claimed = [];
   for (const item of items) {
     if (!item.email || !item.facts?.email) continue;
