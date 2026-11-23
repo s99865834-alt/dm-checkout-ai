@@ -13,7 +13,11 @@
  *   EMAIL_TEST_TO                      inbox for "Send this to me" on /admin/emails
  *   POSTMARK_STREAM                    defaults to "broadcast"
  *   POSTMARK_WEBHOOK_TOKEN             secret in the Postmark webhook URL
- *   EMAIL_UNSUBSCRIBE_SECRET           optional; falls back to SHOPIFY_API_SECRET
+ *   EMAIL_UNSUBSCRIBE_HANDLING=custom  use our signed unsubscribe link instead of Postmark's.
+ *                                      Only valid once Postmark has approved the account and
+ *                                      the broadcast stream is set to Custom through their API;
+ *                                      otherwise Postmark appends its own link as well.
+ *   EMAIL_UNSUBSCRIBE_SECRET           custom mode only; falls back to SHOPIFY_API_SECRET
  */
 import supabase from "./supabase.server";
 import {
@@ -36,10 +40,15 @@ import {
 import { buildEmailLinks, renderWeeklyEmail, replaceUnsubscribeLink } from "./weekly-email-template";
 import { unsubscribeUrl } from "./email-unsubscribe.server";
 import { postmarkConfigured, sendBatch } from "./postmark.server";
+import { POSTMARK_UNSUBSCRIBE_PLACEHOLDER } from "./postmark-events";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Links and images in the email use the brand domain, which serves this app.
 export const EMAIL_SITE_URL = process.env.EMAIL_SITE_URL || "https://www.socialrepl.ai";
+
+function ownUnsubscribe() {
+  return process.env.EMAIL_UNSUBSCRIBE_HANDLING === "custom";
+}
 
 const REVIEWS_URL = "https://apps.shopify.com/socialreplai/reviews";
 const REVIEW_PAGES = 5;
@@ -221,7 +230,7 @@ export async function buildWeeklyEmails({ now = new Date(), appUrl = EMAIL_SITE_
     const facts = await gatherFacts(shop, now, reviewerNames);
     const decision = planWeeklyEmail(facts, history.get(shop.id) || [], now);
     if (!decision.send) return { shop, facts, decision, email: null };
-    const unsubscribe = unsubscribeUrl(appUrl, shop.id);
+    const unsubscribe = ownUnsubscribe() ? unsubscribeUrl(appUrl, shop.id) : POSTMARK_UNSUBSCRIBE_PLACEHOLDER;
     if (!unsubscribe) return { shop, facts, decision: { send: false, reason: "No unsubscribe secret configured" }, email: null };
     const links = buildEmailLinks({ shopDomain: shop.shopify_domain, appUrl, unsubscribeUrl: unsubscribe });
     return { shop, facts, decision, links, email: renderWeeklyEmail({ decision, facts, links }) };
@@ -286,7 +295,8 @@ export async function sendWeeklyEmails({ now = new Date() } = {}) {
       subject: item.email.subject,
       html: item.email.html,
       text: item.email.text,
-      unsubscribeUrl: item.links.unsubscribe,
+      // Postmark adds its own one-click headers when it manages unsubscribes.
+      unsubscribeUrl: ownUnsubscribe() ? item.links.unsubscribe : undefined,
       metadata: { shop_id: item.shop.id, week_start: weekStart, kind: item.decision.kind },
     }))
   );
@@ -316,9 +326,11 @@ export async function sendTestEmail(shopId) {
   const { items } = await buildWeeklyEmails();
   const item = items.find((i) => i.shop.id === shopId && i.email);
   if (!item) return { ok: false, error: "That store has no email this week" };
-  // The rendered email carries that merchant's real unsubscribe link; clicking
-  // it in a test copy would unsubscribe the merchant, not the tester.
-  const email = replaceUnsubscribeLink(item.email, item.links.unsubscribe, `${EMAIL_SITE_URL}/email/unsubscribe?s=test&t=test`);
+  // Our signed link belongs to that merchant, so a click in a test copy would
+  // unsubscribe them; Postmark's placeholder resolves per recipient instead.
+  const email = ownUnsubscribe()
+    ? replaceUnsubscribeLink(item.email, item.links.unsubscribe, `${EMAIL_SITE_URL}/email/unsubscribe?s=test&t=test`)
+    : item.email;
   const [result] = await sendBatch([
     { to, subject: `[Test] ${email.subject}`, html: email.html, text: email.text, metadata: { test: "true" } },
   ]);

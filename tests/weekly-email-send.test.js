@@ -2,6 +2,35 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { isWeeklySendWindow } from "../app/lib/weekly-email";
 import { unsubscribeToken, verifyUnsubscribeToken, unsubscribeUrl } from "../app/lib/email-unsubscribe.server";
 import { sendBatch, postmarkConfigured } from "../app/lib/postmark.server";
+import { subscriptionEffect, POSTMARK_UNSUBSCRIBE_PLACEHOLDER } from "../app/lib/postmark-events";
+import { renderWeeklyEmail, buildEmailLinks } from "../app/lib/weekly-email-template";
+
+describe("Postmark webhook events", () => {
+  it.each([
+    [{ RecordType: "SpamComplaint" }, { action: "optout", reason: "spam_complaint" }],
+    [{ RecordType: "Bounce", Type: "HardBounce" }, { action: "optout", reason: "hard_bounce" }],
+    [{ RecordType: "SubscriptionChange", SuppressSending: true }, { action: "optout", reason: "postmark_unsubscribe" }],
+    [{ RecordType: "SubscriptionChange", SuppressSending: false }, { action: "optin" }],
+    [{ RecordType: "Bounce", Type: "SoftBounce" }, null],
+    [{ RecordType: "Delivery" }, null],
+    [null, null],
+  ])("%o -> %o", (event, effect) => {
+    expect(subscriptionEffect(event)).toEqual(effect);
+  });
+});
+
+describe("Postmark-managed unsubscribe link", () => {
+  it("puts the placeholder in the footer of both versions, so Postmark adds no second link", () => {
+    const links = buildEmailLinks({ shopDomain: "vela.myshopify.com", appUrl: "https://www.socialrepl.ai", unsubscribeUrl: POSTMARK_UNSUBSCRIBE_PLACEHOLDER });
+    const email = renderWeeklyEmail({
+      decision: { send: true, kind: "connect", extras: [], upsell: null },
+      facts: { shopDomain: "vela.myshopify.com", storeName: "Vela" },
+      links,
+    });
+    expect(email.html).toContain(`href="${POSTMARK_UNSUBSCRIBE_PLACEHOLDER}"`);
+    expect(email.text).toContain(POSTMARK_UNSUBSCRIBE_PLACEHOLDER);
+  });
+});
 
 describe("isWeeklySendWindow", () => {
   it("opens Tuesday at 15:00 UTC and closes after Wednesday", () => {
