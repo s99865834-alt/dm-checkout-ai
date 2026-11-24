@@ -146,6 +146,11 @@ function callout(title, body, cta) {
 
 // ---------- per-kind content ----------
 
+// Last step of every setup list. Worded as a check the merchant can run, so it
+// doesn't read as one more thing they must do before the app works.
+const TEST_STEP =
+  "Test it out (optional): from your personal Instagram, DM your connected business account a question about one of your products and watch the AI reply.";
+
 function connectContent({ facts, links }) {
   if (facts.needsPlan) {
     return {
@@ -159,7 +164,7 @@ function connectContent({ facts, links }) {
         steps([
           "Open SocialRepl.ai and choose a plan. Your first 14 days are free.",
           "Click Connect Instagram and log in with your business account.",
-          "DM your own account a product question to see the reply.",
+          TEST_STEP,
         ]),
         button("Start my free trial", links.home),
         helpBlock(links),
@@ -177,7 +182,7 @@ function connectContent({ facts, links }) {
       steps([
         "Open SocialRepl.ai in your Shopify admin.",
         "Click Connect Instagram and log in with your business account.",
-        "DM your own account a product question to see the reply.",
+        TEST_STEP,
       ]),
       button("Connect Instagram", links.home),
       helpBlock(links),
@@ -340,8 +345,8 @@ export function renderWelcomeEmail({ facts, links, reinstall = false }) {
     // choosing one, with its 14-day trial, is always the first step.
     steps([
       "Open SocialRepl.ai and choose a plan. Your first 14 days are free.",
-      "Connect your Instagram business account from the Home page.",
-      "Map your products to your posts, then DM your own account a product question to see the reply.",
+      "Connect your Instagram business account from the Home page, then map your products to your posts so every reply links the right item.",
+      TEST_STEP,
     ]),
     button("Start my free trial", links.home),
     para(

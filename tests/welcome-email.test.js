@@ -40,6 +40,7 @@ describe("renderWelcomeEmail", () => {
     expect(email.html).toContain("Welcome to SocialRepl.ai, Vela");
     expect(email.text).toContain("1. Open SocialRepl.ai and choose a plan. Your first 14 days are free.");
     expect(email.text).toContain("2. Connect your Instagram business account");
+    expect(email.text).toContain("3. Test it out (optional): from your personal Instagram, DM your connected business account");
     expect(email.html).toContain("Start my free trial");
     expect(email.html).toContain(links.home);
   });

@@ -254,6 +254,7 @@ describe("renderWeeklyEmail", () => {
     expect(email.subject).toBe("Start your free trial and connect Instagram");
     expect(email.text).toContain("1. Open SocialRepl.ai and choose a plan. Your first 14 days are free.");
     expect(email.text).toContain("2. Click Connect Instagram");
+    expect(email.text).toContain("3. Test it out (optional):");
     expect(email.html).toContain("Start my free trial");
   });
 
