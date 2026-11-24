@@ -37,6 +37,15 @@ export function isWeeklySendWindow(now = new Date()) {
   return (day === 2 && now.getUTCHours() >= 15) || day === 3;
 }
 
+/**
+ * True when the shop has not picked Basic or Pro. Free is retired, so these
+ * shops start with Shopify's 14-day trial on whichever plan they choose.
+ */
+export function needsPlanChoice(shop, now = new Date()) {
+  if (!shop || shop.plan !== "FREE") return false;
+  return !(shop.beta_trial_expires_at && new Date(shop.beta_trial_expires_at) > now);
+}
+
 /** Monday (UTC) of the week containing `date`, as YYYY-MM-DD. */
 export function weekStartUtc(date = new Date()) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));

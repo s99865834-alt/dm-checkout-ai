@@ -4,6 +4,7 @@ import {
   ownerEmailFromContext,
   planWeeklyEmail,
   upsellFor,
+  needsPlanChoice,
   parseReviewerNames,
   normalizeStoreName,
   MAX_CONNECT_NUDGES,
@@ -49,6 +50,19 @@ describe("weekStartUtc", () => {
     expect(weekStartUtc(NOW)).toBe(WEEK);
     expect(weekStartUtc(new Date("2026-11-16T00:00:00Z"))).toBe(WEEK);
     expect(weekStartUtc(new Date("2026-11-22T23:59:00Z"))).toBe(WEEK);
+  });
+});
+
+describe("needsPlanChoice", () => {
+  it("is true for a Free store without beta access", () => {
+    expect(needsPlanChoice({ plan: "FREE" }, NOW)).toBe(true);
+    expect(needsPlanChoice({ plan: "FREE", beta_trial_expires_at: "2026-11-01T00:00:00Z" }, NOW)).toBe(true);
+  });
+
+  it("is false on a paid plan or active beta", () => {
+    expect(needsPlanChoice({ plan: "GROWTH" }, NOW)).toBe(false);
+    expect(needsPlanChoice({ plan: "PRO" }, NOW)).toBe(false);
+    expect(needsPlanChoice({ plan: "FREE", beta_trial_expires_at: "2026-12-31T00:00:00Z" }, NOW)).toBe(false);
   });
 });
 
@@ -233,6 +247,26 @@ describe("renderWeeklyEmail", () => {
     const email = renderWeeklyEmail({ decision: { send: true, kind: "report", extras: [], upsell: null }, facts: f, links });
     expect(email.html).not.toContain("<script>x");
     expect(email.html).toContain(escapeHtml("<b>Evil</b>"));
+  });
+
+  it("asks a store without a plan to start its trial and connect Instagram", () => {
+    const email = renderWeeklyEmail({ decision: { send: true, kind: "connect", extras: [], upsell: null }, facts: facts({ needsPlan: true }), links });
+    expect(email.subject).toBe("Start your free trial and connect Instagram");
+    expect(email.text).toContain("1. Open SocialRepl.ai and choose a plan. Your first 14 days are free.");
+    expect(email.text).toContain("2. Click Connect Instagram");
+    expect(email.html).toContain("Start my free trial");
+  });
+
+  it("only asks a store on a plan to connect Instagram", () => {
+    const email = renderWeeklyEmail({ decision: { send: true, kind: "connect", extras: [], upsell: null }, facts: facts({ needsPlan: false }), links });
+    expect(email.subject).toBe("Your Instagram isn't connected to SocialRepl.ai yet");
+    expect(email.text).not.toContain("free");
+  });
+
+  it.each(["connect", "setup"])("offers a setup call in the %s email", (kind) => {
+    const email = renderWeeklyEmail({ decision: { send: true, kind, extras: [], upsell: null }, facts: facts(), links });
+    expect(email.html).toContain(`href="${links.booking}"`);
+    expect(email.text).toContain(`Book a setup call: ${links.booking}`);
   });
 
   it("swaps the unsubscribe link everywhere for test sends", () => {

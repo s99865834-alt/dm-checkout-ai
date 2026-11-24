@@ -31,6 +31,7 @@ import { getShopInsight } from "./insights.server";
 import { isShopifyAutomatedReviewShop } from "./shopify-review-shop";
 import { mapWithConcurrency } from "./concurrency";
 import {
+  needsPlanChoice,
   normalizeStoreName,
   ownerEmailFromContext,
   parseReviewerNames,
@@ -136,6 +137,7 @@ export async function gatherFacts(shop, now = new Date(), reviewerNames = null) 
     optedOut: Boolean(optRow.data),
     installedAt: shop.installed_at || shop.created_at,
     reviewed,
+    needsPlan: needsPlanChoice(shop, now),
     igConnected: Boolean(igRow.data),
     week: { received: 0, responded: 0, linksSent: 0, clicks: 0, orders: 0, revenue: 0, currency: "USD" },
     last14Received: 0,
@@ -215,7 +217,7 @@ async function historyByShop(shopIds) {
 export async function buildWeeklyEmails({ now = new Date(), appUrl = EMAIL_SITE_URL } = {}) {
   const { data: shops, error } = await supabase
     .from("shops")
-    .select("id, shopify_domain, active, is_dev_store, installed_at, created_at, review_prompt_result, store_context_json")
+    .select("id, shopify_domain, active, is_dev_store, installed_at, created_at, review_prompt_result, store_context_json, plan, beta_trial_expires_at")
     .eq("active", true);
   if (error) throw new Error(`shops read failed: ${error.message}`);
 

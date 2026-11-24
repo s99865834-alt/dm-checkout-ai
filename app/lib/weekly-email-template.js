@@ -18,6 +18,14 @@ const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, s
 const PLAN_LABEL = { FREE: "Free", GROWTH: "Basic", PRO: "Pro" };
 // Links and images in emails use the brand domain, which serves this app.
 export const EMAIL_SITE_URL = process.env.EMAIL_SITE_URL || "https://www.socialrepl.ai";
+// Founder's 15-minute setup call (Google Calendar appointment schedule).
+// EMAIL_BOOKING_URL overrides it; set it to "off" to drop the button.
+const DEFAULT_BOOKING_URL = "https://calendar.app.google/7StMWazPBC8jRfJE7";
+export function bookingUrl() {
+  const v = process.env.EMAIL_BOOKING_URL;
+  if (v === "off") return null;
+  return v || DEFAULT_BOOKING_URL;
+}
 export const POSTAL_ADDRESS = "Tennyson Labs, 1312 17th Street Unit #2114, Denver, CO 80202";
 
 export function escapeHtml(value) {
@@ -49,6 +57,7 @@ export function buildEmailLinks({ shopDomain, appUrl, unsubscribeUrl }) {
     analytics: `${admin}/app/analytics`,
     billing: `${admin}/app/billing/select`,
     review: "https://apps.shopify.com/socialreplai/reviews",
+    booking: bookingUrl(),
     unsubscribe: unsubscribeUrl,
     logo: `${String(appUrl || "").replace(/\/$/, "")}/email/logo.png`,
   };
@@ -63,6 +72,16 @@ function button(label, href) {
   return {
     html: `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 18px"><tr><td style="border-radius:8px;background:${BRAND.purple}"><a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 22px;font:600 15px ${FONT};color:#ffffff;text-decoration:none;border-radius:8px">${escapeHtml(label)}</a></td></tr></table>`,
     text: `${label}: ${href}`,
+  };
+}
+
+/** "Need a hand?" line with a secondary button to book a setup call, or a reply prompt without one. */
+function helpBlock(links) {
+  if (!links.booking) return para("Stuck on a step? Reply to this email and I'll help.");
+  const text = "Stuck on a step? Book a 15-minute setup call and I'll walk you through it, or just reply to this email.";
+  return {
+    html: `${p(escapeHtml(text))}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="border-radius:8px;border:2px solid ${BRAND.purple}"><a href="${escapeHtml(links.booking)}" style="display:inline-block;padding:10px 20px;font:600 15px ${FONT};color:${BRAND.purple};text-decoration:none;border-radius:8px">Book a setup call</a></td></tr></table>`,
+    text: `${text}\nBook a setup call: ${links.booking}`,
   };
 }
 
@@ -128,6 +147,25 @@ function callout(title, body, cta) {
 // ---------- per-kind content ----------
 
 function connectContent({ facts, links }) {
+  if (facts.needsPlan) {
+    return {
+      subject: "Start your free trial and connect Instagram",
+      preheader: "Pick a plan (the first 14 days are free), connect Instagram, and the AI starts answering DMs.",
+      blocks: [
+        heading("Start your free trial and connect Instagram"),
+        para(
+          `SocialRepl.ai is installed on ${facts.storeName}, but it isn't switched on yet. It takes a couple of minutes, then the AI starts answering customer DMs and comments with checkout links.`
+        ),
+        steps([
+          "Open SocialRepl.ai and choose a plan. Your first 14 days are free.",
+          "Click Connect Instagram and log in with your business account.",
+          "DM your own account a product question to see the reply.",
+        ]),
+        button("Start my free trial", links.home),
+        helpBlock(links),
+      ],
+    };
+  }
   return {
     subject: "Your Instagram isn't connected to SocialRepl.ai yet",
     preheader: "Connect once and the AI starts answering DMs with checkout links.",
@@ -142,7 +180,7 @@ function connectContent({ facts, links }) {
         "DM your own account a product question to see the reply.",
       ]),
       button("Connect Instagram", links.home),
-      para("Stuck on a step? Reply to this email and I'll help."),
+      helpBlock(links),
     ],
   };
 }
@@ -161,7 +199,8 @@ function setupContent({ facts, links }) {
       para(`Instagram is connected for ${facts.storeName}, but nothing has come through. Usually it's one of these:`),
       steps(checks),
       button("Check my setup", links.home),
-      para("If everything looks right and it's just a quiet stretch, ignore this. Reply if you want me to take a look."),
+      para("If everything looks right and it's just a quiet stretch, ignore this."),
+      helpBlock(links),
     ],
   };
 }
@@ -297,16 +336,18 @@ export function renderWelcomeEmail({ facts, links, reinstall = false }) {
     para(
       "Thanks for installing. Once Instagram is connected, the AI answers DMs and comments about your products, using your live catalog and store policies, with a checkout link for the right item."
     ),
+    // Every install and reinstall starts without a plan (Free is retired), so
+    // choosing one, with its 14-day trial, is always the first step.
     steps([
+      "Open SocialRepl.ai and choose a plan. Your first 14 days are free.",
       "Connect your Instagram business account from the Home page.",
-      "Map your products to your posts, so every reply links the right item.",
-      "DM your own account a product question to see the reply.",
+      "Map your products to your posts, then DM your own account a product question to see the reply.",
     ]),
-    button("Open SocialRepl.ai", links.home),
+    button("Start my free trial", links.home),
     para(
       "You stay in control. Reply to a customer yourself and the AI steps aside in that chat, and Reply hours lets you choose when it answers."
     ),
-    para("Stuck on a step? Reply to this email and I'll help."),
+    helpBlock(links),
   ];
   return renderShell({
     subject: reinstall ? "Welcome back to SocialRepl.ai" : "Welcome to SocialRepl.ai: your first reply in 3 steps",
