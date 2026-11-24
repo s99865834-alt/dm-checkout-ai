@@ -34,13 +34,21 @@ describe("renderWelcomeEmail", () => {
   const links = buildEmailLinks({ shopDomain: "vela.myshopify.com", appUrl: "https://www.socialrepl.ai", unsubscribeUrl: null });
   const facts = { storeName: "Vela", shopDomain: "vela.myshopify.com" };
 
-  it("walks through the three setup steps and links into the app", () => {
+  it("walks through the three setup steps, trial first, and links into the app", () => {
     const email = renderWelcomeEmail({ facts, links });
     expect(email.subject).toBe("Welcome to SocialRepl.ai: your first reply in 3 steps");
     expect(email.html).toContain("Welcome to SocialRepl.ai, Vela");
-    expect(email.html).toContain("Connect your Instagram business account");
+    expect(email.text).toContain("1. Open SocialRepl.ai and choose a plan. Your first 14 days are free.");
+    expect(email.text).toContain("2. Connect your Instagram business account");
+    expect(email.text).toContain("3. Test it out (optional): from your personal Instagram, DM your connected business account");
+    expect(email.html).toContain("Start my free trial");
     expect(email.html).toContain(links.home);
-    expect(email.text).toContain("3. DM your own account a product question");
+  });
+
+  it("offers a setup call", () => {
+    const email = renderWelcomeEmail({ facts, links });
+    expect(email.html).toContain(`href="${links.booking}"`);
+    expect(email.text).toContain(`Book a setup call: ${links.booking}`);
   });
 
   it("is onboarding only: no plans, prices, or reviews", () => {
