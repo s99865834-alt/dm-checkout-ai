@@ -45,6 +45,7 @@ import {
 } from "./links.server";
 import { findCollectionMatches } from "./collection-match";
 import { generateAgentReply, isExplicitLinkRequest, REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
+import { createPriceBook, addPrice, addPricesFromText, enforcePrices, hasWords } from "./price-guard";
 
 // Link builders moved to links.server.js; re-exported for existing callers
 // (e.g. meta.test-webhook.jsx imports them from here).
@@ -2257,6 +2258,12 @@ function buildLanguageInstruction(brandVoice, originalMessage) {
 export async function generateClarifyingQuestion(brandVoice, originalMessage, intent, channelContext = null) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
+  const fallbackMessages = {
+    friendly: `Hi! Thanks for reaching out! 😊 Which product are you interested in?`,
+    expert: `Hello! Could you please specify which product you're referring to?`,
+    casual: `Hey! 👋 Which product are you talking about?`,
+  };
+  const fallback = fallbackMessages[tone] || fallbackMessages.friendly;
 
   try {
     if (openai) {
@@ -2301,21 +2308,25 @@ Write the response:`;
       }));
 
       if (response?.choices?.[0]?.message?.content) {
-        return stripEmDashes(response.choices[0].message.content.trim());
+        return stripEmDashes(withoutInventedPrices(response.choices[0].message.content.trim(), customInstruction, fallback));
       }
     }
   } catch (error) {
     console.error("[automation] Error generating clarifying question:", error);
   }
 
-  // Fallback message if AI generation fails
-  const fallbackMessages = {
-    friendly: `Hi! Thanks for reaching out! 😊 Which product are you interested in?`,
-    expert: `Hello! Could you please specify which product you're referring to?`,
-    casual: `Hey! 👋 Which product are you talking about?`,
-  };
-  
-  return fallbackMessages[tone] || fallbackMessages.friendly;
+  return fallback;
+}
+
+/**
+ * Clarifying questions, size questions and follow-ups are given no prices, so
+ * a price in one was invented unless the merchant's own instruction states it.
+ */
+export function withoutInventedPrices(text, merchantText, fallback) {
+  const guarded = enforcePrices(text, addPricesFromText(createPriceBook(), merchantText));
+  if (!guarded.removed.length && !guarded.corrected.length) return text;
+  console.warn(`[automation] Reply quoted a price it was never given; removed ${JSON.stringify(guarded.removed)}`);
+  return hasWords(guarded.text) ? guarded.text : fallback;
 }
 
 /**
@@ -2330,6 +2341,7 @@ export async function generateSizeQuestion(brandVoice, productName, sizeValues, 
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = brandVoice?.custom_instruction || "";
   const sizesText = sizeValues.join(", ");
+  const fallback = `Thanks for your interest in ${productName || "this item"}! What size would you like? We have ${sizesText}.`;
 
   try {
     if (openai) {
@@ -2361,14 +2373,14 @@ Write the response:`;
       }));
 
       if (response?.choices?.[0]?.message?.content) {
-        return stripEmDashes(response.choices[0].message.content.trim());
+        return stripEmDashes(withoutInventedPrices(response.choices[0].message.content.trim(), customInstruction, fallback));
       }
     }
   } catch (error) {
     console.error("[automation] Error generating size question:", error);
   }
 
-  return `Thanks for your interest in ${productName || "this item"}! What size would you like? We have ${sizesText}.`;
+  return fallback;
 }
 
 /**
@@ -2825,6 +2837,24 @@ Write the response:`;
         `[automation] Link guarantee: reply for intent "${intent}" was missing its link; appended ${appendUrl}`
       );
     }
+  }
+
+  // A price only goes out if the data given to the model contains it. See
+  // price-guard.js.
+  const priceBook = createPriceBook();
+  addPrice(priceBook, productPrice);
+  addPricesFromText(priceBook, productContextForReply?.text);
+  if (intent === "store_question" && storeInfo) addPricesFromText(priceBook, buildStoreContextForAI(storeInfo)?.text);
+  addPricesFromText(priceBook, customInstruction);
+  addPricesFromText(priceBook, safeChannelContext?.postCaption);
+  const priceGuard = enforcePrices(message, priceBook);
+  if (priceGuard.corrected.length || priceGuard.removed.length) {
+    console.warn(
+      `[automation] Reply for intent "${intent}" quoted a price the store data does not have; corrected ${JSON.stringify(priceGuard.corrected)}, removed ${JSON.stringify(priceGuard.removed)}`
+    );
+    if (hasWords(priceGuard.text)) message = priceGuard.text;
+    else if (checkoutUrl) message = toneTemplates[tone] || toneTemplates.friendly;
+    else message = storeInfo?.email ? `The owner can confirm that for you at ${storeInfo.email}.` : "The owner can confirm that for you here.";
   }
 
   // Last gate before the reply leaves: never let it claim to be a person.

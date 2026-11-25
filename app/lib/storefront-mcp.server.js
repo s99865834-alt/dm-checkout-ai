@@ -17,6 +17,7 @@
  */
 
 import logger from "./logger.server";
+import { currencyFractionDigits } from "./price-guard";
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -300,15 +301,6 @@ function toVariantGid(id) {
   if (id.startsWith("gid://shopify/ProductVariant/")) return id;
   if (/^\d+$/.test(id)) return `gid://shopify/ProductVariant/${id}`;
   return null;
-}
-
-function currencyFractionDigits(currency) {
-  try {
-    return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions()
-      .maximumFractionDigits;
-  } catch {
-    return null;
-  }
 }
 
 /**
