@@ -30,13 +30,19 @@ const TOPIC_KINDS = ["question", "interest", "complaint", "feedback"];
 const ACTION_KINDS = ["content", "store", "app"];
 
 // The only app changes an action may suggest, so it never points at a
-// setting that does not exist.
+// setting that does not exist. A discount is deliberately not on this list:
+// the model cannot see whether one is already on, so that suggestion is
+// worked out from live numbers instead (discountSuggestion).
 export const APP_ACTIONS = [
   "Map the post to its product (Home, Your Instagram Posts) so replies link the right item",
   "Adjust tone or custom voice (Home, Automation) so replies answer this the way you would",
   "Set a default product (Home, Your Instagram, Stories) so story replies have something to sell",
-  "Turn on a product discount (Home, Automation) to nudge people who open the link but do not buy",
 ];
+
+// A discount is worth suggesting when enough people opened a checkout link
+// from a DM for the rate to mean something, and almost none of them bought.
+export const DISCOUNT_MIN_OPENED = 10;
+export const DISCOUNT_MAX_CONVERSION = 0.05;
 
 const MIN_MESSAGES_FOR_FLAG = 5;
 const MIN_CLICKS_FOR_FLAG = 5;
@@ -344,6 +350,36 @@ export async function runInsightPipeline({ messages, products, store, ask }) {
   const topics = buildTopics(discovered, assignments, messages);
   const actions = parseInsightActions(await ask(buildActionsPrompt({ topics, products, store }), 600), topics);
   return { topics, actions, aiFailed: false };
+}
+
+/**
+ * The discount suggestion, or null when this shop's numbers don't call for
+ * one. Evaluated when the page loads, so it disappears the moment the
+ * merchant turns a discount on.
+ */
+export function discountSuggestion({ discountEnabled, canDiscount, opened, orders }) {
+  const o = Number(opened) || 0;
+  const n = Number(orders) || 0;
+  if (!canDiscount || discountEnabled || o < DISCOUNT_MIN_OPENED || n >= o * DISCOUNT_MAX_CONVERSION) return null;
+  return {
+    kind: "app",
+    title: "Turn on a discount for DM checkout links",
+    detail: `${o} people opened a checkout link from your DMs in the last ${INSIGHTS_WINDOW_DAYS} days and ${n === 0 ? "none of them" : `only ${n}`} bought. A small discount on those links applies itself at checkout and gives the ones who were close a reason to finish.`,
+    topic: null,
+    basis: `Based on: ${o} links opened, ${n} ${n === 1 ? "order" : "orders"}, last ${INSIGHTS_WINDOW_DAYS} days`,
+    cta: { label: "Set up a discount", href: "/app#sr-discount" },
+  };
+}
+
+/** Stored actions minus any app suggestion about discounts, which is decided live instead. */
+export function withoutDiscountActions(actions) {
+  return (actions || []).filter((a) => !(a?.kind === "app" && /discount/i.test(`${a.title} ${a.detail || ""}`)));
+}
+
+/** What the card shows under "What to do next": the live discount suggestion first, then the stored ones. */
+export function liveInsightActions(storedActions, discount) {
+  const rest = withoutDiscountActions(storedActions);
+  return (discount ? [discount, ...rest] : rest).slice(0, MAX_ACTIONS);
 }
 
 /** Card payload stored in shop_insights.data. */

@@ -1,6 +1,6 @@
 import supabase from "./supabase.server";
 import logger from "./logger.server";
-import { getShopPlanAndUsage } from "./db.server";
+import { getShopPlanAndUsage, getSettings } from "./db.server";
 import { askInsightsJson } from "./ai.server";
 import { getProductTitles } from "./shopify-data.server";
 import { isShopifyAutomatedReviewShop } from "./shopify-review-shop";
@@ -9,6 +9,7 @@ import {
   INSIGHTS_SAMPLE_SIZE,
   INSIGHTS_WINDOW_DAYS,
   buildInsightData,
+  discountSuggestion,
   isInsightDue,
   productFlag,
   runInsightPipeline,
@@ -191,6 +192,29 @@ export async function getShopInsightForPage(shop, admin = null) {
   const messagesById = {};
   for (const m of data || []) messagesById[m.id] = m;
   return { insight, messagesById };
+}
+
+/**
+ * The discount suggestion for this shop right now, from the last 30 days of
+ * opened checkout links and attributed orders. Same counts as the Analytics
+ * page (shop_analytics_totals), so the two never disagree.
+ */
+export async function getDiscountSuggestion(shop, plan, now = new Date()) {
+  if (!shop?.id || !plan?.discounts) return null;
+  const since = new Date(now.getTime() - INSIGHTS_WINDOW_DAYS * DAY_MS).toISOString();
+  const [settings, totals, orders] = await Promise.all([
+    getSettings(shop.id),
+    supabase.rpc("shop_analytics_totals", { p_shop_id: shop.id, p_start: since, p_end: now.toISOString(), p_product_id: null }),
+    supabase.from("attribution").select("id", { count: "exact", head: true }).eq("shop_id", shop.id).gte("created_at", since),
+  ]);
+  if (totals.error || orders.error) return null;
+  const row = Array.isArray(totals.data) ? totals.data[0] : totals.data;
+  return discountSuggestion({
+    discountEnabled: settings?.discount_enabled === true,
+    canDiscount: true,
+    opened: row?.unique_links_clicked,
+    orders: orders.count,
+  });
 }
 
 /**

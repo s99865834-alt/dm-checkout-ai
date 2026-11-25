@@ -24,12 +24,29 @@ const GENERIC_QUESTION = "What do you sell?";
 // made it the default pick. It is the worst possible demo: the agent correctly
 // asks which denomination the customer wants instead of minting a link, so the
 // preview produced a reply with nothing to click, which is the exact weakness
-// this card exists to fix. Skipped in favour of something with a price.
-const POOR_DEMO_TITLE = /gift\s*card/i;
+// this card exists to fix. Skipped in favour of something with a price. So
+// is a placeholder product, which a new store often has ("Untitled Nov 20 at
+// 4:51 AM").
+const POOR_DEMO_TITLE = /gift\s*card|^untitled\b/i;
 
 function usableTitle(product) {
   const title = typeof product?.title === "string" ? product.title.trim() : "";
   return title !== "" ? title : null;
+}
+
+/**
+ * A real product to show off, from the titles cached on
+ * shops.store_context_json, or null when the store only has a gift card or a
+ * placeholder.
+ *
+ * @param {Object|null} storeContext - shops.store_context_json
+ * @returns {{title: string, handle: string|null}|null}
+ */
+export function demoProduct(storeContext) {
+  const products = Array.isArray(storeContext?.products) ? storeContext.products : [];
+  const pick = products.find((p) => usableTitle(p) && !POOR_DEMO_TITLE.test(usableTitle(p)));
+  if (!pick) return null;
+  return { title: usableTitle(pick), handle: typeof pick.handle === "string" && pick.handle ? pick.handle : null };
 }
 
 /**
@@ -51,7 +68,7 @@ export function suggestedPreviewQuestion(storeContext) {
   const titles = products.map(usableTitle).filter(Boolean);
   // Prefer a real product, but a gift card still beats asking nothing specific
   // on a store that only stocks one.
-  const title = titles.find((t) => !POOR_DEMO_TITLE.test(t)) || titles[0];
+  const title = demoProduct(storeContext)?.title || titles[0];
   if (!title) return GENERIC_QUESTION;
   return `How much is the ${title}?`;
 }

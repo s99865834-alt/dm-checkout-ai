@@ -9,8 +9,8 @@ import { cached, peekCached } from "../lib/loader-cache.server";
 import supabase from "../lib/supabase.server";
 import { PLANS } from "../lib/plans";
 import { InsightsCard, InsightsTeaser } from "../components/InsightsCard";
-import { generateShopInsights, getShopInsight, getShopInsightForPage } from "../lib/insights.server";
-import { INSIGHTS_WINDOW_DAYS, canRefreshManually } from "../lib/insights";
+import { generateShopInsights, getDiscountSuggestion, getShopInsight, getShopInsightForPage } from "../lib/insights.server";
+import { INSIGHTS_WINDOW_DAYS, canRefreshManually, liveInsightActions } from "../lib/insights";
 
 export const action = async ({ request }) => {
   const { shop, plan, admin } = await getShopWithPlan(request);
@@ -125,6 +125,7 @@ export const loader = async ({ request }) => {
     missedOpportunities,
     insightsPage,
     teaserConversations,
+    discountTip,
   ] = await Promise.all([
     getAttributionRecords(shop.id, { channel, orderId, startDate, endDate, limit, linkIds: postFilterLinkIds }),
     getMessages(shop.id, {
@@ -162,6 +163,7 @@ export const loader = async ({ request }) => {
           startDate: new Date(Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
         }).catch(() => 0)
       : Promise.resolve(0),
+    plan?.insights ? getDiscountSuggestion(shop, plan).catch(() => null) : Promise.resolve(null),
   ]);
 
   const { mediaPosts, productMappings } = await proContextPromise;
@@ -197,6 +199,7 @@ export const loader = async ({ request }) => {
     insight: insightsPage?.insight || null,
     insightMessages: insightsPage?.messagesById || {},
     insightCanRefresh: insightsPage ? canRefreshManually(insightsPage.insight) : false,
+    insightActions: plan?.insights ? liveInsightActions(insightsPage?.insight?.data?.actions, discountTip) : [],
     teaserConversations,
   };
 };
@@ -204,7 +207,7 @@ export const loader = async ({ request }) => {
 export default function AnalyticsPage() {
   const { shop, plan } = useOutletContext() || {};
   const { isFree, isPro } = usePlanAccess();
-  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId, missedOpportunities, insight, insightMessages, insightCanRefresh, teaserConversations } = useLoaderData();
+  const { attributionRecords, filters, messages, messageTotalCount, messageTotalPages, messageCurrentPage, messageFilters, analytics, proAnalytics, analyticsFilters, mediaPosts, productMappings, postFilterId, missedOpportunities, insight, insightMessages, insightCanRefresh, insightActions, teaserConversations } = useLoaderData();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [expandedMessages, setExpandedMessages] = useState(new Set());
@@ -408,7 +411,7 @@ export default function AnalyticsPage() {
           )}
           {plan?.insights ? (
             <s-section>
-              <InsightsCard insight={insight} messagesById={insightMessages} canRefresh={insightCanRefresh} />
+              <InsightsCard insight={insight} messagesById={insightMessages} canRefresh={insightCanRefresh} actions={insightActions} />
             </s-section>
           ) : plan?.name === "GROWTH" ? (
             <s-section>

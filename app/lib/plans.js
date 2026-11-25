@@ -22,6 +22,11 @@
 // selling capabilities on the Free comment window, so a FREE shop can
 // legitimately have `comments: true` / `converse: true` / `brandVoice: true`,
 // and a name comparison gets that wrong.
+
+// The free trial on both paid plans. Set in the Partner Dashboard, not here;
+// this only has to match what is shown to merchants.
+export const TRIAL_DAYS = 14;
+
 export const PLANS = {
   FREE: {
     name: "FREE",

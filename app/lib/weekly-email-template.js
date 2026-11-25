@@ -144,6 +144,20 @@ function callout(title, body, cta) {
   };
 }
 
+/** Real customer questions with a snippet of what the AI replied. */
+function exchanges(list) {
+  const rows = list
+    .map(
+      (e) =>
+        `<tr><td style="padding:12px 0;border-top:1px solid ${BRAND.line}"><div style="font:600 15px/1.45 ${FONT};color:${BRAND.ink}">&ldquo;${escapeHtml(e.question)}&rdquo;</div><div style="margin-top:4px;font:14px/1.5 ${FONT};color:${BRAND.body}"><span style="color:${BRAND.purple};font-weight:600">AI:</span> ${escapeHtml(e.reply)}</div></td></tr>`
+    )
+    .join("");
+  return {
+    html: `<div style="margin:0 0 6px;font:700 13px ${FONT};color:${BRAND.muted};text-transform:uppercase;letter-spacing:0.6px">A few questions it answered</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px">${rows}</table>`,
+    text: `A few questions it answered:\n${list.map((e) => `- "${e.question}"\n  AI: ${e.reply}`).join("\n")}`,
+  };
+}
+
 // ---------- per-kind content ----------
 
 // Last step of every setup list. Worded as a check the merchant can run, so it
@@ -321,6 +335,54 @@ export function renderWeeklyEmail({ decision, facts, links }) {
   return renderShell({
     subject,
     preheader,
+    blocks,
+    logo: links.logo,
+    footer: {
+      html: `You're receiving this because SocialRepl.ai is installed on ${escapeHtml(facts.shopDomain)}.<br><a href="${escapeHtml(links.unsubscribe)}" style="color:${BRAND.purpleLight}">Unsubscribe</a>`,
+      text: `You're receiving this because SocialRepl.ai is installed on ${facts.shopDomain}. Unsubscribe: ${links.unsubscribe}`,
+    },
+  });
+}
+
+/**
+ * One-time email once the AI has answered a store's first 10 customer
+ * messages. Every figure and quote is the store's own. Counts say "messages"
+ * because many answered ones are comments like "need this", not questions.
+ *
+ * @param {{facts: {storeName: string, shopDomain: string, answered: number, linksSent: number, opened: number,
+ *   orders: number, revenue: number, currency: string, daysConnected: number,
+ *   examples: Array<{question: string, reply: string}>, nextStep: object|null}, links: object}} input
+ */
+export function renderMilestoneEmail({ facts, links }) {
+  const answered = n(facts.answered);
+  const orders = n(facts.orders);
+  const days = n(facts.daysConnected);
+  const subject =
+    orders > 0
+      ? `${plural(answered, "message")} answered and ${plural(orders, "order")} from Instagram`
+      : `Your AI has answered ${plural(answered, "customer message")}`;
+  const since = days < 1 ? "In your first day on SocialRepl.ai" : `In the ${plural(days, "day")} since you connected Instagram`;
+  const blocks = [
+    heading(`${plural(answered, "customer message")} answered`),
+    para(
+      `${since}, the AI answered ${plural(answered, "message")} from ${facts.storeName}'s customers and sent ${plural(n(facts.linksSent), "checkout link")}.` +
+        (orders > 0 ? ` ${plural(orders, "order")} worth ${fmtMoney(facts.revenue, facts.currency)} came from those links.` : "")
+    ),
+    stats([
+      { label: "Answered by AI", value: fmtInt(answered) },
+      { label: "Checkout links", value: fmtInt(facts.linksSent) },
+      { label: "Links opened", value: fmtInt(facts.opened) },
+      { label: orders > 0 ? `Orders, ${fmtMoney(facts.revenue, facts.currency)}` : "Orders", value: fmtInt(orders) },
+    ]),
+  ];
+  if (facts.examples?.length) blocks.push(exchanges(facts.examples));
+  if (facts.nextStep) {
+    blocks.push(callout(facts.nextStep.title, facts.nextStep.body, { label: facts.nextStep.cta, href: links.home }));
+  }
+  blocks.push(button("See every conversation", links.analytics), helpBlock(links));
+  return renderShell({
+    subject,
+    preheader: `${plural(answered, "message")} answered, ${plural(n(facts.linksSent), "checkout link")} sent${orders ? `, ${plural(orders, "order")}` : ""}.`,
     blocks,
     logo: links.logo,
     footer: {
