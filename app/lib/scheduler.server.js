@@ -38,6 +38,10 @@ const INSIGHTS_FIRST_RUN_MS = 20 * 60 * 1000;
 // and once per week; see weekly-email.js.
 const WEEKLY_EMAIL_INTERVAL_MS = 60 * 60 * 1000;
 const WEEKLY_EMAIL_FIRST_RUN_MS = 25 * 60 * 1000;
+// "First 10 answered" email. Hourly, so it lands within an hour of the 10th
+// answer; each store gets it once (see milestone-email.server.js).
+const MILESTONE_EMAIL_INTERVAL_MS = 60 * 60 * 1000;
+const MILESTONE_EMAIL_FIRST_RUN_MS = 30 * 60 * 1000;
 const STARTUP_DELAY_MS = 10 * 1000;              // wait 10s after boot
 
 let started = false;
@@ -160,6 +164,23 @@ async function tickWeeklyEmail() {
   }
 }
 
+let milestoneEmailRunning = false;
+
+async function tickMilestoneEmail() {
+  if (milestoneEmailRunning) return;
+  milestoneEmailRunning = true;
+  try {
+    const { milestoneEmailEnabled, sendMilestoneEmails } = await import("./milestone-email.server");
+    if (!milestoneEmailEnabled()) return;
+    const result = await sendMilestoneEmails();
+    if (result?.sent > 0 || result?.failed > 0) console.log("[scheduler] milestone email", JSON.stringify(result));
+  } catch (err) {
+    console.error("[scheduler] milestone email tick error:", err?.message || err);
+  } finally {
+    milestoneEmailRunning = false;
+  }
+}
+
 /**
  * Start the in-process scheduler. Idempotent — calling twice is a no-op.
  * Returns false if scheduling is disabled by environment.
@@ -204,6 +225,10 @@ export function startScheduler() {
     tickWeeklyEmail();
     setInterval(tickWeeklyEmail, WEEKLY_EMAIL_INTERVAL_MS);
   }, WEEKLY_EMAIL_FIRST_RUN_MS);
+  setTimeout(() => {
+    tickMilestoneEmail();
+    setInterval(tickMilestoneEmail, MILESTONE_EMAIL_INTERVAL_MS);
+  }, MILESTONE_EMAIL_FIRST_RUN_MS);
 
   return true;
 }

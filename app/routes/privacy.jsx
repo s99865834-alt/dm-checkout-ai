@@ -72,7 +72,7 @@ export default function PrivacyPolicy() {
           <li>Track and attribute orders to Instagram interactions</li>
           <li>Generate analytics and insights about your messaging performance</li>
           <li>Improve, personalize, and expand our Service</li>
-          <li>Communicate with you about your account and our Service, including a welcome email when you install the app and a weekly email to your store&apos;s Shopify email address with your results, setup tips, and occasional plan suggestions. Every weekly email has an unsubscribe link.</li>
+          <li>Communicate with you about your account and our Service, including a welcome email when you install the app, a one-time email when the AI has answered your first 10 customer messages, and a weekly email to your store&apos;s Shopify email address with your results, setup tips, and occasional plan suggestions. The weekly and first-10 emails have an unsubscribe link.</li>
           <li>Detect, prevent, and address technical issues and security threats</li>
           <li>Comply with legal obligations</li>
         </ul>

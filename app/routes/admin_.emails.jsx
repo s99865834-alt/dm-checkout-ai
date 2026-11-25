@@ -3,15 +3,25 @@ import { useFetcher, useLoaderData } from "react-router";
 import { getAdminSession, isAdminAuthConfigured } from "../lib/admin-auth.server";
 import { buildWeeklyEmails, sendTestEmail, weeklyEmailEnabled } from "../lib/weekly-email.server";
 import { buildWelcomeEmail, sendWelcomeTest, welcomeEmailEnabled } from "../lib/welcome-email.server";
+import {
+  buildMilestoneEmails,
+  milestoneEmailEnabled,
+  sampleMilestoneEmail,
+  sendMilestoneTest,
+} from "../lib/milestone-email.server";
 import { postmarkConfigured } from "../lib/postmark.server";
 
 const WELCOME_ID = "welcome";
+const MILESTONE_ID = "milestone";
 
 export const action = async ({ request }) => {
   if (!isAdminAuthConfigured() || !getAdminSession(request)) return { ok: false, error: "Sign in at /admin first" };
   const form = await request.formData();
   const shopId = String(form.get("shopId") || "");
-  return shopId === WELCOME_ID ? sendWelcomeTest() : sendTestEmail(shopId);
+  if (shopId === WELCOME_ID) return sendWelcomeTest();
+  if (shopId === MILESTONE_ID) return sendMilestoneTest();
+  if (shopId.startsWith(`${MILESTONE_ID}:`)) return sendMilestoneTest(shopId.slice(MILESTONE_ID.length + 1));
+  return sendTestEmail(shopId);
 };
 
 export const meta = () => [{ title: "Weekly email preview" }, { name: "robots", content: "noindex" }];
@@ -19,7 +29,41 @@ export const meta = () => [{ title: "Weekly email preview" }, { name: "robots", 
 // Preview only: builds this week's emails without sending or logging them.
 export const loader = async ({ request }) => {
   if (!isAdminAuthConfigured() || !getAdminSession(request)) return { authenticated: false };
-  const { weekStart, items } = await buildWeeklyEmails();
+  const [{ weekStart, items }, milestones] = await Promise.all([
+    buildWeeklyEmails(),
+    buildMilestoneEmails().catch(() => []),
+  ]);
+  const sample = sampleMilestoneEmail();
+  const milestoneRows = [
+    {
+      id: MILESTONE_ID,
+      domain: "Sent once, when the AI has answered 10 questions",
+      storeName: "First 10 answered (sample)",
+      recipient: "the store owner",
+      send: true,
+      kind: "first 10 answered",
+      extras: [],
+      reason: null,
+      subject: sample.subject,
+      preheader: sample.preheader,
+      html: sample.html,
+      text: sample.text,
+    },
+    ...milestones.map(({ shop, facts, decision, email }) => ({
+      id: `${MILESTONE_ID}:${shop.id}`,
+      domain: shop.shopify_domain,
+      storeName: facts?.storeName || shop.shopify_domain,
+      recipient: facts?.email || null,
+      send: decision.send,
+      kind: "first 10 answered",
+      extras: [],
+      reason: decision.reason || null,
+      subject: email?.subject || null,
+      preheader: email?.preheader || null,
+      html: email?.html || null,
+      text: email?.text || null,
+    })),
+  ];
   const welcome = buildWelcomeEmail({ shopDomain: "your-store.myshopify.com", storeName: "Your Store" });
   const welcomeRow = {
     id: WELCOME_ID,
@@ -40,8 +84,10 @@ export const loader = async ({ request }) => {
     canTest: postmarkConfigured(),
     sendingOn: weeklyEmailEnabled(),
     welcomeOn: welcomeEmailEnabled(),
+    milestoneOn: milestoneEmailEnabled(),
     weekStart,
     welcomeRow,
+    milestoneRows,
     items: items
       .map(({ shop, facts, decision, email }) => ({
         id: shop.id,
@@ -86,7 +132,7 @@ export default function WeeklyEmailPreview() {
     );
   }
 
-  const rows = [data.welcomeRow, ...data.items];
+  const rows = [data.welcomeRow, ...(data.milestoneRows || []), ...data.items];
   const selected = rows.find((i) => i.id === selectedId) || data.items.find((i) => i.send) || data.welcomeRow;
 
   return (
@@ -102,6 +148,10 @@ export default function WeeklyEmailPreview() {
           {data.welcomeOn
             ? "Welcome email is ON: sent when a store installs."
             : "Welcome email is OFF until WELCOME_EMAIL_ENABLED=true."}
+          <br />
+          {data.milestoneOn
+            ? "First 10 answered email is ON: checked hourly, sent once per store."
+            : "First 10 answered email is OFF (it needs the weekly email on, and MILESTONE_EMAIL_ENABLED not set to false)."}
         </p>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
