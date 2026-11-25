@@ -28,6 +28,7 @@ vi.mock("openai", () => ({
   },
 }));
 
+vi.mock("../app/lib/ai.server", () => ({ repeatsWhatCustomerSaid: vi.fn(async () => ({ repeats: false, what: null })) }));
 vi.mock("../app/lib/store-context.server", () => ({ getStoreContextForReply: vi.fn(async () => null) }));
 vi.mock("../app/lib/shopify-data.server", () => ({
   getShopifyStoreInfo: vi.fn(async () => null),

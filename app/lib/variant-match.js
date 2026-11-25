@@ -202,6 +202,18 @@ export function containsCode(text, code) {
   return tokens.some((t, i) => t === wanted || `${t}${tokens[i + 1] || ""}` === wanted);
 }
 
+/**
+ * Whether the customer has given a specific detail a reply could ask for
+ * again: a number in any numeral system (a model, a size, a quantity) or one
+ * of the option values of a product looked up for this reply. Links do not
+ * count; a shared reel's URL is full of digits and says nothing.
+ */
+export function namesSpecificDetail(texts, optionValues = []) {
+  const joined = toAsciiDigits((texts || []).filter(Boolean).join("\n")).replace(/https?:\/\/\S+/g, " ");
+  if (/\d/.test(joined)) return true;
+  return [...optionValues].some((v) => mentionsOptionValue(joined, v));
+}
+
 /** A catalog product's title and option names, for matching a code against. */
 export function catalogText(product) {
   const options = (product?.variants?.nodes || []).map((v) => v?.title).filter(Boolean);

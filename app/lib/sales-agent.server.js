@@ -40,7 +40,8 @@ import { searchCatalogNormalized } from "./storefront-mcp.server";
 import { findCollectionMatches, searchCollections } from "./collection-match";
 import { asksForProductPage, asksForPhoto, claimsToBeHuman, AUTOMATED_DISCLOSURE, stripUnknownEmails } from "./reply-rules";
 import { threadMessageText, customerSentMedia } from "./attachment-kind";
-import { modelCodes, containsCode, catalogText } from "./variant-match";
+import { modelCodes, containsCode, catalogText, namesSpecificDetail } from "./variant-match";
+import { repeatsWhatCustomerSaid } from "./ai.server";
 import { describeOffer } from "./discount-rules";
 import {
   createPriceBook,
@@ -396,6 +397,10 @@ export async function generateAgentReply({
   const priceBook = createPriceBook();
   addPricesFromText(priceBook, brandVoice?.custom_instruction);
 
+  // Option values of the products looked up this turn ("Blue", "M", "iPad 10"),
+  // so a customer who named one counts as having given a specific detail.
+  const optionValuesSeen = new Set();
+
   const runTool = async (name, args) => {
     switch (name) {
       case "search_products": {
@@ -404,7 +409,10 @@ export async function generateAgentReply({
           products = await searchProductsByDomain(shop.shopify_domain, args.query, 5).catch(() => []);
         }
         const results = formatSearchResults(products, args.query);
-        for (const r of results) addPrice(priceBook, r.price, { label: r.title });
+        for (const r of results) {
+          addPrice(priceBook, r.price, { label: r.title });
+          for (const option of r.options || []) for (const v of option.split(" / ")) optionValuesSeen.add(v.trim());
+        }
         const codes = modelCodes(args.query);
         if (results.length && codes.length && !results.some((r) => r.has_what_they_named)) {
           const named = codes.map((c) => `"${c.toUpperCase()}"`).join(" or ");
@@ -438,6 +446,7 @@ export async function generateAgentReply({
         // in the return value below.
         if (raw) productContext = { productId: gid, variantId: null };
         const details = formatProductDetails(raw);
+        for (const o of raw?.options || []) for (const v of o?.values || []) optionValuesSeen.add(v);
         addPrice(priceBook, details.price, { label: details.title });
         for (const v of details.variants || []) addPrice(priceBook, v.price, { label: details.title });
         addPricesFromText(priceBook, details.description);
@@ -627,6 +636,7 @@ export async function generateAgentReply({
       const last = linksCreated[linksCreated.length - 1];
       const url = await getTrackedLinkUrl(shop, last.linkId).catch(() => null);
       if (url) return url;
+      if (last.url) return last.url;
     }
     const ctxProductId = threadContext?.lastProductLink?.product_id;
     if (ctxProductId) {
@@ -753,6 +763,27 @@ export async function generateAgentReply({
     if (retry?.text && !asksForPhoto(retry.text)) text = withLostUrls(text, retry.text);
   }
 
+  // The reply asks for something the customer already told us, and no product
+  // link went out. Tabcase, 22 Nov 2026: "ايباد برو 11 انش m1" was answered
+  // with a request to read the model number off the back of the iPad. Only
+  // checked when nothing was linked, because a reply that links a product has
+  // already used what they said.
+  const conversation = [...earlierMessages.slice(0, 8)].reverse().concat(message);
+  if (text && linksCreated.length === 0 && namesSpecificDetail(conversation.map((m) => m.text), optionValuesSeen)) {
+    const check = await repeatsWhatCustomerSaid({ customerMessages: conversation.map(threadMessageText), reply: text });
+    if (check.repeats) {
+      logger.warn(`[sales-agent] Reply asks again for ${check.what || "something the customer gave"} for message ${message.id}; running corrective pass`);
+      messages.push({ role: "assistant", content: text });
+      messages.push({
+        role: "user",
+        content: `You asked the customer for ${check.what || "a detail"}, but they already gave it${check.quote ? ` ("${check.quote}")` : ""}. Do not ask for it again or ask them to confirm it. If what they gave matches a product or option this store sells, use it: call get_checkout_link for it and paste the URL, or if several still fit, ask only which of those, by name. If the store does not carry it, say so plainly. Keep every URL from your previous reply exactly as it was. Do not mention this correction.`,
+      });
+      const retryText = await runToolLoop(2);
+      const retry = retryText ? sanitizeReplyText(retryText, allowedUrls, allowedEmails) : null;
+      if (retry?.text && !narratesFailedLookup(retry.text)) text = withLostUrls(text, retry.text);
+    }
+  }
+
   // The reply is not in the customer's language. Tabcase, 24 Nov 2026: an
   // English customer was answered in Arabic, the language of the store's own
   // instructions, while the prompt said to mirror the customer.
@@ -775,13 +806,18 @@ export async function generateAgentReply({
     return null;
   }
 
-  // LINK GUARANTEE (deterministic — does not depend on the model):
+  // LINK GUARANTEE (deterministic, does not depend on the model):
   // 1. A reply that still promises a link but has none gets the fallback link
   //    appended, fulfilling the promise instead of shipping it broken.
   // 2. An explicit "send me a link" request must ALWAYS be answered with a
   //    URL, whatever the reply says.
+  // 3. A checkout or product link minted this turn but left out of the text
+  //    gets appended. Tabcase, 22 Nov 2026: "كيف اطلب" created a cart link
+  //    and the reply went out without it, because the promise detector only
+  //    matches English and a colon at the end of the message.
+  const hasUrl = /https?:\/\//i.test(text);
   const mustHaveLink = isExplicitLinkRequest(message.text);
-  if (promisesLinkWithoutUrl(text) || (mustHaveLink && !/https?:\/\//i.test(text))) {
+  if (promisesLinkWithoutUrl(text) || (!hasUrl && linksCreated.length > 0) || (mustHaveLink && !hasUrl)) {
     const fallbackUrl = await getFallbackLinkUrl();
     if (fallbackUrl) {
       const trimmed = text.trim();
@@ -874,7 +910,7 @@ HOW TO SELL:
 - If the exact thing they want isn't available, search for the closest alternative and offer it — don't just say no.
 - When you point at a specific product, call get_checkout_link. That is the default, and it applies to admiration ("this is sick!", "obsessed", "need this") exactly as much as to "I'll take it": the link opens a cart they can still look at and walk away from, and it is the only link that credits a resulting sale back to this conversation. Call get_product_page_link only when they explicitly want the page itself, to read the description or compare variants. Never promise a link without calling a link tool.
 - Pick the page that matches what they asked. A specific product gets get_checkout_link (or get_product_page_link only if they asked for the page). A named collection or a post about a group of products gets get_collection_link. The store / website / "where do I shop" gets the homepage URL from get_store_info. All-products is only for when they want to browse everything and no collection fits. Do not default every vague ask to all-products.
-- If a product comes in multiple sizes/colors and they want to buy but haven't chosen, ask which one they want (list the options) rather than sending a generic link.
+- If a product comes in multiple sizes or colors and they have not named one, ask which option they want and list the real options. Once they have named a model, size, or variant, stop asking. Do not ask them to confirm it, and do not ask them to read a model number, serial, or letter off the device. Search for what they named, call get_checkout_link for the matching variant, and paste that URL. A merchant style instruction about when to ask and when to send a link overrides this.
 ${vagueRule}
 - OWNER HANDOFF: some requests only the store owner can handle personally — visiting the store or meeting up, events/signings, custom or commissioned work, wholesale, press, or the customer referencing a personal conversation with the owner ("we spoke on the phone", "you mentioned meeting"). Do NOT pitch products in response to these. Acknowledge warmly in ONE short reply and share the store's contact email from get_store_info so the owner can follow up directly; if there is no contact email, say the owner will follow up personally right here. If the same message ALSO asks about products, answer the product part normally and include the handoff in the same reply.
 - NEVER write an email address unless get_store_info returned that exact address. Do not build one from the store name, the customer's message, a brand or an app name, and do not fall back to a pattern like info@ or support@. If get_store_info gave you no email, say the owner will follow up right here and give no address at all. A made-up address sends the customer nowhere and it goes out in the merchant's name.

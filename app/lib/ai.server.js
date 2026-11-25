@@ -326,6 +326,73 @@ export async function askInsightsJson(prompt, maxTokens = 800) {
   }
 }
 
+const squash = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * Whether a draft reply asks the customer for a detail they already gave.
+ *
+ * Tabcase, 22 Nov 2026: "ايباد برو 11 انش m1" was answered with a request to
+ * read the model number off the back of the iPad. What gets asked for again,
+ * and in which language, differs by store and by customer, so no word list
+ * can catch it.
+ *
+ * Asked plainly, gpt-4o-mini said yes to 19 of 46 real replies, nearly all
+ * of them asking for something the customer had never given. So it has to
+ * quote the customer's own words containing the detail, and the quote has to
+ * actually be in their messages. With that, gpt-4o-mini still read "we only
+ * sell iPad cases" as asking again; gpt-4.1-mini flagged the same 4 real
+ * repeats as gpt-4.1 and nothing else. A failed check counts as no, so it
+ * never holds up a reply.
+ *
+ * @param {{customerMessages: string[], reply: string, model?: string}} draft - messages oldest first
+ * @returns {Promise<{repeats: boolean, what: string|null, quote: string|null}>}
+ */
+export async function repeatsWhatCustomerSaid({ customerMessages, reply, model = "gpt-4.1-mini" }) {
+  const none = { repeats: false, what: null, quote: null };
+  if (!openai || !reply || !customerMessages?.length) return none;
+  const prompt = `Customer messages, oldest first:
+${customerMessages.map((t) => `- ${t}`).join("\n")}
+
+Draft reply from the store:
+${reply}
+
+Does the draft ask the customer for a detail they have ALREADY given in their messages above?
+
+Answer true only when both hold:
+1. The draft asks them to tell, confirm, choose or look up a specific detail about the item they want, such as its model, size, colour or quantity.
+2. Their messages already contain that detail for that same item. Quote their exact words that contain it.
+Asking for a code or number that only identifies something they already named, such as the model number on the back of a device they already named, counts as asking again.
+
+Answer false when:
+- they gave something less specific than what is asked (they said "iPad Pro" and the draft asks which size),
+- the draft asks about a different item from the one they described (they named their phone and the draft asks about a tablet),
+- the draft asks for something they have not sent yet (a phone number, an address, which product or design),
+- the draft only says what the store does or does not carry.
+
+Respond with JSON: {"repeats": true or false, "what": "the detail, in a few English words", "quote": "their exact words, or null"}`;
+  try {
+    incCounter("openai_requests");
+    const response = await openai.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: "You check draft customer-service replies before they are sent. Always respond with valid JSON only." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0,
+      max_tokens: 80,
+      response_format: { type: "json_object" },
+    });
+    const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+    const quote = typeof parsed.quote === "string" ? parsed.quote.trim() : "";
+    const quoted = quote.length >= 2 && customerMessages.some((t) => squash(t).includes(squash(quote)));
+    if (parsed.repeats !== true || !quoted) return none;
+    return { repeats: true, what: typeof parsed.what === "string" ? parsed.what : null, quote };
+  } catch (error) {
+    logger.debug(`[ai] repeat-question check failed: ${error?.message || error}`);
+    return none;
+  }
+}
+
 /**
  * Classify a message and update the database
  * This is a convenience function that combines classification and database update
