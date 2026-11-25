@@ -137,6 +137,12 @@ function Actions({ actions, topics }) {
                   {`Based on: ${topic.label} (${topic.count} ${topic.count === 1 ? "message" : "messages"})`}
                 </span>
               )}
+              {!topic && a.basis && <span className="srTextSubdued">{a.basis}</span>}
+              {a.cta && (
+                <div>
+                  <s-button href={a.cta.href} variant="secondary" size="slim">{a.cta.label}</s-button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -145,12 +151,16 @@ function Actions({ actions, topics }) {
   );
 }
 
-/** Pro: the weekly insights card. */
-export function InsightsCard({ insight, messagesById, canRefresh }) {
+/**
+ * Pro: the weekly insights card. `actions` is the live "What to do next" list
+ * from the loader (see liveInsightActions); without it the stored ones show.
+ */
+export function InsightsCard({ insight, messagesById, canRefresh, actions }) {
   const fetcher = useFetcher();
   const busy = fetcher.state !== "idle";
   const error = fetcher.data?.insightsError;
   const data = insight?.data || {};
+  const nextSteps = actions ?? data.actions;
 
   const refreshButton = (label) => (
     <fetcher.Form method="post">
@@ -203,10 +213,12 @@ export function InsightsCard({ insight, messagesById, canRefresh }) {
           </span>
         )}
         <Products products={data.products} />
-        <Actions actions={data.actions} topics={topics} />
+        <Actions actions={nextSteps} topics={topics} />
       </div>
     );
   }
+  // Live suggestions don't wait for the weekly summary.
+  const pendingSteps = insight?.status !== "ready" && nextSteps?.length ? nextSteps : null;
 
   return (
     <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
@@ -226,6 +238,7 @@ export function InsightsCard({ insight, messagesById, canRefresh }) {
         </div>
         {error && <s-banner tone="critical">{error}</s-banner>}
         {body}
+        {pendingSteps && <Actions actions={pendingSteps} topics={[]} />}
       </div>
     </s-box>
   );

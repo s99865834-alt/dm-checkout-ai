@@ -28,6 +28,7 @@ import {
   getMissedCommentCount,
 } from "./db.server";
 import { getShopInsight } from "./insights.server";
+import { withoutDiscountActions } from "./insights";
 import { isShopifyAutomatedReviewShop } from "./shopify-review-shop";
 import { mapWithConcurrency } from "./concurrency";
 import {
@@ -78,10 +79,11 @@ export async function getAppStoreReviewerNames() {
   return names;
 }
 
-async function totals(shopId, start, end) {
+/** Analytics-page numbers for a window. A null start means since the store installed. */
+export async function totals(shopId, start, end) {
   const { data, error } = await supabase.rpc("shop_analytics_totals", {
     p_shop_id: shopId,
-    p_start: start.toISOString(),
+    p_start: start ? start.toISOString() : null,
     p_end: end.toISOString(),
     p_product_id: null,
   });
@@ -89,13 +91,15 @@ async function totals(shopId, start, end) {
   return (Array.isArray(data) ? data[0] : data) || {};
 }
 
-async function ordersBetween(shopId, start, end) {
-  const { data, error } = await supabase
+/** Attributed orders in a window. A null start means since the store installed. */
+export async function ordersBetween(shopId, start, end) {
+  let query = supabase
     .from("attribution")
     .select("amount, currency")
     .eq("shop_id", shopId)
-    .gte("created_at", start.toISOString())
     .lte("created_at", end.toISOString());
+  if (start) query = query.gte("created_at", start.toISOString());
+  const { data, error } = await query;
   if (error) throw new Error(`attribution read failed: ${error.message}`);
   const rows = data || [];
   return {
@@ -187,7 +191,7 @@ export async function gatherFacts(shop, now = new Date(), reviewerNames = null) 
     if (insight?.status === "ready") {
       facts.insight = {
         topics: (insight.data?.topics || []).map((t) => ({ label: t.label, count: t.count })),
-        action: insight.data?.actions?.[0] || null,
+        action: withoutDiscountActions(insight.data?.actions)[0] || null,
       };
     }
   }

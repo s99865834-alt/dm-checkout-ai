@@ -779,6 +779,14 @@ export default function Index() {
   const [brandVoiceCustom, setBrandVoiceCustom] = useState(brandVoice?.custom_instruction || "");
   const [brandVoiceReplyLang, setBrandVoiceReplyLang] = useState(brandVoice?.reply_language || "auto");
 
+  // The insights card links here to suggest a discount. The row renders in
+  // the server HTML, but in-app navigation does not scroll to a hash.
+  useEffect(() => {
+    if (window.location.hash === "#sr-discount") {
+      document.getElementById("sr-discount")?.scrollIntoView({ block: "center" });
+    }
+  }, []);
+
   // Sync automation/brand-voice form state from loader data when it changes
   // (initial load or full revalidation). All feed/mapping/picker state lives
   // in <PostsSection> now.
@@ -1599,7 +1607,7 @@ export default function Index() {
                     have: Shopify records the code on the order, so a sale gets
                     credited even when the customer buys days later on another
                     device. */}
-                <div className="srToggleRow">
+                <div className="srToggleRow" id="sr-discount">
                   <div className="srToggleRowInner">
                     <div className="srToggleRowText">
                       <span className="srCardTitle">Product discount</span>
