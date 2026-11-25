@@ -2,16 +2,90 @@ import { useOutletContext, useLoaderData, useRouteError, useSearchParams, useFet
 import { useEffect, useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopWithPlan } from "../lib/loader-helpers.server";
-import { PLANS } from "../lib/plans";
+import { PLANS, TRIAL_DAYS } from "../lib/plans";
+import { PlanIntro } from "../components/PlanIntro";
 import { getCurrentSubscription, getTrialStatus } from "../lib/billing.server";
 import { managedPricingUrl } from "../lib/billing-url";
 import { cached } from "../lib/loader-cache.server";
+import { demoProduct } from "../lib/reply-preview";
 
 // The active-subscription lookup is a live Shopify GraphQL call — it made
 // every visit to the Billing tab wait on Shopify. Subscriptions only change
 // through our own plan actions, which invalidate this key (updateShopPlan),
 // so a short cache is safe.
 const SUBSCRIPTION_TTL_MS = 5 * 60 * 1000;
+const EXAMPLE_PRICE_TTL_MS = 60 * 60 * 1000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function firstChargeDate(now) {
+  const date = new Date(now.getTime() + TRIAL_DAYS * DAY_MS);
+  const options = { month: "long", day: "numeric", timeZone: "UTC" };
+  if (date.getUTCFullYear() !== now.getUTCFullYear()) options.year = "numeric";
+  return date.toLocaleDateString("en-US", options);
+}
+
+function formatPrice({ amount, currencyCode }) {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currencyCode }).format(Number(amount));
+  } catch {
+    return `${amount} ${currencyCode}`;
+  }
+}
+
+// One product's live price, for the example reply. Store context caches
+// titles but not prices.
+function examplePrice(admin, shopId, handle) {
+  return cached(`plan-example-price:${shopId}:${handle}`, EXAMPLE_PRICE_TTL_MS, async () => {
+    const response = await admin.graphql(
+      `#graphql
+      query PlanExamplePrice($query: String!) {
+        products(first: 1, query: $query) {
+          nodes {
+            priceRangeV2 {
+              minVariantPrice { amount currencyCode }
+              maxVariantPrice { amount currencyCode }
+            }
+          }
+        }
+      }`,
+      { variables: { query: `handle:${handle}` } },
+    );
+    const range = (await response.json())?.data?.products?.nodes?.[0]?.priceRangeV2;
+    if (!range?.minVariantPrice) return null;
+    return {
+      price: formatPrice(range.minVariantPrice),
+      from: Number(range.maxVariantPrice?.amount) > Number(range.minVariantPrice.amount),
+    };
+  });
+}
+
+// Whether this app has ever had a subscription on the shop, cancelled ones
+// included. Shopify keeps used trial days for 180 days, so any is a reason
+// not to promise the full trial.
+async function hasSubscribedBefore(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query PlanTrialHistory {
+      currentAppInstallation {
+        allSubscriptions(first: 1) {
+          nodes { id }
+        }
+      }
+    }`,
+  );
+  const nodes = (await response.json())?.data?.currentAppInstallation?.allSubscriptions?.nodes;
+  if (!Array.isArray(nodes)) throw new Error("No subscription history in response");
+  return nodes.length > 0;
+}
+
+async function replyExample(shop, admin) {
+  const product = demoProduct(shop?.store_context_json);
+  if (!product) return null;
+  const domain = shop.store_context_json?.primaryDomain?.host || shop.shopify_domain;
+  const priced = product.handle && admin ? await examplePrice(admin, shop.id, product.handle).catch(() => null) : null;
+  return { title: product.title, domain, ...(priced || {}) };
+}
 
 // Managed Pricing apps cannot call appSubscriptionCreate. Plan selection happens
 // on Shopify's hosted pricing page; the merchant approves there and Shopify
@@ -42,7 +116,31 @@ export const loader = async ({ request }) => {
     console.error("[billing] Error fetching subscription:", e.message);
   }
 
-  return { shop, plan, subscription, trialStatus: getTrialStatus(subscription) };
+  const choosingFirstPlan = !subscription && (plan?.name || "FREE") === "FREE";
+  // Shopify counts trial days per store across 180 days and does not tell an
+  // app how many are left before a plan is picked. A store on its first
+  // install that has never subscribed has all of them, so only that store is
+  // given a date; everyone else is told Shopify shows theirs. When the
+  // history can't be read, no date.
+  const firstInstall =
+    Math.abs(new Date(shop?.installed_at || shop?.created_at).getTime() - new Date(shop?.created_at).getTime()) <
+    60 * 60 * 1000;
+  const [example, subscribedBefore] = choosingFirstPlan
+    ? await Promise.all([
+        replyExample(shop, admin).catch(() => null),
+        firstInstall && admin ? hasSubscribedBefore(admin).catch(() => true) : true,
+      ])
+    : [null, true];
+
+  return {
+    shop,
+    plan,
+    subscription,
+    trialStatus: getTrialStatus(subscription),
+    choosingFirstPlan,
+    firstChargeOn: choosingFirstPlan && firstInstall && !subscribedBefore ? firstChargeDate(new Date()) : null,
+    example,
+  };
 };
 
 export const action = async ({ request }) => {
@@ -94,7 +192,14 @@ export default function BillingSelect() {
   const outletContext = useOutletContext();
   const loaderData = useLoaderData();
   const { shop, plan: currentPlan } = outletContext || loaderData;
-  const { trialStatus } = loaderData;
+  const { trialStatus, choosingFirstPlan, firstChargeOn, example } = loaderData;
+  // Only a first plan comes with a trial: Shopify gives none on a downgrade
+  // and shares used trial days across plans.
+  const trialNote = !choosingFirstPlan
+    ? null
+    : firstChargeOn
+      ? `First ${TRIAL_DAYS} days free. Billing starts after your trial.`
+      : "Free trial for new stores. Shopify shows yours before you approve.";
   const currentPlanName = currentPlan?.name || "FREE";
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
@@ -114,8 +219,8 @@ export default function BillingSelect() {
       period: "month",
       config: PLANS.GROWTH,
       description: "Sell from comments and real conversations",
-      badge: "Most popular",
-      trialNote: "First 14 days free. Billing starts after your trial.",
+      badge: "Best place to start",
+      trialNote,
       features: [
         "Comment-to-DM automation",
         "Multi-turn conversations",
@@ -134,7 +239,7 @@ export default function BillingSelect() {
       period: "month",
       config: PLANS.PRO,
       description: "Sell from stories and follow up",
-      trialNote: "First 14 days free. Billing starts after your trial.",
+      trialNote,
       features: [
         "Everything in Basic",
         "Story replies answered automatically",
@@ -213,6 +318,12 @@ export default function BillingSelect() {
               The Free plan is being retired. Choose Basic or Pro before it ends to keep replies running.
             </s-paragraph>
           </s-banner>
+        </s-section>
+      )}
+
+      {choosingFirstPlan && !trialStatus && (
+        <s-section>
+          <PlanIntro firstChargeOn={firstChargeOn} example={example} />
         </s-section>
       )}
 

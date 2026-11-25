@@ -542,6 +542,84 @@ s-page s-box.srCardCompact {
   min-height: 38px;
 }
 
+/* First-plan intro: trial terms and next steps beside an example reply. */
+.srPlanIntro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  background: #fff;
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  padding: 18px;
+}
+@media (max-width: 720px) {
+  .srPlanIntro {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.srPlanIntroText {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.srPlanIntroTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #303030;
+}
+.srPlanSteps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--sr-font-body);
+  line-height: 1.45;
+  color: #303030;
+}
+.srPlanExample {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  background: #fcebf5;
+  border-radius: 12px;
+  padding: 14px;
+}
+.srPlanExampleLabel {
+  font-size: var(--sr-font-caption);
+  font-weight: 600;
+  color: #6e1a7d;
+}
+.srDmBubble {
+  max-width: 88%;
+  padding: 9px 12px;
+  border-radius: 16px;
+  font-size: var(--sr-font-body);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.srDmCustomer {
+  align-self: flex-start;
+  background: #fff;
+  color: #303030;
+  border-bottom-left-radius: 4px;
+}
+.srDmStore {
+  align-self: flex-end;
+  background: #6e1a7d;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.srDmLink {
+  display: block;
+  margin-top: 4px;
+  text-decoration: underline;
+  opacity: 0.9;
+}
+
 /* Feature comparison: on phones, fit all four columns on screen instead of
    horizontal scrolling (which hid the plan columns entirely and made the
    table read as a bare feature list). Feature names wrap; the three plan
