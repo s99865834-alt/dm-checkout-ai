@@ -49,6 +49,46 @@ export function deriveAttachmentContentType(attachments) {
 }
 
 /**
+ * How a message reads in the conversation history the model is given.
+ *
+ * Photos used to read as "(no text)", so the model could not tell a customer
+ * had sent one. Tabcase, 25 Nov 2026: a customer sent two photos and asked
+ * "are these two available?", and was asked to send a photo. Saying the model
+ * cannot see them matters as much as saying they exist, or it answers as if
+ * it had looked.
+ *
+ * @param {{text?: string, content_type?: string, attachment_meta?: {types?: string[]}}} message
+ */
+export function threadMessageText(message) {
+  const text = String(message?.text || "").trim();
+  const types = Array.isArray(message?.attachment_meta?.types)
+    ? message.attachment_meta.types.map((t) => String(t).toLowerCase())
+    : [];
+  const photos = types.filter((t) => t === "image").length;
+  const media = {
+    image: photos > 1 ? `[sent ${photos} photos, which you cannot see]` : "[sent a photo, which you cannot see]",
+    video: "[sent a video, which you cannot see]",
+    audio: "[sent a voice message, which you cannot hear]",
+    file: "[sent a file, which you cannot open]",
+    share: "[shared an Instagram post]",
+    heart: "[sent a heart]",
+    story_mention: "[mentioned the store in their story]",
+    story_reply: "[replied to the store's story]",
+  }[message?.content_type] || (types.includes("ig_reel") ? "[shared a reel, which you cannot see]" : null);
+  if (media && text) return `${media} ${text}`;
+  return media || text || "(no text)";
+}
+
+/** Whether any of these messages carried a photo, video or file the model cannot see. */
+export function customerSentMedia(messages) {
+  return (messages || []).some(
+    (m) =>
+      ["image", "video", "file"].includes(m?.content_type) ||
+      (Array.isArray(m?.attachment_meta?.types) && m.attachment_meta.types.some((t) => ["image", "video"].includes(t)))
+  );
+}
+
+/**
  * Best-effort Instagram media id for a forwarded post. Payload urls are
  * lookaside CDN links that usually carry the media as `asset_id`, but Meta
  * does not guarantee it, so callers must handle null.

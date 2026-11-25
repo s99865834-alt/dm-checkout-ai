@@ -9,6 +9,7 @@ import logger from "./logger.server";
 import { expandSizeAliases } from "./variant-match";
 import { isShopNotFoundError, isShopifyAutomatedReviewShop } from "./shopify-review-shop";
 import { resolveCustomerFacingEmail } from "./contact-email";
+import { withCurrency } from "./price-guard";
 
 // ---------------------------------------------------------------------------
 // Background Admin API access
@@ -1037,12 +1038,14 @@ export function buildProductContextForAI(productContext) {
       }
     }
     if (variantCount > 0) {
+      const currency = productContext.priceRangeV2?.minVariantPrice?.currencyCode;
       const variantSummaries = variants.slice(0, 30).map((v) => {
         const opts = (v.selectedOptions || [])
           .filter((o) => o?.name && o?.value && !(o.name === "Title" && (o.value === "Default Title" || o.value === "Default")))
           .map((o) => `${o.name}=${o.value}`)
           .join(", ");
-        return opts ? `${opts} (${v.price})` : v.price;
+        const price = withCurrency(v.price, currency);
+        return opts ? `${opts} (${price})` : price;
       });
       if (variantSummaries.length) {
         parts.push(`Variants (sample): ${variantSummaries.join("; ")}`);
@@ -1206,7 +1209,7 @@ export async function getShopifyProductInfo(shopDomain, productId, variantId = n
     let productPrice = null;
 
     if (variant?.price) {
-      productPrice = variant.price;
+      productPrice = withCurrency(variant.price, product?.priceRangeV2?.minVariantPrice?.currencyCode);
     } else if (product?.priceRangeV2?.minVariantPrice?.amount) {
       const amount = product.priceRangeV2.minVariantPrice.amount;
       const currency = product.priceRangeV2.minVariantPrice.currencyCode;
@@ -1300,6 +1303,11 @@ export async function searchProductsByDomain(shopDomain, searchTerm, limit = 5) 
             id
             title
             handle
+            priceRangeV2 {
+              minVariantPrice {
+                currencyCode
+              }
+            }
             variants(first: 1) {
               nodes {
                 id
@@ -1316,7 +1324,11 @@ export async function searchProductsByDomain(shopDomain, searchTerm, limit = 5) 
       }
     );
 
-    return response?.data?.products?.nodes || [];
+    return (response?.data?.products?.nodes || []).map((p) => {
+      const currency = p.priceRangeV2?.minVariantPrice?.currencyCode;
+      const nodes = (p.variants?.nodes || []).map((v) => ({ ...v, price: withCurrency(v.price, currency) }));
+      return { ...p, variants: { ...p.variants, nodes } };
+    });
   } catch (error) {
     console.error("[shopify-data] Error in searchProductsByDomain:", error?.message);
     return [];

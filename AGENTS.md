@@ -82,6 +82,19 @@ replies stopped.
 - To quiet noise, log once and back off in memory. Never "clean up" rows to
  make a log line stop.
 
+## Prices in replies
+
+From July 2026 until the November fix, the catalog search gave the model prices
+in minor units. Customers were told $5,500 for a $55 print, $1,500 for a $15
+jar, and 75 OMR for a 7.500 OMR case. Tabcase switched its replies off the next
+day.
+
+- **Every model call whose text a customer reads goes through
+ `app/lib/price-guard.js`.** A price must match one the data gave the model.
+ `tests/price-guardrail.test.js` enforces this for new reply paths.
+- Any price you hand the model carries its currency ("7.500 OMR"), never a
+ bare number.
+
 ## Don't drop tracked work
 
 When the todo list gets replaced for a new task, pending items from the old one

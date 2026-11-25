@@ -155,6 +155,12 @@ describe("appendDiscountLine", () => {
     expect(out).not.toMatch(/I've added/);
   });
 
+  it("leaves the line off rather than adding English to a reply in another language", () => {
+    const arabic = "تقدر تطلب من هنا: https://example.com/a/go/abc";
+    expect(appendDiscountLine(arabic, pct, "Design 24", "ar")).toBe(arabic);
+    expect(appendDiscountLine("ここから注文できます。", pct, "Thing", "ja")).toBe("ここから注文できます。");
+  });
+
   it("announces a fixed amount in the shop's currency", () => {
     const out = appendDiscountLine("Here's the link.", amount, "Aries Nail Polish");
     expect(out).toContain("$5 off");

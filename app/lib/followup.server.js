@@ -20,7 +20,7 @@
 
 import OpenAI from "openai";
 import { getShopPlanAndUsage, getSettings, getBrandVoice, isHumanTakeoverActive } from "./db.server";
-import { sendDmReply } from "./automation.server";
+import { sendDmReply, withoutInventedPrices } from "./automation.server";
 import { REPLY_MODEL, completionParamsForModel } from "./sales-agent.server";
 import supabase from "./supabase.server";
 import { logError } from "./error-handler.server";
@@ -416,7 +416,7 @@ export async function processFollowups() {
  * The instruction is a STYLE directive for the model — it should shape the
  * output, not appear in it.
  */
-async function generateFollowupMessage(brandVoice) {
+export async function generateFollowupMessage(brandVoice) {
   const tone = brandVoice?.tone || "friendly";
   const customInstruction = (brandVoice?.custom_instruction || "").trim();
   const fallback = FALLBACK_BY_TONE[tone] || FALLBACK_BY_TONE.friendly;
@@ -460,7 +460,7 @@ Write the message:`;
 
     const aiMessage = completion?.choices?.[0]?.message?.content?.trim();
     // Deterministic em-dash strip (reads as AI-written; prompt bans it too)
-    if (aiMessage) return aiMessage.replace(/\s*—\s*/g, ", ");
+    if (aiMessage) return withoutInventedPrices(aiMessage, customInstruction, fallback).replace(/\s*—\s*/g, ", ");
   } catch (err) {
     console.error(
       "[followup] Error generating AI followup message:",

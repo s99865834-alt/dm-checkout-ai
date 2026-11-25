@@ -17,6 +17,7 @@
  */
 
 import logger from "./logger.server";
+import { currencyFractionDigits } from "./price-guard";
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -303,6 +304,26 @@ function toVariantGid(id) {
 }
 
 /**
+ * UCP money is `{ amount, currency }` with the amount as an integer in the
+ * currency's minor units: 1500 USD is $15.00, 7500 OMR is 7.500 (the rial has
+ * three decimals), 1500 JPY is 1500 yen. The model can't tell the scale from
+ * a bare integer, so a $15 jar went out as $1,500 and a 7.500 OMR case as
+ * 75 OMR. Returns null rather than a guess when the scale is unknown, so the
+ * model looks the price up instead.
+ */
+export function formatMcpPrice(price) {
+  if (typeof price === "string") return price;
+  const raw = price?.amount;
+  const currency = typeof price?.currency === "string" ? price.currency.trim().toUpperCase() : "";
+  if (raw == null || !currency) return null;
+  if (typeof raw === "string" && raw.includes(".")) return `${raw} ${currency}`;
+  const minor = Number(raw);
+  const digits = currencyFractionDigits(currency);
+  if (!Number.isInteger(minor) || digits == null) return null;
+  return `${(minor / 10 ** digits).toFixed(digits)} ${currency}`;
+}
+
+/**
  * Normalise a UCP/MCP product record to the shape that
  * searchProductsByDomain() returns so call sites don't have to branch.
  *
@@ -325,16 +346,10 @@ function normalizeMcpProduct(raw) {
         toVariantGid(v?.variant_id) ||
         toVariantGid(v?.variantId);
       if (!vid) return null;
-      const price =
-        typeof v?.price === "string"
-          ? v.price
-          : v?.price?.amount != null
-          ? String(v.price.amount)
-          : null;
       return {
         id: vid,
         title: v?.title || v?.name || null,
-        price,
+        price: formatMcpPrice(v?.price),
       };
     })
     .filter(Boolean);
@@ -414,12 +429,7 @@ export async function resolveVariantViaMcp(shop, productGid, selected, opts = {}
     variant: {
       id: variantGid,
       title: candidate?.title || candidate?.name || null,
-      price:
-        typeof candidate?.price === "string"
-          ? candidate.price
-          : candidate?.price?.amount != null
-          ? String(candidate.price.amount)
-          : null,
+      price: formatMcpPrice(candidate?.price),
     },
   };
 }
