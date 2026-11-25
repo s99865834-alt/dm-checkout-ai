@@ -162,6 +162,18 @@ export const AUTOMATED_DISCLOSURE =
  * @param {Set<string>|string[]} allowedEmails - addresses from store data
  * @returns {{text: string, stripped: boolean}}
  */
+/**
+ * The reply asks the customer for a photo, picture or screenshot. Wrong once
+ * they have sent one: the model cannot see images, and the customer cannot
+ * tell, so asking again reads as not looking.
+ */
+const PHOTO_WORDS =
+  /\b(?:photos?|pictures?|pics?|images?|screenshots?|screen shots?|fotos?|imagen(?:es)?|imagem|imagens|immagin[ei]|bild(?:er)?|afbeelding(?:en)?|fotoğraf|resim)\b|صور|لقطة شاشة|תמונ|צילום מסך|фото|снимок|скриншот|写真|照片|图片|사진/iu;
+
+export function asksForPhoto(text) {
+  return !!text && PHOTO_WORDS.test(text);
+}
+
 export function stripUnknownEmails(text, allowedEmails = new Set()) {
   if (!text) return { text, stripped: false };
 

@@ -169,3 +169,65 @@ export function askedCustomerToChoose(replyText) {
     /which (would|do) you/.test(t)
   );
 }
+
+const toAsciiDigits = (s) =>
+  String(s || "")
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+
+/**
+ * Codes the customer wrote that mix letters and digits: A16, M4, S24, 2XL,
+ * SM-T500. Each names one exact thing, usually their device, model or size,
+ * and the number inside it is part of that name.
+ */
+export function modelCodes(text) {
+  const found = toAsciiDigits(text).match(/(?<![\p{L}\p{N}])[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*(?![\p{L}\p{N}])/gu) || [];
+  return [
+    ...new Set(
+      found
+        .filter((t) => /\p{L}/u.test(t) && /\p{N}/u.test(t) && t.length <= 12)
+        .map((t) => t.toLowerCase().replace(/-/g, ""))
+    ),
+  ];
+}
+
+/**
+ * Whether `text` names `code` whole. "iPad (A16)" and "A 16" do; "Design 16"
+ * does not, because 16 alone is a different thing from A16.
+ */
+export function containsCode(text, code) {
+  const tokens = toAsciiDigits(text).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  const wanted = String(code || "").toLowerCase().replace(/-/g, "");
+  if (!wanted) return false;
+  return tokens.some((t, i) => t === wanted || `${t}${tokens[i + 1] || ""}` === wanted);
+}
+
+/** A catalog product's title and option names, for matching a code against. */
+export function catalogText(product) {
+  const options = (product?.variants?.nodes || []).map((v) => v?.title).filter(Boolean);
+  return [product?.title || "", ...options].join(" ");
+}
+
+/**
+ * Pick the catalog result that best matches what the customer named. Exact
+ * title first, then a title containing it, then the search engine's own
+ * ranking.
+ *
+ * A result only counts if it has every code they wrote. Catalog search
+ * matches loosely, so "A16 ipad" ranked "iPad Case – Design 16" first on
+ * Tabcase, and taking the top result sold the customer a design they never
+ * asked about. With a code that no result has, there is no match.
+ */
+export function pickCatalogMatch(candidates, wanted) {
+  if (!candidates?.length) return null;
+  const codes = modelCodes(wanted);
+  const fits = candidates.filter((p) => codes.every((c) => containsCode(catalogText(p), c)));
+  if (!fits.length) return null;
+  if (!wanted) return fits[0];
+  const lower = String(wanted).toLowerCase();
+  return (
+    fits.find((p) => (p.title || "").toLowerCase() === lower) ||
+    fits.find((p) => (p.title || "").toLowerCase().includes(lower)) ||
+    fits[0]
+  );
+}

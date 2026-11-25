@@ -1228,7 +1228,7 @@ export async function getRecentConversationContext(shopId, fromUserId, options =
   // 1) Recent inbound messages for this user
   const { data: messages, error: messagesError } = await supabase
     .from("messages")
-    .select("id, channel, text, created_at, ai_intent, ai_confidence, sentiment")
+    .select("id, channel, text, created_at, ai_intent, ai_confidence, sentiment, content_type, attachment_meta")
     .eq("shop_id", shopId)
     .eq("from_user_id", fromUserId)
     .gte("created_at", windowStartIso)

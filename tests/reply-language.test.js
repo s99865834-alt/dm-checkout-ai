@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  detectLanguage,
   detectMessageLanguage,
   hasWords,
   languageInstructionText,
   normalizeStoreLocale,
+  replyLanguageMismatch,
   resolveReplyLanguage,
 } from "../app/lib/reply-language";
 
@@ -112,33 +114,52 @@ describe("hasWords", () => {
   });
 });
 
-describe("mirroring a language we do not enumerate", () => {
-  it("mirrors every one of State of Her's real Arabic DMs", () => {
+describe("languages read from their script", () => {
+  it("names Arabic for every one of State of Her's real Arabic DMs", () => {
     for (const text of ARABIC) {
-      const resolved = resolveReplyLanguage({ setting: "auto", messageText: text });
-      expect(resolved.source).toBe("mirror");
-      expect(resolved.code).toBeNull();
+      expect(resolveReplyLanguage({ setting: "auto", messageText: text })).toMatchObject({
+        code: "ar",
+        name: "Arabic",
+        source: "customer",
+      });
     }
   });
 
-  it("mirrors other unenumerated languages too, Latin script included", () => {
-    for (const text of ["こんにちは、これはいくらですか", "Γεια σας, πόσο κοστίζει", "merhaba, bu elbise ne kadar"]) {
-      expect(resolveReplyLanguage({ setting: "auto", messageText: text }).source).toBe("mirror");
-    }
+  it.each([
+    ["این چقدر است؟", "fa"],
+    ["یہ کتنے کا ہے؟", "ur"],
+    ["שלום, כמה זה עולה?", "he"],
+    ["Скільки коштує?", "uk"],
+    ["Γεια σας, πόσο κοστίζει", "el"],
+    ["こんにちは、これはいくらですか", "ja"],
+    ["这个多少钱", "zh"],
+    ["얼마예요?", "ko"],
+  ])("names the language of %s", (text, code) => {
+    expect(detectLanguage(text).code).toBe(code);
   });
 
-  it("tells the model to match the customer's script and not translate", () => {
-    const text = languageInstructionText(
-      resolveReplyLanguage({ setting: "auto", messageText: ARABIC[1] })
-    );
-    expect(text).toMatch(/SAME language/);
-    expect(text).toMatch(/Do not translate to English/);
+  it("names only the script when it carries several languages", () => {
+    expect(detectLanguage("Сколько стоит?")).toEqual({ code: null, name: null, script: "Cyrillic" });
+    const resolved = resolveReplyLanguage({ setting: "auto", messageText: "कितने का है?" });
+    expect(resolved.source).toBe("script");
+    expect(languageInstructionText(resolved)).toMatch(/Devanagari script/);
+  });
+
+  it("reads Arabic with product names in it as Arabic", () => {
+    expect(detectLanguage("عندكم كفر iPad Pro 12.9؟").code).toBe("ar");
+    expect(detectLanguage("ايباد برو 11 انش m1").code).toBe("ar");
+  });
+
+  it("tells the model the store's own language does not decide", () => {
+    const text = languageInstructionText(resolveReplyLanguage({ setting: "auto", messageText: ARABIC[1] }));
+    expect(text).toMatch(/wrote in Arabic/);
     // The original bug was an English discount line inside a Spanish reply.
     expect(text).toMatch(/discount/);
     expect(text).toMatch(/Never mix languages/);
+    expect(text).toMatch(/store's own instructions/);
   });
 
-  it("still lets the merchant force a language over mirroring", () => {
+  it("still lets the merchant force a language", () => {
     const resolved = resolveReplyLanguage({ setting: "es", messageText: ARABIC[1] });
     expect(resolved).toEqual({ code: "es", name: "Spanish", source: "forced" });
   });
@@ -149,7 +170,25 @@ describe("mirroring a language we do not enumerate", () => {
       messageText: ARABIC[1],
       storeLocale: "es-MX",
     });
-    expect(resolved.source).toBe("mirror");
+    expect(resolved.code).toBe("ar");
+  });
+});
+
+describe("mirroring a language we do not enumerate", () => {
+  it("mirrors a Latin-script language the word lists do not know", () => {
+    expect(resolveReplyLanguage({ setting: "auto", messageText: "merhaba, bu elbise ne kadar" }).source).toBe(
+      "mirror"
+    );
+  });
+
+  it("tells the model to match the customer's script and not translate", () => {
+    const text = languageInstructionText(
+      resolveReplyLanguage({ setting: "auto", messageText: "merhaba, bu elbise ne kadar" })
+    );
+    expect(text).toMatch(/SAME language/);
+    expect(text).toMatch(/Do not translate to English/);
+    expect(text).toMatch(/discount/);
+    expect(text).toMatch(/Never mix languages/);
   });
 
   // Regression guard for a183e64: hearts were mirrored, the model guessed
@@ -170,6 +209,76 @@ describe("mirroring a language we do not enumerate", () => {
     expect(resolveReplyLanguage({ setting: "auto", messageText: "Love these products" }).source).toBe(
       "customer"
     );
+  });
+});
+
+// Tabcase, 24 Nov 2026. The customer wrote "How much for tab case?" then
+// "A16 ipad", and was answered in Arabic, the language of the store's own
+// instructions. Neither message matched the old English word list.
+describe("a message with no language of its own", () => {
+  it("detects plain English questions", () => {
+    expect(detectMessageLanguage("How much for tab case?")).toBe("en");
+    expect(detectMessageLanguage("Is this available?")).toBe("en");
+    expect(detectMessageLanguage("Do you have it in black?")).toBe("en");
+  });
+
+  it("takes the language the customer has been writing in", () => {
+    expect(
+      resolveReplyLanguage({ setting: "auto", messageText: "A16 ipad", recentCustomerTexts: ["How much for tab case?"] })
+    ).toEqual({ code: "en", name: "English", source: "thread" });
+    expect(
+      resolveReplyLanguage({ setting: "auto", messageText: "Ipad pro 12.9", recentCustomerTexts: ["متوفر", "مساء الخير"] })
+    ).toMatchObject({ code: "ar", source: "thread" });
+    expect(
+      resolveReplyLanguage({ setting: "auto", messageText: "✨🌸", recentCustomerTexts: ["شكرا لك"] })
+    ).toMatchObject({ code: "ar", source: "thread" });
+  });
+
+  it("lets a customer switch language", () => {
+    expect(
+      resolveReplyLanguage({ setting: "auto", messageText: "How much is it?", recentCustomerTexts: ["مساء الخير"] })
+    ).toMatchObject({ code: "en", source: "customer" });
+  });
+
+  it("says why in the instruction", () => {
+    const resolved = resolveReplyLanguage({
+      setting: "auto",
+      messageText: "A16 ipad",
+      recentCustomerTexts: ["How much for tab case?"],
+    });
+    expect(languageInstructionText(resolved)).toMatch(/has been writing to you in English/);
+  });
+});
+
+describe("replyLanguageMismatch", () => {
+  const TABCASE_REPLY =
+    'متوفر كفر iPad Design 16 بسعر 7.5 ر.ع، ويجي لموديلات: iPad 10، Pro 11" M4، Air 13" M3، Mini 6. إذا تبي تطلب، خبرني موديل جهازك';
+  const english = resolveReplyLanguage({ setting: "auto", messageText: "How much for tab case?" });
+  const arabic = resolveReplyLanguage({ setting: "auto", messageText: "ايباد برو 11 انش m1" });
+
+  it("catches the Arabic reply Tabcase sent an English customer", () => {
+    expect(replyLanguageMismatch(TABCASE_REPLY, english, "A16 ipad")).toBe(true);
+  });
+
+  it("accepts an Arabic reply full of Latin product names for an Arabic customer", () => {
+    expect(replyLanguageMismatch(TABCASE_REPLY, arabic, "ايباد برو 11 انش m1")).toBe(false);
+  });
+
+  it("catches an English reply to an Arabic customer", () => {
+    expect(replyLanguageMismatch("We have the iPad Pro 11 M1 case for 7.5 OMR. Order here.", arabic)).toBe(true);
+  });
+
+  it("catches a different Latin language", () => {
+    expect(replyLanguageMismatch("Hola, tenemos este para ti, quieres el enlace para comprar?", english)).toBe(true);
+  });
+
+  it("accepts a reply in the right language", () => {
+    expect(replyLanguageMismatch("We have it for 7.5 OMR. Which iPad do you have?", english)).toBe(false);
+  });
+
+  it("checks a mirrored reply against the customer's own script", () => {
+    const mirror = resolveReplyLanguage({ setting: "auto", messageText: "A16 ipad" });
+    expect(replyLanguageMismatch(TABCASE_REPLY, mirror, "A16 ipad")).toBe(true);
   });
 });
 

@@ -210,6 +210,8 @@ export function discountOfferLine(type, value, currency, productTitle, language 
  */
 const MAX_REPLY_LENGTH = 1000;
 
+const DISCOUNT_LINE_LANGUAGES = new Set(["en", "es", "pt-BR", "fr", "de", "it", "nl"]);
+
 /**
  * Append the discount sentence to a reply, if a code was actually attached.
  *
@@ -224,6 +226,10 @@ const MAX_REPLY_LENGTH = 1000;
  */
 export function appendDiscountLine(replyText, link, productName, language = "en") {
   if (!replyText || !link?.discountCode || !link?.discountValue) return replyText;
+  // A reply is one language. With no sentence written for this one, the code
+  // still applies from the link and is simply not mentioned, rather than
+  // tacked on in English after an Arabic or Japanese reply.
+  if (language && !DISCOUNT_LINE_LANGUAGES.has(language)) return replyText;
 
   const offer = describeOffer(link.discountType, link.discountValue, link.discountCurrency, language);
 

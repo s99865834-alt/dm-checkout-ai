@@ -10,12 +10,14 @@ import { appendDiscountLine } from "./discount-rules";
 import {
   languageInstructionText,
   REPLY_LANGUAGE_NAMES,
+  replyLanguageMismatch,
   resolveReplyLanguage,
 } from "./reply-language";
+import { threadMessageText, customerSentMedia } from "./attachment-kind";
 import { getSettings, getBrandVoice } from "./db.server";
 import { getRecentConversationContext } from "./db.server";
 import { getShopifyProductInfo, buildStoreContextForAI, getShopifyProductContextForReply, buildProductContextForAI, getShopifyStoreInfo, searchProductsByDomain, detectSizeOption, resolveVariantBySize, getShopCollections } from "./shopify-data.server";
-import { resolveVariantByOptionValue, askedCustomerToChoose } from "./variant-match";
+import { resolveVariantByOptionValue, askedCustomerToChoose, pickCatalogMatch } from "./variant-match";
 import {
   asksForProductPage,
   admitsNoAnswer,
@@ -649,7 +651,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           recentMessages: (threadContext?.messages || [])
             .filter((m) => m.id !== message.id)
             .slice(0, 8)
-            .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+            .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at, content_type: m.content_type, attachment_meta: m.attachment_meta })),
         }
       );
 
@@ -776,7 +778,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
                 recentMessages: (threadContext?.messages || [])
                   .filter((m) => m.id !== message.id)
                   .slice(0, 8)
-                  .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+                  .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at, content_type: m.content_type, attachment_meta: m.attachment_meta })),
               }
             );
 
@@ -784,7 +786,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               replyText,
               checkoutLink,
               productInfo.productName,
-              replyLanguageFor(brandVoiceData, message.text, shop).code,
+              replyLanguageFor(brandVoiceData, message.text, threadContext?.messages).code,
             );
 
             if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -825,12 +827,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             if (!candidates || candidates.length === 0) {
               candidates = await searchProductsByDomain(shop.shopify_domain, namedProductDm, 3).catch(() => []);
             }
-            const lower = namedProductDm.toLowerCase();
-            const best =
-              (candidates || []).find((p) => (p.title || "").toLowerCase() === lower) ||
-              (candidates || []).find((p) => (p.title || "").toLowerCase().includes(lower)) ||
-              (candidates || [])[0] ||
-              null;
+            const best = pickCatalogMatch(candidates, namedProductDm);
             const numericId = (id) => String(id || "").replace("gid://shopify/Product/", "");
             if (best?.id && numericId(best.id) !== numericId(contextProductId)) {
               logger.debug(
@@ -922,7 +919,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             recentMessages: (threadContext?.messages || [])
               .filter((m) => m.id !== message.id)
               .slice(0, 8)
-              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at, content_type: m.content_type, attachment_meta: m.attachment_meta })),
           },
           productContextForReply
         );
@@ -931,7 +928,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           replyText,
           checkoutLink,
           productName,
-          replyLanguageFor(brandVoiceData, message.text, shop).code,
+          replyLanguageFor(brandVoiceData, message.text, threadContext?.messages).code,
         );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -987,15 +984,8 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             candidates = [];
           }
         }
-        if (candidates.length === 1) {
-          matchedProduct = candidates[0];
-        } else if (candidates.length > 1 && entityProductName) {
-          const lower = entityProductName.toLowerCase();
-          matchedProduct = candidates.find(
-            (p) => (p.title || "").toLowerCase() === lower
-          ) || candidates.find(
-            (p) => (p.title || "").toLowerCase().includes(lower)
-          ) || candidates[0];
+        if (candidates.length === 1 || (candidates.length > 1 && entityProductName)) {
+          matchedProduct = pickCatalogMatch(candidates, entityProductName || searchTerm);
         }
         if (matchedProduct) {
           logger.debug(
@@ -1126,7 +1116,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
             recentMessages: (threadContext?.messages || [])
               .filter((m) => m.id !== message.id)
               .slice(0, 8)
-              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+              .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at, content_type: m.content_type, attachment_meta: m.attachment_meta })),
           },
           productContextForReply
         );
@@ -1135,7 +1125,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
           replyText,
           checkoutLink,
           productName,
-          replyLanguageFor(brandVoiceData, message.text, shop).code,
+          replyLanguageFor(brandVoiceData, message.text, threadContext?.messages).code,
         );
 
         if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -1188,7 +1178,7 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
               recentMessages: (threadContext?.messages || [])
                 .filter((m) => m.id !== message.id)
                 .slice(0, 8)
-                .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at })),
+                .map((m) => ({ channel: m.channel, text: m.text, created_at: m.created_at, content_type: m.content_type, attachment_meta: m.attachment_meta })),
             }
           );
           // Converts the raw homepage URL into a tracked info_ link (and
@@ -1286,23 +1276,6 @@ export async function handleIncomingDm(message, shop, plan, ctx = {}) {
     console.error(`[automation] Error processing DM ${message.id}:`, error);
     return { sent: false, reason: error.message || "Unknown error" };
   }
-}
-
-/**
- * Pick the catalog result that best matches a product the customer named.
- * Exact title first, then a title containing it, then the search engine's own
- * ranking. With no named product there is nothing to prefer, so take the top
- * result.
- */
-function pickCatalogMatch(candidates, entityProductName) {
-  if (!candidates?.length) return null;
-  if (!entityProductName) return candidates[0];
-  const wanted = entityProductName.toLowerCase();
-  return (
-    candidates.find((p) => (p.title || "").toLowerCase() === wanted) ||
-    candidates.find((p) => (p.title || "").toLowerCase().includes(wanted)) ||
-    candidates[0]
-  );
 }
 
 /**
@@ -1672,7 +1645,7 @@ export async function handleNonTextDm(message, shop, plan, ctx = {}) {
       replyText,
       checkoutLink,
       productInfo.productName,
-      replyLanguageFor(brandVoiceData, message?.text, shop).code,
+      replyLanguageFor(brandVoiceData, message?.text).code,
     );
 
     if (!(await claimMessageReply(shop.id, message.id, replyText, message.external_id))) {
@@ -2152,7 +2125,7 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
       replyText,
       checkoutLinkResult,
       productName,
-      replyLanguageFor(brandVoiceData, message.text, shop).code,
+      replyLanguageFor(brandVoiceData, message.text).code,
     );
 
     const claimed = commentExternalId
@@ -2226,13 +2199,15 @@ export async function handleIncomingComment(message, mediaId, shop, plan, ctx = 
 
 /**
  * Reply-language support. `brand_voice.reply_language` is either "auto"
- * (English unless the customer or the store is clearly in another language)
- * or a locale code that forces every reply into that language.
+ * (the customer's language) or a locale code that forces every reply into
+ * that language. `recentMessages` are the customer's earlier messages in the
+ * thread, newest first, for when this one has no language of its own.
  */
-function replyLanguageFor(brandVoice, messageText) {
+function replyLanguageFor(brandVoice, messageText, recentMessages = []) {
   return resolveReplyLanguage({
     setting: brandVoice?.reply_language,
     messageText,
+    recentCustomerTexts: (recentMessages || []).map((m) => m?.text).filter(Boolean),
   });
 }
 
@@ -2243,8 +2218,8 @@ function isForcedReplyLanguage(brandVoice) {
 }
 
 /** Build the language directive injected into every reply prompt. */
-function buildLanguageInstruction(brandVoice, originalMessage) {
-  return languageInstructionText(replyLanguageFor(brandVoice, originalMessage));
+function buildLanguageInstruction(brandVoice, originalMessage, channelContext = null) {
+  return languageInstructionText(replyLanguageFor(brandVoice, originalMessage, channelContext?.recentMessages));
 }
 
 /**
@@ -2281,7 +2256,7 @@ Customer intent: ${intentContext}
 ${channelContext?.originChannel ? `Conversation origin: ${channelContext.originChannel === "comment" ? "Instagram comment → DM" : "Direct DM"}` : ""}
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice, originalMessage, channelContext?.shop, null)}
+- ${buildLanguageInstruction(brandVoice, originalMessage, channelContext)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 - Acknowledge their message briefly
@@ -2352,7 +2327,7 @@ Available sizes: ${sizesText}
 Customer's original message: "${originalMessage || ""}"
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice, originalMessage, null, null)}
+- ${buildLanguageInstruction(brandVoice, originalMessage)}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. Match this style precisely.` : `- Style: Use ${tone} tone`}
 - Thank them for their interest briefly
 - Ask what size they'd like
@@ -2677,9 +2652,10 @@ export async function generateReplyMessage(brandVoice, productName = null, check
           ? safeChannelContext.recentMessages
               .slice(0, 8)
               .reverse()
-              .map((m) => `- ${m.channel === "comment" ? "Comment" : "DM"}: ${m.text || "(no text)"}`)
+              .map((m) => `- ${m.channel === "comment" ? "Comment" : "DM"}: ${threadMessageText(m)}`)
               .join("\n")
           : null;
+        const resolvedLanguage = replyLanguageFor(brandVoice, originalMessage, safeChannelContext?.recentMessages);
 
         const prompt = `${promptBase}
 
@@ -2721,7 +2697,8 @@ ${storeContextForReply?.text ? `\n--- STORE CONTEXT (use only this information) 
 ${productContextForReply?.text ? `\n--- PRODUCT CONTEXT (use only this for product/variant questions) ---\n${productContextForReply.text}\n--- END PRODUCT CONTEXT ---` : ""}
 
 Requirements:
-- ${buildLanguageInstruction(brandVoice, originalMessage, safeChannelContext?.shop, storeInfo, safeChannelContext)}
+- ${languageInstructionText(resolvedLanguage)}
+${customerSentMedia(safeChannelContext?.recentMessages) ? "- You cannot see photos, videos or shared posts. The customer has sent one, so never ask them to send a photo, picture or screenshot. Ask them to say in words which product or design they mean, or which model or size they need." : ""}
 ${customInstruction ? `- CRITICAL STYLE REQUIREMENT: ${customInstruction}. You MUST write in this exact style and tone. This is the most important requirement - match this style precisely.` : `- Style: Use ${tone} tone`}
 ${customInstruction ? `- Do NOT be friendly, helpful, or enthusiastic unless the custom instruction explicitly says to be. Follow the custom instruction exactly.` : ``}
 ${warmthFirst ? `- CRITICAL: Thank-you first, link as a casual invitation second. No sales pressure or urgency language whatsoever.` : ""}
@@ -2772,8 +2749,29 @@ Write the response:`;
           max_tokens: 350,
         }));
 
-        if (response?.choices?.[0]?.message?.content) {
-          message = response.choices[0].message.content.trim();
+        let content = response?.choices?.[0]?.message?.content?.trim() || "";
+        if (content && replyLanguageMismatch(content, resolvedLanguage, originalMessage)) {
+          console.warn(`[automation] Reply for intent "${intent}" was not in ${resolvedLanguage.name}; asking for a rewrite`);
+          const retry = await openai.chat.completions.create(completionParamsForModel(REPLY_MODEL, {
+            model: REPLY_MODEL,
+            messages: [
+              { role: "system", content: systemMessage },
+              { role: "user", content: prompt },
+              { role: "assistant", content },
+              {
+                role: "user",
+                content: `${languageInstructionText(resolvedLanguage)} Your reply was not in that language. Rewrite the whole reply in it, keeping every URL, price and product name exactly as it is.`,
+              },
+            ],
+            temperature: 0.3,
+            max_tokens: 350,
+          }));
+          const rewritten = retry?.choices?.[0]?.message?.content?.trim();
+          if (rewritten && !replyLanguageMismatch(rewritten, resolvedLanguage, originalMessage)) content = rewritten;
+        }
+
+        if (content) {
+          message = content;
           if (intent === "store_question") {
             message = replaceTokensAndSanitize(message, storeContextForReply?.urlMap);
           }
